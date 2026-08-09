@@ -610,14 +610,16 @@ function demoTableTurns(): TableTurnRow[] {
 function demoHalls(): HallPlan[] {
   // Table numbers line up with demoTableTurns/demoRevenueRows so the
   // occupancy + revenue heatmap reads as one consistent fictional venue.
+  // Wide landscape layout (4 cols × 2 rows) — mirrors how a real hall plan
+  // reads wider than it is tall, so the fitted SVG viewBox scales to a
+  // compact strip instead of blowing up to a near-square, oversized block.
   const mainHallTables = [
-    { n: 1, x: 40,  y: 40  }, { n: 2, x: 160, y: 40  }, { n: 3, x: 280, y: 40  },
-    { n: 4, x: 40,  y: 160 }, { n: 5, x: 160, y: 160 }, { n: 6, x: 280, y: 160 },
-    { n: 7, x: 40,  y: 280 }, { n: 8, x: 160, y: 280 },
+    { n: 1, x: 30,  y: 30  }, { n: 2, x: 160, y: 30  }, { n: 3, x: 290, y: 30  }, { n: 5, x: 420, y: 30  },
+    { n: 4, x: 30,  y: 140 }, { n: 6, x: 160, y: 140 }, { n: 7, x: 290, y: 140 }, { n: 8, x: 420, y: 140 },
   ];
   const terraceTables = [
-    { n: 9,  x: 60,  y: 60  }, { n: 10, x: 190, y: 60  },
-    { n: 11, x: 60,  y: 190 }, { n: 12, x: 190, y: 190 },
+    { n: 9,  x: 30,  y: 30  }, { n: 10, x: 160, y: 30  }, { n: 11, x: 290, y: 30  },
+    { n: 12, x: 30,  y: 140 },
   ];
   const toElements = (tables: { n: number; x: number; y: number }[]): HallElement[] =>
     tables.map(t => ({

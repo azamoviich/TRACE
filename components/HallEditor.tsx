@@ -522,7 +522,7 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
       ref={svgRef}
       viewBox={fitViewBox}
       className="w-full h-auto"
-      style={{ cursor: inline ? 'default' : tool === 'select' ? 'default' : 'crosshair' }}
+      style={{ cursor: inline ? 'default' : tool === 'select' ? 'default' : 'crosshair', ...(readOnly && inline ? { maxHeight: 420 } : {}) }}
       onClick={handleSvgClick}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}

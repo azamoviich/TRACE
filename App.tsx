@@ -321,7 +321,7 @@ export default function App() {
       case 'reports':     return <Reports lang={lang} onShowToast={showToast} onNavigate={setCurrentView} />;
       case 'settings':    return <Settings lang={lang} onShowToast={showToast} theme={theme} setTheme={setTheme} />;
       case 'compare':     return <Compare lang={lang} branches={branches} />;
-      case 'service_inspector': return <ServiceInspector lang={lang} onShowToast={showToast} />;
+      case 'service_inspector': return isDemoTenant() ? <ServiceInspector lang={lang} onShowToast={showToast} /> : <Dashboard key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} />;
       default:            return <Dashboard lang={lang} onShowToast={showToast} branch={selectedBranch} />;
     }
   };

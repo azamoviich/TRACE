@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { ViewState, Language } from '../types';
 import { TRANSLATIONS, nextLang, tr } from '../constants';
-import { BranchSummary, ALL_BRANCHES_ID } from '../services/traceApi';
+import { BranchSummary, ALL_BRANCHES_ID, isDemoTenant } from '../services/traceApi';
 
 interface TopNavProps {
   currentView: ViewState;
@@ -54,7 +54,10 @@ export const TopNav: React.FC<TopNavProps> = ({
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const showBranches = branches.length > 1;
-  const navItems = showBranches ? [...NAV, COMPARE_NAV] : NAV;
+  // ServiceInspector is a demo-only showcase feature for now — not yet
+  // released to real tenants.
+  const baseNav = isDemoTenant() ? NAV : NAV.filter(n => n.id !== 'service_inspector');
+  const navItems = showBranches ? [...baseNav, COMPARE_NAV] : baseNav;
 
   // Mobile bottom tab bar: primary 4 sections always visible + "More" sheet for the rest
   const BOTTOM_NAV = navItems.slice(0, 4);

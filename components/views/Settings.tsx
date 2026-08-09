@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Card } from '../ui/Card';
 import { Language } from '../../types';
-import { Target, Mail, Loader2, Plus, Trash2, Send, Sun, Moon, Link2, BellRing } from 'lucide-react';
-import { traceApi, isDemoTenant, ReportSubscription, ReportType, ReportChannel, TelegramStatus, AlertThresholds } from '../../services/traceApi';
+import { Mail, Loader2, Plus, Trash2, Send, Sun, Moon, Link2 } from 'lucide-react';
+import { traceApi, isDemoTenant, ReportSubscription, ReportType, ReportChannel, TelegramStatus } from '../../services/traceApi';
 import { TRANSLATIONS } from '../../constants';
 
 const NEW_PREFIX = 'new-';
@@ -29,61 +29,6 @@ export const Settings: React.FC<{
   const ru = lang === 'ru';
   const isUz = lang === 'uz';
   const t = TRANSLATIONS[lang];
-
-  // Business hours + break-even — persisted server-side per tenant (used to
-  // be localStorage-only, which reset on a different device/browser/branch
-  // subdomain and never synced with anything else that read it, like the
-  // Dashboard's "vs yesterday" time-of-day scaling).
-  const [breakEven, setBreakEven] = useState('');
-  const [openHour,  setOpenHour]  = useState('9');
-  const [closeHour, setCloseHour] = useState('23');
-  const [hoursSaving, setHoursSaving] = useState(false);
-
-  useEffect(() => {
-    if (isDemoTenant()) return;
-    traceApi.settings.businessHours().then(h => {
-      if (h.openHour != null) setOpenHour(String(h.openHour));
-      if (h.closeHour != null) setCloseHour(String(h.closeHour));
-      if (h.breakEvenRevenue != null) setBreakEven(String(h.breakEvenRevenue));
-    }).catch(() => {});
-  }, []);
-
-  // Alert thresholds — drive the low-stock / negative-margin / high-writeoff
-  // / stale-open-table flags surfaced elsewhere in the app. Stored as
-  // strings in state (like breakEven above) so an empty input clears the
-  // threshold instead of coercing to 0.
-  const [thresholds, setThresholds] = useState<{ [K in keyof AlertThresholds]: string }>({
-    lowStockQty: '', negativeMarginPct: '', highWriteoffPct: '', staleOpenTableMin: '',
-  });
-  const [thresholdsSaving, setThresholdsSaving] = useState(false);
-
-  useEffect(() => {
-    traceApi.settings.alertThresholds().then(v => {
-      setThresholds({
-        lowStockQty: v.lowStockQty != null ? String(v.lowStockQty) : '',
-        negativeMarginPct: v.negativeMarginPct != null ? String(v.negativeMarginPct) : '',
-        highWriteoffPct: v.highWriteoffPct != null ? String(v.highWriteoffPct) : '',
-        staleOpenTableMin: v.staleOpenTableMin != null ? String(v.staleOpenTableMin) : '',
-      });
-    }).catch(() => {});
-  }, []);
-
-  const handleSaveThresholds = async () => {
-    setThresholdsSaving(true);
-    try {
-      await traceApi.settings.saveAlertThresholds({
-        lowStockQty: thresholds.lowStockQty ? Number(thresholds.lowStockQty) : null,
-        negativeMarginPct: thresholds.negativeMarginPct ? Number(thresholds.negativeMarginPct) : null,
-        highWriteoffPct: thresholds.highWriteoffPct ? Number(thresholds.highWriteoffPct) : null,
-        staleOpenTableMin: thresholds.staleOpenTableMin ? Number(thresholds.staleOpenTableMin) : null,
-      });
-      onShowToast?.(ru ? 'Сохранено' : isUz ? 'Saqlandi' : 'Saved', 'success');
-    } catch {
-      onShowToast?.(ru ? 'Ошибка сохранения' : isUz ? 'Saqlashda xatolik' : 'Save failed', 'error');
-    } finally {
-      setThresholdsSaving(false);
-    }
-  };
 
   // Report subscriptions (email + telegram) and the tenant's one shared
   // Telegram connection they all ride on.
@@ -122,22 +67,6 @@ export const Settings: React.FC<{
       if (busy) next.add(id); else next.delete(id);
       return next;
     });
-  };
-
-  const handleSave = async () => {
-    setHoursSaving(true);
-    try {
-      await traceApi.settings.saveBusinessHours({
-        openHour: parseInt(openHour, 10),
-        closeHour: parseInt(closeHour, 10),
-        breakEvenRevenue: breakEven ? parseInt(breakEven, 10) : null,
-      });
-      onShowToast?.(ru ? 'Сохранено' : isUz ? 'Saqlandi' : 'Saved', 'success');
-    } catch {
-      onShowToast?.(ru ? 'Ошибка сохранения' : isUz ? 'Saqlashda xatolik' : 'Save failed', 'error');
-    } finally {
-      setHoursSaving(false);
-    }
   };
 
   const updateSub = (id: string, patch: Partial<ReportSubscription>) => {
@@ -260,135 +189,7 @@ export const Settings: React.FC<{
         </div>
       </Card>
 
-      <Card title={ru ? 'Бизнес-цели' : isUz ? 'Biznes maqsadlari' : 'Business Targets'} action={<Target size={18} className="text-muted" />}>
-        <p className="text-[11px] text-muted -mt-1 mb-5">
-          {ru
-            ? 'Используется для расчёта темпа выручки и порога окупаемости на дашборде'
-            : 'Used for revenue pace and break-even tracker on the dashboard'}
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          <div className="md:col-span-1">
-            <label className="text-[11px] text-muted block mb-1.5">
-              {ru ? 'Порог окупаемости в день (UZS)' : isUz ? "Kunlik o'z-o'zini oqlash chegarasi (UZS)" : 'Daily break-even revenue (UZS)'}
-            </label>
-            <input
-              type="number"
-              value={breakEven}
-              onChange={e => setBreakEven(e.target.value)}
-              placeholder={ru ? 'напр. 8500000' : isUz ? 'masalan, 8500000' : 'e.g. 8500000'}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text placeholder-muted/40 focus:outline-none focus:border-primary transition-colors"
-              style={{ fontSize: 'max(16px, 13px)' }}
-            />
-          </div>
-          <div>
-            <label className="text-[11px] text-muted block mb-1.5">{ru ? 'Открытие' : isUz ? 'Ochilish' : 'Opens at'}</label>
-            <select
-              value={openHour}
-              onChange={e => setOpenHour(e.target.value)}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary transition-colors cursor-pointer"
-            >
-              {Array.from({ length: 24 }, (_, i) => (
-                <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-[11px] text-muted block mb-1.5">{ru ? 'Закрытие' : isUz ? 'Yopilish' : 'Closes at'}</label>
-            <select
-              value={closeHour}
-              onChange={e => setCloseHour(e.target.value)}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary transition-colors cursor-pointer"
-            >
-              {Array.from({ length: 24 }, (_, i) => (
-                <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <button
-          onClick={handleSave}
-          disabled={hoursSaving}
-          className="mt-5 px-6 py-2 bg-primary text-white text-[12px] font-semibold rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
-        >
-          {hoursSaving ? <Loader2 size={13} className="animate-spin" /> : null}
-          {ru ? 'Сохранить' : isUz ? t.save : 'Save'}
-        </button>
-      </Card>
-
-      <Card title={ru ? 'Пороги уведомлений' : isUz ? 'Ogohlantirish chegaralari' : 'Alert Thresholds'} action={<BellRing size={18} className="text-muted" />}>
-        <p className="text-[11px] text-muted -mt-1 mb-5">
-          {ru
-            ? 'Значения, при превышении которых система должна поднимать флаг (низкий остаток, отрицательная маржа, высокий % списаний, зависшие открытые столы)'
-            : isUz
-              ? "Bu qiymatlardan oshganda tizim signal berishi kerak (kam qoldiq, manfiy marja, yuqori % chiqindi, ochiq stollar)"
-              : 'Values that trigger a flag elsewhere in the app (low stock, negative margin, high writeoff %, stale open tables)'}
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <div>
-            <label className="text-[11px] text-muted block mb-1.5">
-              {ru ? 'Низкий остаток (ед.)' : isUz ? 'Kam qoldiq (birlik)' : 'Low stock (units)'}
-            </label>
-            <input
-              type="number"
-              value={thresholds.lowStockQty}
-              onChange={e => setThresholds(prev => ({ ...prev, lowStockQty: e.target.value }))}
-              placeholder={ru ? 'напр. 5' : isUz ? 'masalan, 5' : 'e.g. 5'}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text placeholder-muted/40 focus:outline-none focus:border-primary transition-colors"
-              style={{ fontSize: 'max(16px, 13px)' }}
-            />
-          </div>
-          <div>
-            <label className="text-[11px] text-muted block mb-1.5">
-              {ru ? 'Отрицательная маржа (%)' : isUz ? 'Manfiy marja (%)' : 'Negative margin (%)'}
-            </label>
-            <input
-              type="number"
-              value={thresholds.negativeMarginPct}
-              onChange={e => setThresholds(prev => ({ ...prev, negativeMarginPct: e.target.value }))}
-              placeholder={ru ? 'напр. 0' : isUz ? 'masalan, 0' : 'e.g. 0'}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text placeholder-muted/40 focus:outline-none focus:border-primary transition-colors"
-              style={{ fontSize: 'max(16px, 13px)' }}
-            />
-          </div>
-          <div>
-            <label className="text-[11px] text-muted block mb-1.5">
-              {ru ? 'Высокий % списаний' : isUz ? 'Yuqori chiqindi %' : 'High writeoff %'}
-            </label>
-            <input
-              type="number"
-              value={thresholds.highWriteoffPct}
-              onChange={e => setThresholds(prev => ({ ...prev, highWriteoffPct: e.target.value }))}
-              placeholder={ru ? 'напр. 5' : isUz ? 'masalan, 5' : 'e.g. 5'}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text placeholder-muted/40 focus:outline-none focus:border-primary transition-colors"
-              style={{ fontSize: 'max(16px, 13px)' }}
-            />
-          </div>
-          <div>
-            <label className="text-[11px] text-muted block mb-1.5">
-              {ru ? 'Зависший открытый стол (мин)' : isUz ? "Ochiq stol (daqiqa)" : 'Stale open table (min)'}
-            </label>
-            <input
-              type="number"
-              value={thresholds.staleOpenTableMin}
-              onChange={e => setThresholds(prev => ({ ...prev, staleOpenTableMin: e.target.value }))}
-              placeholder={ru ? 'напр. 180' : isUz ? 'masalan, 180' : 'e.g. 180'}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text placeholder-muted/40 focus:outline-none focus:border-primary transition-colors"
-              style={{ fontSize: 'max(16px, 13px)' }}
-            />
-          </div>
-        </div>
-        <button
-          onClick={handleSaveThresholds}
-          disabled={thresholdsSaving}
-          className="mt-5 px-6 py-2 bg-primary text-white text-[12px] font-semibold rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
-        >
-          {thresholdsSaving ? <Loader2 size={13} className="animate-spin" /> : null}
-          {ru ? 'Сохранить' : isUz ? t.save : 'Save'}
-        </button>
-      </Card>
-
-      {!isDemoTenant() && (
-        <Card title={t.email_reports} action={<Mail size={18} className="text-muted" />}>
+      <Card title={t.email_reports} action={<Mail size={18} className="text-muted" />}>
           <p className="text-[11px] text-muted -mt-1 mb-5">{t.email_reports_desc}</p>
 
           <div className="mb-5 p-3 rounded-lg border border-border bg-background flex items-center gap-3">
@@ -547,8 +348,7 @@ export const Settings: React.FC<{
             <Plus size={13} />
             {t.add_subscription}
           </button>
-        </Card>
-      )}
+      </Card>
     </div>
   );
 };

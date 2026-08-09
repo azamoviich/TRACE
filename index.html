@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TRACE</title>
+    <link rel="icon" type="image/png" href="/trace-icon-192.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="TRACE" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#1a1a1d" />
+    <script>
+      // Apply saved (or system-preferred, if not chosen yet) theme before first
+      // paint to avoid a flash of the wrong colors.
+      (function () {
+        var saved = localStorage.getItem('trace_theme');
+        var dark = saved === 'dark' || (!saved && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (dark) document.documentElement.classList.add('dark');
+      })();
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Epilogue:wght@400;500;600;700;800;900&family=Onest:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Onest', 'system-ui', 'sans-serif'],
+              display: ['Epilogue', 'system-ui', 'sans-serif'],
+            },
+            colors: {
+              background: 'rgb(var(--color-background) / <alpha-value>)',
+              surface: 'rgb(var(--color-surface) / <alpha-value>)',
+              card: 'rgb(var(--color-card) / <alpha-value>)',
+              'card-hover': 'rgb(var(--color-card-hover) / <alpha-value>)',
+              text: 'rgb(var(--color-text) / <alpha-value>)',
+              muted: 'rgb(var(--color-muted) / <alpha-value>)',
+              primary: 'rgb(var(--color-primary) / <alpha-value>)',
+              'primary-hover': 'rgb(var(--color-primary-hover) / <alpha-value>)',
+              secondary: 'rgb(var(--color-secondary) / <alpha-value>)',
+              danger: 'rgb(var(--color-danger) / <alpha-value>)',
+              success: 'rgb(var(--color-success) / <alpha-value>)',
+              border: 'rgb(var(--color-border) / <alpha-value>)',
+            },
+            borderRadius: {
+              '2xl': '16px',
+              '3xl': '22px',
+              '4xl': '28px',
+              '5xl': '34px',
+            },
+            animation: {
+              'fade-in': 'fadeIn 0.45s cubic-bezier(0.16, 1, 0.3, 1)',
+              'slide-up': 'slideUp 0.45s cubic-bezier(0.16, 1, 0.3, 1)',
+              'slide-in-right': 'slideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
+              'live-pulse': 'livePulse 2.4s ease-in-out infinite',
+            },
+            keyframes: {
+              fadeIn: {
+                '0%': { opacity: '0' },
+                '100%': { opacity: '1' },
+              },
+              slideUp: {
+                '0%': { transform: 'translateY(14px)', opacity: '0' },
+                '100%': { transform: 'translateY(0)', opacity: '1' },
+              },
+              slideInRight: {
+                '0%': { transform: 'translateX(16px)', opacity: '0' },
+                '100%': { transform: 'translateX(0)', opacity: '1' },
+              },
+              livePulse: {
+                '0%, 100%': { opacity: '1', transform: 'scale(1)' },
+                '50%': { opacity: '0.2', transform: 'scale(0.65)' },
+              },
+            }
+          },
+        },
+      }
+    </script>
+    <style>
+      /* ── Theme tokens ─────────────────────────────────────────────
+         Calm, high-contrast palettes for older eyes. Light is default;
+         .dark overrides (toggled on <html> via Settings / TopNav). */
+      :root {
+        --color-background: 247 245 242;
+        --color-surface: 255 255 255;
+        --color-card: 255 255 255;
+        --color-card-hover: 241 239 236;
+        --color-text: 26 26 26;
+        --color-muted: 95 95 95;
+        --color-primary: 255 107 53;
+        --color-primary-hover: 232 90 31;
+        --color-secondary: 37 99 235;
+        --color-danger: 220 38 38;
+        --color-success: 22 163 74;
+        --color-border: 229 226 221;
+      }
+      .dark {
+        --color-background: 26 26 29;
+        --color-surface: 28 28 32;
+        --color-card: 34 34 38;
+        --color-card-hover: 42 42 47;
+        --color-text: 240 238 233;
+        --color-muted: 154 154 154;
+        --color-primary: 255 107 53;
+        --color-primary-hover: 255 130 85;
+        --color-secondary: 91 141 239;
+        --color-danger: 248 113 113;
+        --color-success: 74 222 128;
+        --color-border: 48 48 54;
+      }
+
+      body {
+        background-color: rgb(var(--color-background));
+        color: rgb(var(--color-text));
+        overflow-x: hidden;
+        font-family: 'Onest', system-ui, sans-serif;
+      }
+
+      /* Flat surfaces — no blur, no glow. Calmer for older eyes. */
+      .glass, .glass-strong {
+        background: rgb(var(--color-card));
+        border: 1px solid rgb(var(--color-border));
+      }
+      .glass-hover:hover {
+        background: rgb(var(--color-card-hover));
+      }
+
+      /* Prevent Safari auto-zoom on input focus */
+      input, textarea, select { font-size: max(16px, 1em) !important; }
+
+      /* Native <select> reset — inherit app font, custom themed arrow */
+      select {
+        font-family: inherit;
+        cursor: pointer;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%236b6b6b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 10px center;
+        padding-right: 30px !important;
+      }
+      .dark select {
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%239a9a9a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      }
+      select option {
+        font-family: inherit;
+        background: rgb(var(--color-card));
+        color: rgb(var(--color-text));
+      }
+
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar { width: 4px; height: 4px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: rgb(var(--color-border)); border-radius: 2px; }
+      ::-webkit-scrollbar-thumb:hover { background: rgb(var(--color-primary)); }
+
+      /* Recharts */
+      .recharts-cartesian-grid-horizontal line,
+      .recharts-cartesian-grid-vertical line { stroke: rgb(var(--color-border)); }
+
+      /* Global transitions */
+      button, a, input {
+        transition-property: color, background-color, border-color, opacity, box-shadow, transform;
+        transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+        transition-duration: 150ms;
+      }
+
+      /* Stagger animation system */
+      .stagger-item {
+        opacity: 0;
+        animation: staggerIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+      @keyframes staggerIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes livePulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.2; transform: scale(0.65); }
+      }
+
+      /* Metric number display */
+      .metric-number {
+        font-family: 'Epilogue', system-ui, sans-serif;
+        font-feature-settings: 'tnum' 1, 'lnum' 1;
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* Reduced motion */
+      @media (prefers-reduced-motion: reduce) {
+        .stagger-item { animation: none; opacity: 1; transform: none; }
+        * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "recharts": "https://esm.sh/recharts@^3.6.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>

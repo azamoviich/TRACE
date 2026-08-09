@@ -9,6 +9,8 @@ import { useRealtimeData, RealtimeEvent, StopListUpdateData } from '../../hooks/
 import { Clock, Trash2, Users, CreditCard, Banknote, AlertTriangle, CheckCircle, Timer, X, Plug, Radio, ChefHat, CalendarClock, Bell, TrendingDown, TrendingUp, Zap, Sparkles, ChevronRight, FileDown, FileSpreadsheet, Send, Calendar as CalendarIcon, Crown, Receipt, Grid2x2 } from 'lucide-react';
 import { DateRangePicker } from '../ui/DateRangePicker';
 import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { traceApi, CashShift, OpsKpis, StaffRow, StopItem, HallPlan, HallElement, isDemoTenant, demoActiveOrders, OpsAlert, VoidEvent, getTenantPlan, ShiftScheduleDay, StaffAbcRow, BranchSummary, ActiveOrderRow } from '../../services/traceApi';
 import { HallEditor } from '../HallEditor';
 import { ProLock } from '../ui/ProLock';
@@ -110,6 +112,60 @@ function downloadShiftScheduleExcel(
 
   XLSX.utils.book_append_sheet(wb, ws, tr(lang, 'График смен', 'Schedule', 'Jadval').slice(0, 31));
   XLSX.writeFile(wb, `TRACE-shift-schedule-${generatedAt}.xlsx`);
+}
+
+// Client-side PDF export — used in demo mode where there's no backend to
+// render it server-side. Same matrix layout as the Excel export.
+function downloadShiftSchedulePdfClientSide(
+  schedule: ShiftScheduleDay[],
+  summary: string | undefined,
+  lang: Language,
+) {
+  const days = schedule.map(d => d.day);
+  const waiterNames = [...new Set(schedule.flatMap(d => d.assignments.map(a => a.waiter)))];
+  const cellShifts = new Map<string, { start: string; end: string }[]>();
+  const totalHours = new Map<string, number>();
+  for (const d of schedule) {
+    for (const a of d.assignments) {
+      const key = `${a.waiter}|${d.day}`;
+      if (!cellShifts.has(key)) cellShifts.set(key, []);
+      cellShifts.get(key)!.push({ start: a.start, end: a.end });
+      totalHours.set(a.waiter, (totalHours.get(a.waiter) ?? 0) + hoursBetween(a.start, a.end));
+    }
+  }
+  waiterNames.sort((a, b) => (totalHours.get(b) ?? 0) - (totalHours.get(a) ?? 0));
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+  const generatedAt = new Date().toISOString().slice(0, 10);
+  doc.setFontSize(14);
+  doc.text(tr(lang, 'TRACE · График смен на неделю', 'TRACE · Weekly Shift Schedule', 'TRACE · Haftalik smena jadvali'), 32, 32);
+  doc.setFontSize(9);
+  doc.setTextColor(120);
+  doc.text(tr(lang, `Сформировано: ${generatedAt}`, `Generated: ${generatedAt}`, `Yaratildi: ${generatedAt}`), 32, 48);
+  let startY = 62;
+  if (summary) {
+    const wrapped = doc.splitTextToSize(summary, 760);
+    doc.text(wrapped, 32, startY);
+    startY += wrapped.length * 12 + 10;
+  }
+
+  autoTable(doc, {
+    startY,
+    head: [[tr(lang, 'Официант', 'Waiter', 'Ofitsiant'), ...days, tr(lang, 'Итого часов', 'Total hours', 'Jami soat')]],
+    body: waiterNames.map(name => {
+      const cleanName = name.replace(/\(официант\)/i, '').trim();
+      const rowCells = days.map(d => {
+        const shifts = cellShifts.get(`${name}|${d}`);
+        if (!shifts || shifts.length === 0) return tr(lang, 'вых', 'off', 'dam');
+        return shifts.map(s => `${s.start}–${s.end}`).join(', ');
+      });
+      return [cleanName, ...rowCells, `${(totalHours.get(name) ?? 0).toFixed(1)}${tr(lang,'ч','h','s')}`];
+    }),
+    styles: { fontSize: 8, cellPadding: 5 },
+    headStyles: { fillColor: [255, 107, 53] },
+  });
+
+  doc.save(`TRACE-shift-schedule-${generatedAt}.pdf`);
 }
 
 function occColor(o: number) {
@@ -1893,11 +1949,15 @@ export const Operations: React.FC<{
                 </div>
               );
             })()}
-            {!demo && shiftSchedule.schedule && shiftSchedule.schedule.length > 0 && (
+            {shiftSchedule.schedule && shiftSchedule.schedule.length > 0 && (
               <div className="flex gap-2 mt-4 pt-3 border-t border-border">
                 <button
                   disabled={shiftPdfLoading}
                   onClick={() => {
+                    if (demo) {
+                      downloadShiftSchedulePdfClientSide(shiftSchedule.schedule!, shiftSchedule.summary, lang);
+                      return;
+                    }
                     setShiftPdfLoading(true);
                     traceApi.ai.shiftScheduleExportPdf(shiftSchedule.schedule!, shiftSchedule.summary, lang)
                       .then(blob => {
@@ -1925,8 +1985,16 @@ export const Operations: React.FC<{
                 </button>
                 <button
                   disabled={shiftTgLoading}
-                  title={telegramConnected ? undefined : tr(lang, 'Подключите Telegram в Настройках', 'Connect Telegram in Settings', 'Sozlamalarda Telegram ulang')}
+                  title={!demo && !telegramConnected ? tr(lang, 'Подключите Telegram в Настройках', 'Connect Telegram in Settings', 'Sozlamalarda Telegram ulang') : undefined}
                   onClick={() => {
+                    if (demo) {
+                      setShiftTgLoading(true);
+                      setTimeout(() => {
+                        setShiftTgLoading(false);
+                        onShowToast?.(tr(lang, 'Демо: сообщение "отправлено" в Telegram', 'Demo: message "sent" to Telegram', 'Demo: Telegramga "yuborildi"'), 'success');
+                      }, 700);
+                      return;
+                    }
                     if (!telegramConnected) {
                       onShowToast?.(tr(lang, 'Сначала подключите Telegram в Настройках → Отчёты', 'Connect Telegram first in Settings → Reports', "Avval Sozlamalar → Hisobotlar'da Telegram ulang"), 'info');
                       return;

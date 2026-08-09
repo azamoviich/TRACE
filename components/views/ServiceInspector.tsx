@@ -860,13 +860,13 @@ export const ServiceInspector: React.FC<{
             {monthLoading ? (
               <div className="flex justify-center py-8"><Loader2 size={16} className="animate-spin text-muted" /></div>
             ) : (
-              <>
-                <div className="grid grid-cols-7 gap-1 mb-1">
+              <div className="max-w-[300px] mx-auto">
+                <div className="grid grid-cols-7 gap-0.5 mb-0.5">
                   {WEEKDAY_LABELS[lang].map(d => (
-                    <div key={d} className="text-center text-[9px] font-semibold text-muted uppercase py-1">{d}</div>
+                    <div key={d} className="text-center text-[8px] font-semibold text-muted/70 uppercase py-1 tracking-wide">{d}</div>
                   ))}
                 </div>
-                <div className="grid grid-cols-7 gap-1">
+                <div className="grid grid-cols-7 gap-0.5">
                   {calendarCells.map((date, i) => {
                     if (!date) return <div key={`e${i}`} />;
                     const entry = monthByDate.get(date);
@@ -877,30 +877,30 @@ export const ServiceInspector: React.FC<{
                     const dayNum = Number(date.slice(-2));
                     const isFuture = date > new Date().toISOString().slice(0, 10);
                     const colorClass =
-                      pct === null ? 'bg-background text-muted/50 border-border' :
-                      pct === 100 ? 'bg-success/15 text-success border-success/25' :
-                      pct >= 50 ? 'bg-amber-500/15 text-amber-600 border-amber-500/25' :
-                      'bg-danger/10 text-danger border-danger/20';
+                      pct === null ? 'bg-transparent text-muted/40 border-transparent' :
+                      pct === 100 ? 'bg-success/15 text-success border-success/20' :
+                      pct >= 50 ? 'bg-amber-500/15 text-amber-600 border-amber-500/20' :
+                      'bg-danger/10 text-danger border-danger/15';
                     return (
                       <button
                         key={date}
                         onClick={() => calendarDept && total > 0 && openDayDetail(calendarDept, date)}
                         disabled={total === 0 || isFuture}
-                        className={`relative aspect-square rounded-lg border text-[11px] font-semibold flex items-center justify-center transition-transform ${colorClass} ${total > 0 && !isFuture ? 'hover:scale-105 cursor-pointer' : 'cursor-default'}`}
+                        className={`relative aspect-square rounded-md border text-[10px] font-medium flex items-center justify-center transition-colors ${colorClass} ${total > 0 && !isFuture ? 'hover:brightness-110 cursor-pointer' : 'cursor-default'}`}
                       >
                         {dayNum}
-                        {submitted && <span className="absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full bg-success" />}
+                        {submitted && <span className="absolute top-0.5 right-0.5 w-1 h-1 rounded-full bg-success" />}
                       </button>
                     );
                   })}
                 </div>
-                <div className="flex items-center gap-4 mt-4 text-[10px] text-muted">
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-success/15 border border-success/25" /> 100%</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-500/15 border border-amber-500/25" /> 50-99%</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-danger/10 border border-danger/20" /> &lt;50%</span>
-                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-success" /> {tr(lang, 'отправлено', 'submitted', 'yuborildi')}</span>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-3 text-[9px] text-muted">
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-success/15 border border-success/20" /> 100%</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-amber-500/15 border border-amber-500/20" /> 50-99%</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-danger/10 border border-danger/15" /> &lt;50%</span>
+                  <span className="flex items-center gap-1"><span className="w-1 h-1 rounded-full bg-success" /> {tr(lang, 'отправлено', 'submitted', 'yuborildi')}</span>
                 </div>
-              </>
+              </div>
             )}
           </Card>
 

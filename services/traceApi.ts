@@ -607,6 +607,48 @@ function demoTableTurns(): TableTurnRow[] {
   ];
 }
 
+function demoHalls(): HallPlan[] {
+  // Table numbers line up with demoTableTurns/demoRevenueRows so the
+  // occupancy + revenue heatmap reads as one consistent fictional venue.
+  const mainHallTables = [
+    { n: 1, x: 40,  y: 40  }, { n: 2, x: 160, y: 40  }, { n: 3, x: 280, y: 40  },
+    { n: 4, x: 40,  y: 160 }, { n: 5, x: 160, y: 160 }, { n: 6, x: 280, y: 160 },
+    { n: 7, x: 40,  y: 280 }, { n: 8, x: 160, y: 280 },
+  ];
+  const terraceTables = [
+    { n: 9,  x: 60,  y: 60  }, { n: 10, x: 190, y: 60  },
+    { n: 11, x: 60,  y: 190 }, { n: 12, x: 190, y: 190 },
+  ];
+  const toElements = (tables: { n: number; x: number; y: number }[]): HallElement[] => [
+    { id: 'wall-outline', type: 'wall', x: 10, y: 10, w: 360, h: 360, label: '', seats: 0 },
+    ...tables.map(t => ({
+      id: `table-${t.n}`,
+      type: 'rect_table' as HallElementType,
+      x: t.x, y: t.y, w: 90, h: 70,
+      label: `Стол ${t.n}`,
+      seats: 4,
+      iiko_table_number: t.n,
+    })),
+  ];
+  return [
+    { id: 'demo-hall-1', tenant_id: 'demo', name: 'Зал', display_order: 0, elements: toElements(mainHallTables) },
+    { id: 'demo-hall-2', tenant_id: 'demo', name: 'Терраса', display_order: 1, elements: toElements(terraceTables) },
+  ];
+}
+
+function demoTableRevenue(): { table: number; revenue: number; orders: number }[] {
+  return [
+    { table: 4,  revenue: 1_240_000, orders: 18 },
+    { table: 9,  revenue: 980_000,  orders: 14 },
+    { table: 2,  revenue: 860_000,  orders: 12 },
+    { table: 6,  revenue: 640_000,  orders: 9  },
+    { table: 12, revenue: 520_000,  orders: 8  },
+    { table: 1,  revenue: 410_000,  orders: 7  },
+    { table: 8,  revenue: 305_000,  orders: 5  },
+    { table: 11, revenue: 190_000,  orders: 3  },
+  ];
+}
+
 function demoStaffProfitability(range: 'today' | '7days' | '30days'): StaffProfitabilityResult {
   const daysInPeriod = range === 'today' ? 1 : range === '7days' ? 7 : 30;
   const staff: { name: string; revenue: number; orders: number; avgCheck: number; salaryCost: number | null; salaryType: 'attendance' | 'fixed' | null }[] = [
@@ -713,7 +755,7 @@ function demoCashShift(): CashShift {
 }
 
 function demoKpis(): OpsKpis {
-  return { avgServiceMin: 16, wasteSum: 184000, staffActive: 9 };
+  return { avgServiceMin: 16, avgKitchenMin: 11, wasteSum: 184000, staffActive: 9 };
 }
 
 function demoStaffOpsRows(): StaffRow[] {
@@ -1267,6 +1309,7 @@ export const traceApi = {
   },
   halls: {
     list: async (branchIdOverride?: string): Promise<HallPlan[]> => {
+      if (isDemoTenant()) return demoHalls();
       const r = await apiFetch(`/halls`, {}, branchIdOverride);
       if (!r.ok) throw new Error(`${r.status}`);
       return r.json();
@@ -1353,7 +1396,7 @@ export const traceApi = {
   },
   operations: {
     tableRevenue: (days = 30, range?: { from: string; to: string }, branchIdOverride?: string): Promise<{ table: number; revenue: number; orders: number }[]> => {
-      if (isDemoTenant()) return Promise.resolve([]);
+      if (isDemoTenant()) return Promise.resolve(demoTableRevenue());
       const qs = range ? `from=${range.from}&to=${range.to}` : `days=${days}`;
       return apiFetch(`/operations/table-revenue?${qs}`, {}, branchIdOverride).then(r => r.json()).then(d => Array.isArray(d) ? d : []);
     },

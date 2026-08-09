@@ -147,13 +147,69 @@ function demoInsight(lang: Language): { text: string | null; fromAI: boolean } {
   };
 }
 
-function demoChat(lang: Language): { text: string; fromAI: boolean } {
+// Demo tenant's /ai/chat is used from three very different call sites
+// (per-dish BCG recommendations, whole-menu analysis, and the free-form
+// AskAI panel). A single canned disclaimer read as broken/lazy on the
+// first two — they already build a fully-specified context string, so we
+// can parse it and hand back a genuinely dish/menu-specific answer. Only
+// the true free-form chat falls back to the "demo mode" disclaimer.
+function demoChat(context: string, lang: Language): { text: string; fromAI: boolean } {
   const ru = lang === 'ru';
+
+  const dishMatch = context.match(ru ? /Блюдо: "([^"]+)"/ : /Dish: "([^"]+)"/);
+  const quadrantMatch = context.match(ru ? /Позиция на BCG-матрице: (\S+)/ : /Matrix position: (\S+)/);
+  if (dishMatch && quadrantMatch) {
+    const dish = dishMatch[1];
+    const quadrant = quadrantMatch[1].replace(/[.,]$/, '');
+    const byQuadrant: Record<string, [string, string]> = {
+      'Звезда':          [`«${dish}» — звезда меню: высокие продажи и высокая маржа.`, '1) Держите цену — здесь есть запас на +5-10%. 2) Выносите в топ меню и на фото первым. 3) Следите за стоп-листом — потеря звезды бьёт по выручке сильнее всего. 4) Тестируйте комбо с менее популярными позициями той же категории.'],
+      Star:              [`"${dish}" is a menu star — high sales and high margin.`, '1) Hold the price — there\'s room for +5-10%. 2) Feature it first in the menu and photos. 3) Watch the stop-list closely — losing a star hurts revenue the most. 4) Test combos pairing it with slower movers in the same category.'],
+      'Рабочая лошадка': [`«${dish}» — рабочая лошадка: продаётся часто, но маржа ниже средней.`, '1) Пересмотрите себестоимость — ищите более дешёвого поставщика или порцию. 2) Аккуратно поднимите цену на 3-5%, спрос вряд ли просядет. 3) Не убирайте — это стабильный поток гостей. 4) Проверьте, не тянет ли соседняя категория маржу выше.'],
+      'Cash cow':        [`"${dish}" is a cash cow — sells often, but margin is below average.`, '1) Review cost price — look for a cheaper supplier or portion size. 2) Nudge the price up 3-5%, demand likely won\'t drop. 3) Don\'t cut it — it\'s a stable traffic driver. 4) Check if a neighboring category could absorb a higher margin instead.'],
+      'Вопрос':          [`«${dish}» — «вопрос»: маржинально, но продаётся редко.`, '1) Проверьте позицию в меню — возможно, гости её просто не видят. 2) Добавьте фото и короткое описание. 3) Предложите официантам рекомендовать её лично. 4) Дайте 4-6 недель — если продажи не растут, замените.'],
+      Question:          [`"${dish}" is a question mark — profitable, but rarely ordered.`, '1) Check its menu placement — guests may simply not be seeing it. 2) Add a photo and a short description. 3) Have waitstaff recommend it directly. 4) Give it 4-6 weeks — replace it if sales don\'t pick up.'],
+      'Аутсайдер':       [`«${dish}» — аутсайдер: низкие продажи и низкая маржа.`, '1) Кандидат на исключение из меню в следующем цикле. 2) Перед этим попробуйте разовую акцию, чтобы понять, дело в цене или в самом блюде. 3) Проверьте себестоимость — иногда аутсайдер убыточен из-за одного дорогого ингредиента. 4) Освободившееся место в меню отдайте растущей позиции той же категории.'],
+      Dog:               [`"${dish}" is a dog — low sales and low margin.`, '1) A candidate to drop from the menu next cycle. 2) Before that, try a one-time promo to see if it\'s the price or the dish itself. 3) Check cost price — sometimes a dog is unprofitable because of one expensive ingredient. 4) Give the freed-up menu slot to a rising item in the same category.'],
+    };
+    const [lead, rest] = byQuadrant[quadrant] ?? (ru
+      ? [`«${dish}»: данные по позиции ниже.`, 'В демо-режиме доступна только эта карточка блюда — на реальном тенанте здесь будет развёрнутая рекомендация на основе истории продаж.']
+      : [`"${dish}": here's what the data shows.`, 'Demo mode only covers this dish card — on a live tenant this would be a full recommendation built from real sales history.']);
+    return { fromAI: true, text: `${lead} ${rest}` };
+  }
+
+  const isMenuAnalysis = ru ? context.includes('аналитик меню') : context.includes('menu analyst');
+  if (isMenuAnalysis) {
+    const catMatch = context.match(ru ? /Выручка по категориям:\n\s*([^:]+):\s*([\d\s]+) UZS/ : /Revenue by category:\n\s*([^:]+):\s*([\d\s]+) UZS/);
+    const topCat = catMatch?.[1]?.trim();
+    const topCatLine = topCat
+      ? (ru ? `Категория «${topCat}» приносит больше всего выручки — держите в ней достаточный ассортимент и не допускайте стоп-листа.`
+             : `The "${topCat}" category brings in the most revenue — keep enough range in it and avoid stop-list gaps there.`)
+      : '';
+    return {
+      fromAI: true,
+      text: ru
+        ? [
+            topCatLine,
+            'Позиции с классом C по количеству и марже — кандидаты на исключение или пересмотр цены.',
+            'Проверьте позиции с высокой выручкой, но низкой маржой (класс A по выручке, C по марже) — это самое дорогое место в меню, где вы недозарабатываете.',
+            'Для позиций с низкой скоростью продаж (<0.5/день) — попробуйте переместить их выше в меню или добавить фото перед тем, как убирать.',
+            'Сравните маржу похожих позиций внутри одной категории — большой разброс обычно означает, что цена не пересматривалась давно.',
+          ].filter(Boolean).join(' ')
+        : [
+            topCatLine,
+            'Items graded C on both quantity and margin are candidates for removal or a price review.',
+            'Watch for items with high revenue but low margin (A on revenue, C on margin) — that\'s the most expensive real estate in your menu, underperforming on profit.',
+            'For low-velocity items (<0.5/day), try repositioning them in the menu or adding a photo before cutting them.',
+            'Compare margins of similar items within the same category — a wide spread usually means pricing hasn\'t been revisited in a while.',
+          ].filter(Boolean).join(' '),
+    };
+  }
+
   return {
     fromAI: true,
     text: ru
-      ? 'Это демо-режим — ответы фиксированные, для примера. На реальном тенанте я анализирую ваши продажи, персонал и меню в реальном времени и отвечаю на вопросы по вашим данным.'
-      : 'This is demo mode — replies are fixed examples. On a live tenant I analyze your sales, staff, and menu in real time and answer questions about your own data.',
+      ? 'Это демо-режим — свободный чат отвечает фиксированными примерами. На реальном тенанте я анализирую ваши продажи, персонал и меню в реальном времени и отвечаю на вопросы по вашим данным.'
+      : 'This is demo mode — free-form chat replies are fixed examples. On a live tenant I analyze your sales, staff, and menu in real time and answer questions about your own data.',
   };
 }
 
@@ -596,6 +652,81 @@ function demoAbc(): AbcRow[] {
       abcProfit: marginPct >= 65 ? 'A' : marginPct >= 60 ? 'B' : 'C',
     };
   });
+}
+
+// Deterministic per-string PRNG — same dish always renders the same demo
+// history/daypart shape instead of reshuffling on every fetch.
+function seededRandom(seed: string): () => number {
+  let h = 1779033703 ^ seed.length;
+  for (let i = 0; i < seed.length; i++) {
+    h = Math.imul(h ^ seed.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  return () => {
+    h = Math.imul(h ^ (h >>> 16), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  };
+}
+
+function demoAbcHistory(dishName: string, lang: Language): AbcHistoryItem[] {
+  const ru = lang === 'ru';
+  const current = demoAbc().find(d => d.name === dishName);
+  const grades: AbcGrade[] = ['A', 'B', 'C'];
+  const rand = seededRandom(dishName);
+  const drift = (grade: AbcGrade): AbcGrade => {
+    if (rand() > 0.7) {
+      const i = grades.indexOf(grade);
+      return grades[Math.max(0, Math.min(2, i + (rand() > 0.5 ? 1 : -1)))];
+    }
+    return grade;
+  };
+  const base = {
+    abcRevenue: current?.abcRevenue ?? 'B' as AbcGrade,
+    abcQty: current?.abcQty ?? 'B' as AbcGrade,
+    abcProfit: current?.abcProfit ?? 'B' as AbcGrade,
+  };
+  const out: AbcHistoryItem[] = [];
+  for (let i = 2; i >= 0; i--) {
+    const d = new Date();
+    d.setMonth(d.getMonth() - i);
+    const label = d.toLocaleDateString(ru ? 'ru-RU' : lang === 'uz' ? 'uz-UZ' : 'en-US', { month: 'long', year: 'numeric' });
+    out.push({
+      month: d.toISOString().slice(0, 7),
+      label,
+      found: true,
+      abcRevenue: i === 0 ? base.abcRevenue : drift(base.abcRevenue),
+      abcQty: i === 0 ? base.abcQty : drift(base.abcQty),
+      abcProfit: i === 0 ? base.abcProfit : drift(base.abcProfit),
+    });
+  }
+  return out;
+}
+
+function demoAbcDaypart(dishName: string, lang: Language): DaypartData {
+  const dowLabels = lang === 'ru' ? ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+    : lang === 'uz' ? ['Dush', 'Sesh', 'Chor', 'Pay', 'Jum', 'Shan', 'Yak']
+    : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const rand = seededRandom(dishName + ':dow');
+  // Weekend-leaning curve — reads more like a real restaurant than flat noise.
+  const dowWeights = [0.7, 0.65, 0.75, 0.85, 1.1, 1.3, 1.2];
+  const byDow = dowLabels.map((label, dow) => ({
+    dow,
+    label,
+    qty: Math.max(1, Math.round((8 + rand() * 6) * dowWeights[dow])),
+  }));
+
+  const randH = seededRandom(dishName + ':hour');
+  const hours = [11, 12, 13, 14, 18, 19, 20, 21, 22];
+  const hourWeights = [0.4, 0.7, 0.6, 0.3, 0.6, 1.0, 1.3, 1.1, 0.7];
+  const byHour = hours.map((hour, i) => ({
+    hour,
+    label: `${hour}:00`,
+    qty: Math.max(1, Math.round((3 + randH() * 4) * hourWeights[i])),
+  }));
+
+  return { byDow, byHour };
 }
 
 function demoTableTurns(): TableTurnRow[] {
@@ -1239,10 +1370,10 @@ export const traceApi = {
       const q = customFrom && customTo ? `from=${customFrom}&to=${customTo}` : `range=${range}`;
       return apiFetch(`/sales/abc?${q}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []);
     },
-    abcHistory: (dishName: string): Promise<AbcHistoryItem[]> =>
-      isDemoTenant() ? Promise.resolve([]) : apiFetch(`/sales/abc/history?dishName=${encodeURIComponent(dishName)}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
-    abcDaypart: (dishName: string, range = '30days'): Promise<DaypartData> =>
-      isDemoTenant() ? Promise.resolve({ byDow: [], byHour: [] }) : apiFetch(`/sales/abc/daypart?dishName=${encodeURIComponent(dishName)}&range=${range}`).then(r => r.json()).then(d => (d && !d.error) ? d : { byDow: [], byHour: [] }),
+    abcHistory: (dishName: string, lang: Language = 'ru'): Promise<AbcHistoryItem[]> =>
+      isDemoTenant() ? Promise.resolve(demoAbcHistory(dishName, lang)) : apiFetch(`/sales/abc/history?dishName=${encodeURIComponent(dishName)}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+    abcDaypart: (dishName: string, range = '30days', lang: Language = 'ru'): Promise<DaypartData> =>
+      isDemoTenant() ? Promise.resolve(demoAbcDaypart(dishName, lang)) : apiFetch(`/sales/abc/daypart?dishName=${encodeURIComponent(dishName)}&range=${range}`).then(r => r.json()).then(d => (d && !d.error) ? d : { byDow: [], byHour: [] }),
   },
   ai: {
     briefing: (lang: Language, force = false): Promise<AIDailyBriefing> =>
@@ -1256,7 +1387,7 @@ export const traceApi = {
     }, lang: Language): Promise<{ text: string | null; fromAI: boolean }> =>
       isDemoTenant() ? Promise.resolve(demoInsight(lang)) : post(`/ai/insight`, { metrics, lang }),
     chat: (context: string, messages: { role: 'user' | 'ai'; text: string }[], lang: Language): Promise<{ text: string; fromAI: boolean }> =>
-      isDemoTenant() ? Promise.resolve(demoChat(lang)) : post(`/ai/chat`, { context, messages, lang }),
+      isDemoTenant() ? Promise.resolve(demoChat(context, lang)) : post(`/ai/chat`, { context, messages, lang }),
     profitForecast: (payload: {
       monthly: { month: string; label: string; revenue: number }[];
       foodCostPct: number | null;

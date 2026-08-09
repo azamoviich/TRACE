@@ -56,7 +56,7 @@ const DishDetailModal: React.FC<{
   // Fetch history on mount
   useEffect(() => {
     setHistoryLoading(true);
-    traceApi.sales.abcHistory(item.name)
+    traceApi.sales.abcHistory(item.name, lang)
       .then(d => setHistory(Array.isArray(d) ? d : []))
       .catch(() => setHistory([]))
       .finally(() => setHistoryLoading(false));
@@ -67,7 +67,7 @@ const DishDetailModal: React.FC<{
     if (tab !== 'daypart' || daypart !== null) return;
     setDaypartLoading(true);
     const range = (timeRange === 'today' || timeRange === 'custom') ? '30days' : timeRange as any;
-    traceApi.sales.abcDaypart(item.name, range)
+    traceApi.sales.abcDaypart(item.name, range, lang)
       .then(d => setDaypart(d))
       .catch(() => setDaypart({ byDow: [], byHour: [] }))
       .finally(() => setDaypartLoading(false));

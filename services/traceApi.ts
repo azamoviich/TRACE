@@ -619,17 +619,15 @@ function demoHalls(): HallPlan[] {
     { n: 9,  x: 60,  y: 60  }, { n: 10, x: 190, y: 60  },
     { n: 11, x: 60,  y: 190 }, { n: 12, x: 190, y: 190 },
   ];
-  const toElements = (tables: { n: number; x: number; y: number }[]): HallElement[] => [
-    { id: 'wall-outline', type: 'wall', x: 10, y: 10, w: 360, h: 360, label: '', seats: 0 },
-    ...tables.map(t => ({
+  const toElements = (tables: { n: number; x: number; y: number }[]): HallElement[] =>
+    tables.map(t => ({
       id: `table-${t.n}`,
       type: 'rect_table' as HallElementType,
       x: t.x, y: t.y, w: 90, h: 70,
       label: `Стол ${t.n}`,
       seats: 4,
       iiko_table_number: t.n,
-    })),
-  ];
+    }));
   return [
     { id: 'demo-hall-1', tenant_id: 'demo', name: 'Зал', display_order: 0, elements: toElements(mainHallTables) },
     { id: 'demo-hall-2', tenant_id: 'demo', name: 'Терраса', display_order: 1, elements: toElements(terraceTables) },

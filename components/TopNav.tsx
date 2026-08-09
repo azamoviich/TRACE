@@ -54,9 +54,8 @@ export const TopNav: React.FC<TopNavProps> = ({
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const showBranches = branches.length > 1;
-  // ServiceInspector is a demo-only showcase feature for now — not yet
-  // released to real tenants.
-  const baseNav = isDemoTenant() ? NAV : NAV.filter(n => n.id !== 'service_inspector');
+  // ServiceInspector isn't part of the sales demo — real tenants only.
+  const baseNav = isDemoTenant() ? NAV.filter(n => n.id !== 'service_inspector') : NAV;
   const navItems = showBranches ? [...baseNav, COMPARE_NAV] : baseNav;
 
   // Mobile bottom tab bar: primary 4 sections always visible + "More" sheet for the rest

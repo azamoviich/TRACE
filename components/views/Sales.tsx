@@ -601,7 +601,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
         <td class="num">${item.share}%</td>
         <td class="num">${item.qty}</td>
         <td class="num">${item.avgPrice.toLocaleString('ru-RU')}</td>
-        <td class="num">${item.cost > 0 ? item.cost.toLocaleString('ru-RU') : '—'}</td>
+        <td class="num">${(item.cost ?? 0) > 0 ? (item.cost ?? 0).toLocaleString('ru-RU') : '—'}</td>
         <td class="num">${item.costPerUnit != null ? item.costPerUnit.toLocaleString('ru-RU') : '—'}</td>
         <td class="num">${item.velocity}</td>
         <td class="center">${item.abcQty}</td>
@@ -933,7 +933,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
                     </td>
                     <td className="py-2.5 pr-4 text-[12px] text-text metric-number">{item.qty}</td>
                     {visibleCols.avgPrice && <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{item.avgPrice.toLocaleString('ru-RU')}</td>}
-                    {visibleCols.cost && <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{item.cost > 0 ? item.cost.toLocaleString('ru-RU') : '—'}</td>}
+                    {visibleCols.cost && <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{(item.cost ?? 0) > 0 ? (item.cost ?? 0).toLocaleString('ru-RU') : '—'}</td>}
                     {visibleCols.costPerUnit && <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{item.costPerUnit != null ? item.costPerUnit.toLocaleString('ru-RU') : '—'}</td>}
                     {visibleCols.marginPct && <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{item.marginPct != null ? item.marginPct + '%' : '—'}</td>}
                     {visibleCols.velocity && <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{item.velocity}</td>}

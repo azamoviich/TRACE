@@ -1338,7 +1338,7 @@ export const Operations: React.FC<{
       }
     }, []),
   });
-  const pluginConnected = demo || rtConnected;
+  const pluginConnected = !isPoster && (demo || rtConnected);
 
   // Same source Dashboard's occupancy stat uses — the hall heatmap and the
   // "Загрузка зала" % always agree instead of drifting apart from separate

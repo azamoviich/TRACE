@@ -655,7 +655,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ lang, onShowToast, branch,
       }
     }, []),
   });
-  const pluginConnected = demo || wsConnected;
+  // Poster has no TRACEPLUGIN equivalent (see docs/poster-unsupported-features.md)
+  // — AND'd in here so every widget gated on pluginConnected hides correctly
+  // instead of reading "connected" off a websocket that's just to TRACE's own
+  // backend, open regardless of POS type, with zero real events ever incoming.
+  const pluginConnected = !integrationStatus.poster && (demo || wsConnected);
 
   // Compute real totals from iiko rows filtered to selected range
   const todayStr = tashkentDateStr();

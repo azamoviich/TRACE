@@ -9,8 +9,36 @@ import {
 import {
   traceApi, staffApi, ChecklistDepartment, ChecklistResultRow, ChecklistViolation, ChecklistStreak, ChecklistLeaderboardRow,
   ChecklistDayDetail, ChecklistDuePeriod, ChecklistShift, ChecklistPendingSubmission, ChecklistMonthDay, ChecklistQuestionType,
-  getStaffToken, StaffAccount,
+  getStaffToken, StaffAccount, StaffPermissions,
 } from '../../services/traceApi';
+
+// Fully custom permission flags — no fixed role templates. Whoever creates
+// or edits an account ticks these individually, matching the "list of
+// permissions per person" hierarchy the owner asked for (Super Admin →
+// Branch Manager → Dept Manager → ... → Employee, plus separate Chef/
+// Finance/HR verticals — all built from the same flag set + reports-to
+// tree rather than hardcoded role names).
+const PERMISSION_KEYS: (keyof StaffPermissions)[] = [
+  'manage_departments', 'manage_checklists', 'manage_employees', 'manage_staff',
+  'create_staff', 'delete_staff', 'assign_managers', 'view_all_branches',
+  'view_finance', 'approve_violations', 'view_team_only',
+];
+
+function permissionLabel(key: keyof StaffPermissions, lang: Language): string {
+  switch (key) {
+    case 'manage_departments': return tr(lang, 'Управлять подразделениями', 'Manage departments', "Bo'limlarni boshqarish");
+    case 'manage_checklists': return tr(lang, 'Управлять чек-листами', 'Manage checklists', 'Chek-listlarni boshqarish');
+    case 'manage_employees': return tr(lang, 'Управлять сотрудниками', 'Manage employees', 'Xodimlarni boshqarish');
+    case 'manage_staff': return tr(lang, 'Редактировать права своей команды', "Edit own team's permissions", "O'z jamoasi huquqlarini tahrirlash");
+    case 'create_staff': return tr(lang, 'Создавать менеджеров', 'Create managers', 'Menejer yaratish');
+    case 'delete_staff': return tr(lang, 'Удалять менеджеров', 'Delete managers', "Menejerni o'chirish");
+    case 'assign_managers': return tr(lang, 'Переназначать подчинение', 'Reassign reporting lines', "Bo'ysunishni qayta belgilash");
+    case 'view_all_branches': return tr(lang, 'Видеть все филиалы', 'View all branches', "Barcha filiallarni ko'rish");
+    case 'view_finance': return tr(lang, 'Видеть финансы', 'View finance', 'Moliyani ko\'rish');
+    case 'approve_violations': return tr(lang, 'Подтверждать/отклонять нарушения', 'Approve/dismiss violations', "Buzilishlarni tasdiqlash/rad etish");
+    case 'view_team_only': return tr(lang, 'Только своя команда', 'Own team only', "Faqat o'z jamoasi");
+  }
+}
 
 const QUESTION_TYPES: ChecklistQuestionType[] = ['boolean', 'text', 'single_choice', 'multi_choice', 'rating'];
 function questionTypeLabel(t: ChecklistQuestionType, lang: Language): string {
@@ -69,7 +97,10 @@ export const ServiceInspector: React.FC<{
   const [newStaffDisplayName, setNewStaffDisplayName] = useState('');
   const [newStaffRoleName, setNewStaffRoleName] = useState('');
   const [newStaffDepts, setNewStaffDepts] = useState<Set<string>>(new Set());
+  const [newStaffParentId, setNewStaffParentId] = useState('');
+  const [newStaffPermissions, setNewStaffPermissions] = useState<Set<string>>(new Set());
   const [creatingStaff, setCreatingStaff] = useState(false);
+  const [newEmpManager, setNewEmpManager] = useState<Record<string, string>>({});
 
   const [departments, setDepartments] = useState<ChecklistDepartment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -159,10 +190,9 @@ export const ServiceInspector: React.FC<{
   useEffect(() => { loadViolations(); }, [loadViolations]);
 
   const loadStaffAccounts = useCallback(() => {
-    if (isStaff) return;
     setStaffLoading(true);
     staffApi.list().then(setStaffAccounts).catch(() => {}).finally(() => setStaffLoading(false));
-  }, [isStaff]);
+  }, []);
 
   useEffect(() => { loadStaffAccounts(); }, [loadStaffAccounts]);
 
@@ -170,14 +200,19 @@ export const ServiceInspector: React.FC<{
     if (!newStaffUsername.trim() || newStaffPassword.length < 6 || !newStaffDisplayName.trim() || !newStaffRoleName.trim()) return;
     setCreatingStaff(true);
     try {
+      const permissions: StaffPermissions = {};
+      for (const key of newStaffPermissions) (permissions as any)[key] = true;
       await staffApi.create({
         username: newStaffUsername.trim(),
         password: newStaffPassword,
         display_name: newStaffDisplayName.trim(),
         role_name: newStaffRoleName.trim(),
         department_ids: Array.from(newStaffDepts),
+        parent_staff_id: newStaffParentId || null,
+        permissions,
       });
-      setNewStaffUsername(''); setNewStaffPassword(''); setNewStaffDisplayName(''); setNewStaffRoleName(''); setNewStaffDepts(new Set());
+      setNewStaffUsername(''); setNewStaffPassword(''); setNewStaffDisplayName(''); setNewStaffRoleName('');
+      setNewStaffDepts(new Set()); setNewStaffParentId(''); setNewStaffPermissions(new Set());
       loadStaffAccounts();
     } catch (e: any) {
       onShowToast?.(e.message ?? tr(lang, 'Ошибка', 'Error', 'Xatolik'), 'error');
@@ -193,6 +228,16 @@ export const ServiceInspector: React.FC<{
 
   const handleDeleteStaff = (staff: StaffAccount) => withBusy(`staff-del-${staff.id}`, async () => {
     await staffApi.remove(staff.id);
+    loadStaffAccounts();
+  });
+
+  const handleTogglePermission = (staff: StaffAccount, key: keyof StaffPermissions) => withBusy(`staff-perm-${staff.id}-${key}`, async () => {
+    await staffApi.update(staff.id, { permissions: { ...staff.permissions, [key]: !staff.permissions[key] } });
+    loadStaffAccounts();
+  });
+
+  const handleReparentStaff = (staff: StaffAccount, parentId: string) => withBusy(`staff-parent-${staff.id}`, async () => {
+    await staffApi.update(staff.id, { parent_staff_id: parentId || null });
     loadStaffAccounts();
   });
 
@@ -305,9 +350,15 @@ export const ServiceInspector: React.FC<{
       onShowToast?.(tr(lang, 'PIN должен быть 4-6 цифр', 'PIN must be 4-6 digits', 'PIN 4-6 raqamdan iborat bo\'lishi kerak'), 'error');
       return;
     }
-    await traceApi.checklist.addEmployee(dept.id, name, pin || undefined);
+    const reportsTo = newEmpManager[dept.id] || undefined;
+    await traceApi.checklist.addEmployee(dept.id, name, pin || undefined, reportsTo);
     setNewEmpName(p => ({ ...p, [dept.id]: '' }));
     setNewEmpPin(p => ({ ...p, [dept.id]: '' }));
+    refresh();
+  });
+
+  const handleSetEmployeeManager = (empId: string, managerId: string) => withBusy(`emp-manager-${empId}`, async () => {
+    await traceApi.checklist.updateEmployee(empId, { reports_to_staff_id: managerId || null });
     refresh();
   });
 
@@ -353,7 +404,7 @@ export const ServiceInspector: React.FC<{
     { key: 'overview', label: tr(lang, 'Обзор', 'Overview', 'Umumiy'), icon: <LayoutGrid size={13} />, badge: (violationFilter === 'open' ? openViolationsCount : 0) + pendingCount || undefined },
     { key: 'departments', label: tr(lang, 'Отделы', 'Departments', "Bo'limlar"), icon: <Building2 size={13} /> },
     { key: 'results', label: tr(lang, 'Результаты', 'Results', 'Natijalar'), icon: <BarChart3 size={13} /> },
-    ...(isStaff ? [] : [{ key: 'team' as Tab, label: tr(lang, 'Команда', 'Team', 'Jamoa'), icon: <UserPlus size={13} /> }]),
+    { key: 'team' as Tab, label: tr(lang, 'Команда', 'Team', 'Jamoa'), icon: <UserPlus size={13} /> },
   ];
 
   // ── Calendar grid ──────────────────────────────────────────────────────
@@ -741,6 +792,18 @@ export const ServiceInspector: React.FC<{
                                     )}
                                   </div>
                                 </div>
+                                <select
+                                  value={emp.reports_to_staff_id ?? ''}
+                                  onChange={e => handleSetEmployeeManager(emp.id, e.target.value)}
+                                  disabled={busyIds.has(`emp-manager-${emp.id}`)}
+                                  title={tr(lang, 'Подчиняется', 'Reports to', "Bo'ysunadi")}
+                                  className="w-28 bg-card border border-border rounded-lg px-1.5 py-1 text-[10px] text-text focus:outline-none focus:border-primary flex-shrink-0"
+                                >
+                                  <option value="">{tr(lang, 'без менеджера', 'no manager', "menejersiz")}</option>
+                                  {staffAccounts.map(s => (
+                                    <option key={s.id} value={s.id}>{s.display_name}</option>
+                                  ))}
+                                </select>
                                 <input
                                   value={pinDraft[emp.id] ?? ''}
                                   onChange={e => setPinDraft(p => ({ ...p, [emp.id]: e.target.value.replace(/\D/g, '') }))}
@@ -777,12 +840,12 @@ export const ServiceInspector: React.FC<{
                               <p className="text-[11px] text-muted py-1">{tr(lang, 'Сотрудников пока нет — общий доступ по ссылке', 'No employees yet — shared access via link', "Hozircha xodimlar yo'q — havola orqali umumiy kirish")}</p>
                             )}
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <input
                               value={newEmpName[dept.id] ?? ''}
                               onChange={e => setNewEmpName(p => ({ ...p, [dept.id]: e.target.value }))}
                               placeholder={tr(lang, 'Имя', 'Name', 'Ism')}
-                              className="flex-1 bg-background border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-text focus:outline-none focus:border-primary"
+                              className="flex-1 min-w-[100px] bg-background border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-text focus:outline-none focus:border-primary"
                             />
                             <input
                               value={newEmpPin[dept.id] ?? ''}
@@ -790,8 +853,21 @@ export const ServiceInspector: React.FC<{
                               placeholder={tr(lang, 'PIN (необязательно)', 'PIN (optional)', 'PIN (majburiy emas)')}
                               inputMode="numeric"
                               maxLength={6}
-                              className="w-32 bg-background border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-text focus:outline-none focus:border-primary"
+                              className="w-28 bg-background border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-text focus:outline-none focus:border-primary"
                             />
+                            {staffAccounts.length > 0 && (
+                              <select
+                                value={newEmpManager[dept.id] ?? ''}
+                                onChange={e => setNewEmpManager(p => ({ ...p, [dept.id]: e.target.value }))}
+                                title={tr(lang, 'Подчиняется', 'Reports to', "Bo'ysunadi")}
+                                className="w-32 bg-background border border-border rounded-lg px-2 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary"
+                              >
+                                <option value="">{tr(lang, 'без менеджера', 'no manager', 'menejersiz')}</option>
+                                {staffAccounts.map(s => (
+                                  <option key={s.id} value={s.id}>{s.display_name}</option>
+                                ))}
+                              </select>
+                            )}
                             <button
                               onClick={() => handleAddEmployee(dept)}
                               disabled={busyIds.has(`add-emp-${dept.id}`) || !(newEmpName[dept.id] ?? '').trim()}
@@ -968,14 +1044,34 @@ export const ServiceInspector: React.FC<{
         </div>
       )}
 
-      {tab === 'team' && !isStaff && (
+      {tab === 'team' && (() => {
+        // Tree render: root = whoever this account reports to (owner = no
+        // staff row at all). Depth comes from walking parent_staff_id, used
+        // purely for indentation — no fixed role→level mapping, matches
+        // the "custom hierarchy per restaurant" model.
+        const byParent = new Map<string, StaffAccount[]>();
+        for (const s of staffAccounts) {
+          const key = s.parent_staff_id ?? '';
+          if (!byParent.has(key)) byParent.set(key, []);
+          byParent.get(key)!.push(s);
+        }
+        const rows: { staff: StaffAccount; depth: number }[] = [];
+        const walk = (parentKey: string, depth: number) => {
+          for (const s of byParent.get(parentKey) ?? []) {
+            rows.push({ staff: s, depth });
+            walk(s.id, depth + 1);
+          }
+        };
+        walk('', 0);
+
+        return (
         <div className="space-y-4 animate-fade-in">
-          <Card title={tr(lang, 'Новый менеджер', 'New manager', 'Yangi menejer')}>
+          <Card title={tr(lang, 'Новый сотрудник команды', 'New team member', 'Jamoaga yangi a\'zo')}>
             <p className="text-[11px] text-muted mb-3 leading-relaxed">
               {tr(lang,
-                'Создайте аккаунт для менеджера — он сможет управлять чек-листами и сотрудниками только выбранных подразделений.',
-                'Create an account for a manager — they can manage checklists and employees only for the departments you select.',
-                "Menejer uchun hisob yarating — u faqat siz tanlagan bo'limlarning chek-listlari va xodimlarini boshqara oladi.")}
+                'Создайте аккаунт с должностью, подчинением и списком разрешений — управляющий, шеф, финдиректор, кассир и т.д.',
+                'Create an account with a job title, a reporting line, and a permission list — branch manager, chef, finance director, cashier, etc.',
+                "Lavozim, bo'ysunish va ruxsatlar ro'yxati bilan hisob yarating — boshqaruvchi, shef, moliya direktori, kassir va h.k.")}
             </p>
             <div className="grid sm:grid-cols-2 gap-2 mb-2">
               <input
@@ -987,7 +1083,7 @@ export const ServiceInspector: React.FC<{
               <input
                 value={newStaffRoleName}
                 onChange={e => setNewStaffRoleName(e.target.value)}
-                placeholder={tr(lang, 'Роль (например Service Manager)', 'Role (e.g. Service Manager)', 'Rol (masalan Service Manager)')}
+                placeholder={tr(lang, 'Должность (например Су-шеф)', 'Job title (e.g. Sous-chef)', 'Lavozim (masalan Su-shef)')}
                 className="bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary"
               />
               <input
@@ -1006,6 +1102,23 @@ export const ServiceInspector: React.FC<{
                 className="bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary"
               />
             </div>
+
+            <div className="mb-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-muted mb-2">
+                {tr(lang, 'Подчиняется', 'Reports to', "Bo'ysunadi")}
+              </div>
+              <select
+                value={newStaffParentId}
+                onChange={e => setNewStaffParentId(e.target.value)}
+                className="w-full bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary"
+              >
+                <option value="">{tr(lang, 'Владелец (верхний уровень)', 'Owner (top level)', 'Egasi (yuqori daraja)')}</option>
+                {rows.map(({ staff: s, depth }) => (
+                  <option key={s.id} value={s.id}>{'—'.repeat(depth)} {s.display_name} ({s.role_name})</option>
+                ))}
+              </select>
+            </div>
+
             <div className="mb-3">
               <div className="text-[10px] font-semibold uppercase tracking-wide text-muted mb-2">
                 {tr(lang, 'Доступные подразделения', 'Departments this account can manage', "Boshqara oladigan bo'limlar")}
@@ -1031,6 +1144,30 @@ export const ServiceInspector: React.FC<{
                 )}
               </div>
             </div>
+
+            <div className="mb-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-muted mb-2">
+                {tr(lang, 'Разрешения', 'Permissions', 'Ruxsatlar')}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {PERMISSION_KEYS.map(key => {
+                  const checked = newStaffPermissions.has(key);
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setNewStaffPermissions(p => { const n = new Set(p); checked ? n.delete(key) : n.add(key); return n; })}
+                      className={`text-[11px] font-medium px-2.5 py-1.5 rounded-lg border transition-colors ${
+                        checked ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-background border-border text-muted hover:text-text'
+                      }`}
+                    >
+                      {permissionLabel(key, lang)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <button
               onClick={handleCreateStaff}
               disabled={creatingStaff || !newStaffUsername.trim() || newStaffPassword.length < 6 || !newStaffDisplayName.trim() || !newStaffRoleName.trim()}
@@ -1044,14 +1181,15 @@ export const ServiceInspector: React.FC<{
           {staffLoading ? (
             <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-muted" /></div>
           ) : staffAccounts.length === 0 ? (
-            <Card><p className="text-[12px] text-muted text-center py-6">{tr(lang, 'Менеджеров пока нет', 'No managers yet', "Hozircha menejerlar yo'q")}</p></Card>
+            <Card><p className="text-[12px] text-muted text-center py-6">{tr(lang, 'Команда пока пуста', 'Team is empty so far', "Jamoa hozircha bo'sh")}</p></Card>
           ) : (
             <div className="space-y-2">
-              {staffAccounts.map(s => (
-                <Card key={s.id} className={!s.active ? 'opacity-60' : ''}>
+              {rows.map(({ staff: s, depth }) => (
+                <Card key={s.id} className={!s.active ? 'opacity-60' : ''} style={{ marginLeft: depth * 18 }}>
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
+                        {depth > 0 && <span className="text-muted text-[11px]">└</span>}
                         <h3 className="text-[13px] font-semibold text-text truncate">{s.display_name}</h3>
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/15 text-muted uppercase tracking-wide">{s.role_name}</span>
                       </div>
@@ -1076,12 +1214,51 @@ export const ServiceInspector: React.FC<{
                       </button>
                     </div>
                   </div>
+
+                  <div className="mt-2.5 pt-2.5 border-t border-border">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted flex-shrink-0">
+                        {tr(lang, 'Подчиняется', 'Reports to', "Bo'ysunadi")}
+                      </span>
+                      <select
+                        value={s.parent_staff_id ?? ''}
+                        onChange={e => handleReparentStaff(s, e.target.value)}
+                        disabled={busyIds.has(`staff-parent-${s.id}`)}
+                        className="bg-background border border-border rounded-lg px-2 py-1 text-[11px] text-text focus:outline-none focus:border-primary"
+                      >
+                        <option value="">{tr(lang, 'Владелец', 'Owner', 'Egasi')}</option>
+                        {staffAccounts.filter(o => o.id !== s.id).map(o => (
+                          <option key={o.id} value={o.id}>{o.display_name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {PERMISSION_KEYS.map(key => {
+                        const checked = s.permissions?.[key] === true;
+                        const busy = busyIds.has(`staff-perm-${s.id}-${key}`);
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => handleTogglePermission(s, key)}
+                            disabled={busy}
+                            className={`text-[10px] font-medium px-2 py-1 rounded-lg border transition-colors disabled:opacity-50 ${
+                              checked ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-background border-border text-muted hover:text-text'
+                            }`}
+                          >
+                            {permissionLabel(key, lang)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </Card>
               ))}
             </div>
           )}
         </div>
-      )}
+        );
+      })()}
 
       {(dayDetailLoading || dayDetail || dayDetailError) && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-4" onClick={() => { setDayDetail(null); setDayDetailError(null); }}>

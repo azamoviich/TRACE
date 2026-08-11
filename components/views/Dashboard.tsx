@@ -959,8 +959,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ lang, onShowToast, branch,
         </div>
       </div>
 
-      {/* ── LIVE ORDERS FEED ─────────────────────────────────── */}
-      {(wsUrl || demo) && (
+      {/* ── LIVE ORDERS FEED ─────────────────────────────────────
+          Fed entirely by TRACEPLUGIN (installed inside iikoFront on the
+          terminal) pushing realtime order/session/kitchen events — Poster
+          has no equivalent in-process hook, only a webhook system that
+          requires Marketplace app registration and only fires bare
+          change-pings (no live order/table/kitchen state). See
+          docs/poster-unsupported-features.md. Hidden rather than shown
+          "waiting for events" forever, which would never resolve. */}
+      {(wsUrl || demo) && !integrationStatus.poster && (
         <div>
           <div className="flex items-center gap-2.5 mb-4">
             <p className="text-[13px] text-muted font-medium">
@@ -1074,9 +1081,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ lang, onShowToast, branch,
       <AIDailyBriefingCard lang={lang} dataReady={dataLoaded} />
 
       {/* ── BOTTOM 2 CARDS ────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+      <div className={`grid grid-cols-1 gap-5 ${integrationStatus.poster ? '' : 'md:grid-cols-2'}`}>
 
-        {/* Hall */}
+        {/* Hall — table-occupancy count comes from TRACEPLUGIN's live
+            order/table events, same as the feed above. No Poster source:
+            occupancy would need a live table↔order mapping Poster's REST
+            API doesn't expose. See docs/poster-unsupported-features.md. */}
+        {!integrationStatus.poster && (
         <Card>
           <p className="text-[13px] text-muted font-medium mb-5">
             {tr(lang, 'Загрузка зала', 'Hall Occupancy', 'Zal bandligi')}
@@ -1130,6 +1141,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ lang, onShowToast, branch,
             </div>
           )}
         </Card>
+        )}
 
         {/* Integrations */}
         <Card>

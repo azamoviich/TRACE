@@ -1196,10 +1196,17 @@ export const Operations: React.FC<{
   const [stopList, setStopList]         = useState<StopItem[]>([]);
   const [stopLoading, setStopLoading]   = useState(true);
   const [showCardBreakdown, setShowCardBreakdown] = useState(false);
+  // Poster has no TRACEPLUGIN equivalent — see docs/poster-unsupported-features.md.
+  // Every widget below that gates on `pluginConnected` needs this AND'd in too,
+  // otherwise a Poster tenant's websocket (to TRACE's own backend, always up
+  // regardless of POS type) reads as "plugin connected" with zero real events
+  // ever arriving — a permanent "waiting..." state, not an honest empty one.
+  const [isPoster, setIsPoster] = useState(false);
 
   useEffect(() => {
     if (demo) return;
     traceApi.settings.telegramStatus().then(s => setTelegramConnected(!!s.connected)).catch(() => {});
+    traceApi.sales.status().then(s => setIsPoster(!!s.poster)).catch(() => {});
   }, [demo]);
 
   useEffect(() => {

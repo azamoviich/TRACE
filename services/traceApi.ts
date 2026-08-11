@@ -1642,12 +1642,12 @@ export const traceApi = {
       apiFetch(`/checklist/items/${id}`, { method: 'DELETE' }).then(() => undefined),
     results: (range: 'today' | '7days' | '30days'): Promise<ChecklistResultRow[]> =>
       isDemoTenant() ? Promise.resolve([]) : apiFetch(`/checklist/results?range=${range}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
-    addEmployee: (departmentId: string, name: string, pin?: string): Promise<ChecklistEmployee> =>
+    addEmployee: (departmentId: string, name: string, pin?: string, reportsToStaffId?: string | null): Promise<ChecklistEmployee> =>
       apiFetch(`/checklist/departments/${departmentId}/employees`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, pin }),
+        body: JSON.stringify({ name, pin, reports_to_staff_id: reportsToStaffId }),
       }).then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
-    updateEmployee: (id: string, data: { name?: string; pin?: string; active?: boolean }): Promise<ChecklistEmployee> =>
+    updateEmployee: (id: string, data: { name?: string; pin?: string; active?: boolean; reports_to_staff_id?: string | null }): Promise<ChecklistEmployee> =>
       apiFetch(`/checklist/employees/${id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -1700,6 +1700,7 @@ export interface ChecklistEmployee {
   active: boolean;
   sort_order: number;
   has_pin: boolean;
+  reports_to_staff_id?: string | null;
 }
 
 export interface ChecklistDepartment {
@@ -2474,6 +2475,23 @@ export function getTenantPlan(): 'base' | 'pro' {
 
 // ── ServiceInspector staff (delegated manager) accounts ──────────────────────
 
+// Fully custom permission flags — see PERMISSION_KEYS in the backend's
+// staff.ts. No fixed role templates; the owner (or a manager with
+// manage_staff) ticks these individually per account.
+export interface StaffPermissions {
+  manage_departments?: boolean;
+  manage_checklists?: boolean;
+  manage_employees?: boolean;
+  manage_staff?: boolean;
+  create_staff?: boolean;
+  delete_staff?: boolean;
+  assign_managers?: boolean;
+  view_all_branches?: boolean;
+  view_finance?: boolean;
+  approve_violations?: boolean;
+  view_team_only?: boolean;
+}
+
 export interface StaffAccount {
   id: string;
   username: string;
@@ -2482,6 +2500,16 @@ export interface StaffAccount {
   active: boolean;
   created_at: string;
   departments: { id: string; name: string }[];
+  parent_staff_id: string | null;
+  permissions: StaffPermissions;
+}
+
+// Whichever bearer token this browser is currently signed in with —
+// the owner's tenant token, or a delegated manager's staff token (see
+// getStaffToken). Staff-hierarchy endpoints accept either: the owner sees
+// the whole org, a manager sees/edits only their own subtree.
+function staffAuthToken(): string {
+  return getStaffToken() ?? getTenantOwnerToken() ?? '';
 }
 
 export interface StaffLoginResult {
@@ -2512,13 +2540,13 @@ export async function staffLogin(username: string, password: string): Promise<St
 // requireOwnerToken, distinct from a staff account's own token.
 export const staffApi = {
   list: (): Promise<StaffAccount[]> =>
-    authedGet<StaffAccount[]>('/staff', getTenantOwnerToken() ?? ''),
-  create: (data: { username: string; password: string; display_name: string; role_name: string; department_ids: string[] }): Promise<StaffAccount> =>
-    post<StaffAccount>('/staff', data, getTenantOwnerToken() ?? ''),
-  update: (id: string, data: { display_name?: string; role_name?: string; active?: boolean; password?: string; department_ids?: string[] }): Promise<StaffAccount> =>
-    patch<StaffAccount>(`/staff/${id}`, data, getTenantOwnerToken() ?? ''),
+    authedGet<StaffAccount[]>('/staff', staffAuthToken()),
+  create: (data: { username: string; password: string; display_name: string; role_name: string; department_ids: string[]; parent_staff_id?: string | null; permissions?: StaffPermissions }): Promise<StaffAccount> =>
+    post<StaffAccount>('/staff', data, staffAuthToken()),
+  update: (id: string, data: { display_name?: string; role_name?: string; active?: boolean; password?: string; department_ids?: string[]; parent_staff_id?: string | null; permissions?: StaffPermissions }): Promise<StaffAccount> =>
+    patch<StaffAccount>(`/staff/${id}`, data, staffAuthToken()),
   remove: (id: string): Promise<void> =>
-    del(`/staff/${id}`, getTenantOwnerToken() ?? ''),
+    del(`/staff/${id}`, staffAuthToken()),
 };
 
 export function getSubdomain(): string {

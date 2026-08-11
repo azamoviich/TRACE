@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import { Card } from '../ui/Card';
 import { AIInsightCard } from '../ui/AIInsightCard';
 import { ChartTooltip } from '../ui/ChartTooltip';
@@ -7,7 +8,7 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, 
 import { TRANSLATIONS, tr, formatMinutes, formatMinutesShort } from '../../constants';
 import { SalesSkeleton } from '../ui/Skeleton';
 import { Language, TimeRange, ComparisonPeriod } from '../../types';
-import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, Calendar, ChevronDown, ChevronUp, ChevronsUpDown, X, Sparkles, TrendingUp, TrendingDown, Minus, ExternalLink, Users, Printer, Lock, SlidersHorizontal } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, Calendar, ChevronDown, ChevronUp, ChevronsUpDown, X, Sparkles, TrendingUp, TrendingDown, Minus, ExternalLink, Users, Download, FileText, FileSpreadsheet, Lock, SlidersHorizontal } from 'lucide-react';
 import { ComparisonSelector } from '../ui/ComparisonSelector';
 import { useRealtimeData, RealtimeEvent } from '../../hooks/useRealtimeData';
 import { traceApi, getTenantPlan, RevenueRow, HourlyRow, DishRow, CategoryPerfRow, AbcRow, AbcHistoryItem, DaypartData } from '../../services/traceApi';
@@ -479,6 +480,15 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
   }, [colsOpen]);
   const toggleCol = (id: OptCol) => setVisibleCols(v => ({ ...v, [id]: !v[id] }));
 
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  const downloadBtnRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!downloadOpen) return;
+    const onClick = (e: MouseEvent) => { if (downloadBtnRef.current && !downloadBtnRef.current.contains(e.target as Node)) setDownloadOpen(false); };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [downloadOpen]);
+
   // AI analysis of the whole (filtered) menu — separate from the per-dish
   // AI insight in DishDetailModal. Tells the model which category each item
   // is in and that modifiers/service-charge rows are already excluded, so
@@ -630,6 +640,55 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
     setTimeout(() => win.print(), 300);
   };
 
+  const handleExcel = () => {
+    const rangeLabel = range === 'custom' && customRange
+      ? `${customRange.from} – ${customRange.to}`
+      : ABC_TIME_RANGES.find(r => r.key === range)?.[ru ? 'ru' : isUz ? 'uz' : 'en'] ?? range;
+    const generated = new Date().toLocaleString(ru ? 'ru-RU' : isUz ? 'uz-Latn-UZ' : 'en-US');
+
+    const headers = [
+      '#', ru ? 'Блюдо' : isUz ? 'Taom' : 'Item', ru ? 'Категория' : isUz ? 'Kategoriya' : 'Category',
+      ru ? 'Выручка' : isUz ? 'Tushum' : 'Revenue', '%',
+      ru ? 'Кол-во' : isUz ? 'Soni' : 'Qty', ru ? 'Ср. цена' : isUz ? "O'rt. narx" : 'Avg price',
+      ru ? 'Себест.' : isUz ? 'Tannarx' : 'Cost', ru ? 'Себест/шт' : isUz ? 'Tannarx/dona' : 'Cost/unit',
+      ru ? 'В день' : isUz ? 'Kuniga' : '/day',
+      ru ? 'ABC Кол-во' : isUz ? 'ABC Soni' : 'ABC Qty',
+      ru ? 'ABC Выручка' : isUz ? 'ABC Tushum' : 'ABC Revenue',
+      ru ? 'ABC Маржа' : isUz ? 'ABC Marja' : 'ABC Margin',
+    ];
+
+    const rows: (string | number)[][] = [
+      [ru ? 'ABC-анализ меню' : isUz ? 'Menyu ABC tahlili' : 'Menu ABC Analysis'],
+      [`${ru ? 'Период' : isUz ? 'Davr' : 'Period'}: ${rangeLabel} · ${ru ? 'Создано' : isUz ? 'Yaratildi' : 'Generated'}: ${generated}`],
+      [],
+      headers,
+      ...filtered.map((item, i) => [
+        i + 1, item.name, item.cat,
+        item.revenue, item.share,
+        item.qty, item.avgPrice,
+        (item.cost ?? 0) > 0 ? (item.cost ?? 0) : '',
+        item.costPerUnit != null ? item.costPerUnit : '',
+        item.velocity,
+        item.abcQty, item.abcRevenue, item.abcProfit,
+      ]),
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [
+      { wch: 4 }, { wch: 28 }, { wch: 16 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 12 },
+      { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 10 },
+    ];
+    const headerRowIdx = 3;
+    const ref = XLSX.utils.decode_range(ws['!ref'] ?? 'A1');
+    ws['!autofilter'] = { ref: `${XLSX.utils.encode_cell({ r: headerRowIdx, c: ref.s.c })}:${XLSX.utils.encode_cell({ r: headerRowIdx, c: ref.e.c })}` };
+    ws['!freeze'] = { xSplit: 0, ySplit: headerRowIdx + 1 } as any;
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, (ru ? 'ABC-анализ' : isUz ? 'ABC tahlil' : 'ABC Analysis').slice(0, 31));
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `TRACE-abc-analysis-${dateStamp}.xlsx`);
+  };
+
   return (
     <>
       {detailItem && (
@@ -706,11 +765,35 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
                 </div>
               )}
             </div>
-            <button onClick={handlePrint}
-              className="p-1.5 rounded-lg border border-border text-muted hover:text-text hover:bg-card-hover transition-colors"
-              title={ru ? 'Печать / экспорт' : isUz ? 'Chop etish / eksport' : 'Print / export'}>
-              <Printer size={13} />
-            </button>
+            <div ref={downloadBtnRef} className="relative">
+              <button onClick={() => setDownloadOpen(o => !o)}
+                className={`p-1.5 rounded-lg border transition-colors ${downloadOpen ? 'border-primary text-primary' : 'border-border text-muted hover:text-text hover:bg-card-hover'}`}
+                title={ru ? 'Скачать' : isUz ? 'Yuklab olish' : 'Download'}>
+                <Download size={13} />
+              </button>
+              {downloadOpen && (
+                <div className="absolute right-0 z-30 mt-2 w-[190px] bg-card border border-border rounded-xl shadow-xl p-1.5">
+                  <button
+                    onClick={() => { handleExcel(); setDownloadOpen(false); }}
+                    className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-card-hover text-left transition-colors">
+                    <FileSpreadsheet size={14} className="text-success" />
+                    <div>
+                      <p className="text-[11.5px] text-text font-medium leading-tight">Excel</p>
+                      <p className="text-[10px] text-muted leading-tight">.xlsx</p>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => { handlePrint(); setDownloadOpen(false); }}
+                    className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-card-hover text-left transition-colors">
+                    <FileText size={14} className="text-primary" />
+                    <div>
+                      <p className="text-[11.5px] text-text font-medium leading-tight">PDF</p>
+                      <p className="text-[10px] text-muted leading-tight">{ru ? 'печать' : isUz ? 'chop etish' : 'print'}</p>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         }
       >

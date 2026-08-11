@@ -4,11 +4,12 @@ import { Language, ViewState } from '../../types';
 import { TRANSLATIONS, tr } from '../../constants';
 import { Download, Calendar, Share2, BarChart2, Users, Package, CreditCard, TrendingUp, FileText, Loader2, Wallet, BookOpen, Receipt, PieChart, Clock, UserCheck, Award, XCircle, LayoutGrid, Truck, FileSpreadsheet, FileType2 } from 'lucide-react';
 import { traceApi } from '../../services/traceApi';
+import { DateRangePicker } from '../ui/DateRangePicker';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-type ReportRange = 'today' | '7days' | '30days';
+type ReportRange = 'today' | '7days' | '30days' | 'custom';
 type ReportCat2 = 'all' | 'sales' | 'staff' | 'stock' | 'finance';
 type ExportFormat = 'xlsx' | 'pdf';
 
@@ -51,8 +52,10 @@ function buildSheet(
   return ws;
 }
 
-function meta(lang: Language, title: string, range: string): (string | number)[][] {
-  const rangeLabel = range === 'today' ? tr(lang, 'Сегодня', 'Today', 'Bugun')
+function meta(lang: Language, title: string, range: string, customFrom?: string, customTo?: string): (string | number)[][] {
+  const rangeLabel = customFrom
+    ? (customTo && customTo !== customFrom ? `${customFrom} → ${customTo}` : customFrom)
+    : range === 'today' ? tr(lang, 'Сегодня', 'Today', 'Bugun')
     : range === '7days' ? tr(lang, '7 дней', '7 days', '7 kun')
     : tr(lang, '30 дней', '30 days', '30 kun');
   return [
@@ -235,8 +238,15 @@ async function reportStaff(lang: Language): Promise<XLSX.WorkBook> {
   return wb;
 }
 
-async function reportShifts(range: ReportRange, lang: Language): Promise<XLSX.WorkBook> {
-  const data = await traceApi.financial.cashshifts(range);
+// Расхождение threshold: flag a shift as needing a look if its cash
+// discrepancy is either a meaningfully large absolute amount or a large
+// share of that shift's own cash sales — a 50,000 UZS diff on a 200,000
+// cash-sales shift is a much bigger deal than the same diff on 5,000,000.
+const SHIFT_DIFF_ABS_THRESHOLD = 30_000;
+const SHIFT_DIFF_PCT_THRESHOLD = 0.03; // 3% of that shift's cash sales
+
+async function reportShifts(range: ReportRange, lang: Language, customFrom?: string, customTo?: string): Promise<XLSX.WorkBook> {
+  const data = await traceApi.financial.cashshifts(range, customFrom, customTo);
   if (!data.length) throw new Error(tr(lang, 'Нет данных по сменам', 'No shift data', "Smenalar bo'yicha ma'lumot yo'q"));
 
   const totalRev  = data.reduce((s, d) => s + d.payOrders, 0);
@@ -244,38 +254,64 @@ async function reportShifts(range: ReportRange, lang: Language): Promise<XLSX.Wo
   const totalCard = data.reduce((s, d) => s + d.salesCard, 0);
   const totalDiff = data.reduce((s, d) => s + d.cashDiff, 0);
 
-  const header = lang === 'ru'
-    ? ['#', 'Смена №', 'Открыта', 'Закрыта', 'Выручка (UZS)', 'Наличные', 'Карта', 'Доля нал.', 'Расхождение', 'Статус']
-    : lang === 'uz'
-    ? ['#', 'Smena №', 'Ochildi', 'Yopildi', 'Tushum (UZS)', 'Naqd', 'Karta', 'Naqd ulushi', 'Farq', 'Holat']
-    : ['#', 'Shift #', 'Opened', 'Closed', 'Revenue (UZS)', 'Cash', 'Card', 'Cash %', 'Diff', 'Status'];
+  const flagged = data.filter(s => {
+    const absDiff = Math.abs(s.cashDiff);
+    if (absDiff < SHIFT_DIFF_ABS_THRESHOLD) return false;
+    return s.salesCash > 0 ? absDiff / s.salesCash >= SHIFT_DIFF_PCT_THRESHOLD : true;
+  });
 
-  const rows: (string | number)[][] = data.map((s, i) => [
-    i + 1,
-    s.sessionNumber,
-    s.openDate ?? '—',
-    s.closeDate ?? '—',
-    s.payOrders,
-    s.salesCash,
-    s.salesCard,
-    pct(s.salesCash, s.payOrders),
-    s.cashDiff,
-    s.sessionStatus,
-  ]);
+  const header = lang === 'ru'
+    ? ['#', 'Смена №', 'Открыта', 'Закрыта', 'Выручка (UZS)', 'Наличные', 'Карта', 'Доля нал.', 'Расхождение', 'Статус', 'Флаг']
+    : lang === 'uz'
+    ? ['#', 'Smena №', 'Ochildi', 'Yopildi', 'Tushum (UZS)', 'Naqd', 'Karta', 'Naqd ulushi', 'Farq', 'Holat', 'Belgi']
+    : ['#', 'Shift #', 'Opened', 'Closed', 'Revenue (UZS)', 'Cash', 'Card', 'Cash %', 'Diff', 'Status', 'Flag'];
+
+  const flagLabel = tr(lang, '⚠ ПРОВЕРИТЬ', '⚠ REVIEW', '⚠ TEKSHIRISH');
+  const rows: (string | number)[][] = data.map((s, i) => {
+    const absDiff = Math.abs(s.cashDiff);
+    const isFlagged = absDiff >= SHIFT_DIFF_ABS_THRESHOLD && (s.salesCash > 0 ? absDiff / s.salesCash >= SHIFT_DIFF_PCT_THRESHOLD : true);
+    return [
+      i + 1,
+      s.sessionNumber,
+      s.openDate ?? '—',
+      s.closeDate ?? '—',
+      s.payOrders,
+      s.salesCash,
+      s.salesCard,
+      pct(s.salesCash, s.payOrders),
+      s.cashDiff,
+      s.sessionStatus,
+      isFlagged ? flagLabel : '',
+    ];
+  });
 
   const totalLabel = tr(lang, 'ИТОГО', 'TOTAL', 'JAMI');
-  const totals = ['', '', '', totalLabel, totalRev, totalCash, totalCard, pct(totalCash, totalRev), totalDiff, ''];
+  const totals = ['', '', '', totalLabel, totalRev, totalCash, totalCard, pct(totalCash, totalRev), totalDiff, '', ''];
+
+  const insightRows: (string | number)[][] = flagged.length === 0
+    ? [[tr(lang,
+        `Расхождений выше ${SHIFT_DIFF_ABS_THRESHOLD.toLocaleString('ru-RU')} UZS / ${(SHIFT_DIFF_PCT_THRESHOLD * 100).toFixed(0)}% нет — кассовая дисциплина в норме.`,
+        `No discrepancies above ${SHIFT_DIFF_ABS_THRESHOLD.toLocaleString('en-US')} UZS / ${(SHIFT_DIFF_PCT_THRESHOLD * 100).toFixed(0)}% — cash discipline looks clean.`,
+        `${SHIFT_DIFF_ABS_THRESHOLD.toLocaleString('ru-RU')} UZS / ${(SHIFT_DIFF_PCT_THRESHOLD * 100).toFixed(0)}% dan yuqori farq yo'q — kassa intizomi yaxshi.`)]]
+    : [
+        [tr(lang,
+          `⚠ ${flagged.length} из ${data.length} смен с расхождением ≥ ${SHIFT_DIFF_ABS_THRESHOLD.toLocaleString('ru-RU')} UZS или ≥ ${(SHIFT_DIFF_PCT_THRESHOLD * 100).toFixed(0)}% от наличной выручки смены — требуют проверки:`,
+          `⚠ ${flagged.length} of ${data.length} shifts have a discrepancy ≥ ${SHIFT_DIFF_ABS_THRESHOLD.toLocaleString('en-US')} UZS or ≥ ${(SHIFT_DIFF_PCT_THRESHOLD * 100).toFixed(0)}% of that shift's cash sales — need review:`,
+          `⚠ ${data.length} tadan ${flagged.length} smenada ${SHIFT_DIFF_ABS_THRESHOLD.toLocaleString('ru-RU')} UZS yoki naqd tushumning ${(SHIFT_DIFF_PCT_THRESHOLD * 100).toFixed(0)}% dan ortiq farq bor — tekshirish kerak:`)],
+        ...flagged.map(s => [`  Смена №${s.sessionNumber} · ${s.openDate ?? '—'} · ${tr(lang, 'расхождение', 'diff', 'farq')}: ${s.cashDiff.toLocaleString('ru-RU')} UZS`]),
+      ];
 
   const wb = XLSX.utils.book_new();
   addSheet(wb, buildSheet([
-    meta(lang, tr(lang, 'Кассовые смены', 'Cash Shifts', 'Kassa smenalari'), range),
+    meta(lang, tr(lang, 'Кассовые смены', 'Cash Shifts', 'Kassa smenalari'), range, customFrom, customTo),
     [header, ...rows, [], totals],
-  ], [4, 10, 18, 18, 16, 16, 16, 10, 14, 14], 4, 3), tr(lang, 'Смены', 'Shifts', 'Smenalar'));
+    insightRows,
+  ], [4, 10, 18, 18, 16, 16, 16, 10, 14, 14, 12], 4, 3), tr(lang, 'Смены', 'Shifts', 'Smenalar'));
   return wb;
 }
 
 async function reportStock(range: ReportRange, lang: Language): Promise<XLSX.WorkBook> {
-  const data = await traceApi.financial.inventory(range);
+  const data = await traceApi.financial.inventory(range === 'custom' ? '30days' : range);
   if (!data || !data.length) throw new Error(tr(lang, 'Нет данных инвентаризации за период', 'No inventory data for period', "Davr uchun inventarizatsiya ma'lumoti yo'q"));
 
   const totalSum = data.reduce((s, d) => s + (d.sum ?? 0), 0);
@@ -353,12 +389,12 @@ async function reportWriteoffs(range: ReportRange, lang: Language): Promise<XLSX
   return wb;
 }
 
-async function reportQuickSummary(range: ReportRange, lang: Language): Promise<XLSX.WorkBook> {
+async function reportQuickSummary(range: ReportRange, lang: Language, customFrom?: string, customTo?: string): Promise<XLSX.WorkBook> {
   const [cats, dishes, shifts, writeoffs] = await Promise.all([
-    traceApi.sales.categoryPerf(range),
-    traceApi.sales.topDishes(range, 50),
-    traceApi.financial.cashshifts(range),
-    traceApi.financial.writeoffs(range),
+    traceApi.sales.categoryPerf(range, customFrom, customTo),
+    traceApi.sales.topDishes(range, 50, customFrom, customTo),
+    traceApi.financial.cashshifts(range, customFrom, customTo),
+    traceApi.financial.writeoffs(range, customFrom, customTo),
   ]);
 
   const totalRev   = cats.reduce((s, c) => s + c.revenue, 0);
@@ -625,31 +661,64 @@ async function reportAbc(range: ReportRange, lang: Language): Promise<XLSX.WorkB
   return wb;
 }
 
-async function reportHourly(lang: Language): Promise<XLSX.WorkBook> {
-  const data = await traceApi.sales.hourly();
+// Hourly is inherently a single-day breakdown (iiko's HourClose dimension
+// isn't averaged across days server-side) — when a custom range is picked
+// we use its start date as the day to inspect, same as picking a single
+// past day from the calendar.
+async function reportHourly(_range: ReportRange, lang: Language, customFrom?: string): Promise<XLSX.WorkBook> {
+  const data = await traceApi.sales.hourly(customFrom);
   if (!data.length) throw new Error(tr(lang, 'Нет данных за сегодня', 'No data for today', "Bugun uchun ma'lumot yo'q"));
 
   const totalRev = data.reduce((s, d) => s + d.revenue, 0);
   const totalOrd = data.reduce((s, d) => s + d.orders, 0);
+  const sorted = [...data].sort((a, b) => a.hour - b.hour);
+  const avgRevPerHour = totalRev / Math.max(1, sorted.length);
+
+  const peak = [...data].sort((a, b) => b.revenue - a.revenue).slice(0, 3);
+  // "Quiet but open" hours: below half the average, excluding near-zero
+  // hours that are almost certainly outside opening hours (no orders at
+  // all) — those aren't a staffing problem, they're just closed.
+  const quiet = sorted.filter(d => d.orders > 0 && d.revenue < avgRevPerHour * 0.5);
 
   const header = lang === 'ru'
-    ? ['Час', 'Выручка (UZS)', 'Доля выручки', 'Заказов', 'Доля заказов']
+    ? ['Час', 'Выручка (UZS)', 'Доля выручки', 'Заказов', 'Доля заказов', 'Инсайт']
     : lang === 'uz'
-    ? ['Soat', 'Tushum (UZS)', 'Tushum ulushi', 'Buyurtmalar', 'Buyurtma ulushi']
-    : ['Hour', 'Revenue (UZS)', 'Rev. share', 'Orders', 'Order share'];
+    ? ['Soat', 'Tushum (UZS)', 'Tushum ulushi', 'Buyurtmalar', 'Buyurtma ulushi', 'Tahlil']
+    : ['Hour', 'Revenue (UZS)', 'Rev. share', 'Orders', 'Order share', 'Insight'];
 
-  const rows: (string | number)[][] = data
-    .sort((a, b) => a.hour - b.hour)
-    .map(d => [d.h, d.revenue, pct(d.revenue, totalRev), d.orders, pct(d.orders, totalOrd)]);
+  const peakSet = new Set(peak.map(d => d.h));
+  const quietSet = new Set(quiet.map(d => d.h));
+  const peakLabel = tr(lang, '🔥 Пик', '🔥 Peak', '🔥 Cho\'qqi');
+  const quietLabel = tr(lang, '💤 Затишье', '💤 Slow', '💤 Sokin');
+
+  const rows: (string | number)[][] = sorted.map(d => [
+    d.h, d.revenue, pct(d.revenue, totalRev), d.orders, pct(d.orders, totalOrd),
+    peakSet.has(d.h) ? peakLabel : quietSet.has(d.h) ? quietLabel : '',
+  ]);
 
   const totalLabel = tr(lang, 'ИТОГО', 'TOTAL', 'JAMI');
-  const totals = [totalLabel, totalRev, '100%', totalOrd, '100%'];
+  const totals = [totalLabel, totalRev, '100%', totalOrd, '100%', ''];
+
+  const peakHoursStr = peak.map(d => `${d.h}:00`).join(', ');
+  const quietHoursStr = quiet.length ? quiet.map(d => `${d.h}:00`).join(', ') : tr(lang, 'нет', 'none', 'yo\'q');
+
+  const insightRows: (string | number)[][] = [
+    [tr(lang,
+      `🔥 Пиковые часы (${peakHoursStr}) дают ${pct(peak.reduce((s, d) => s + d.revenue, 0), totalRev)} выручки — держите полный состав смены на эти часы.`,
+      `🔥 Peak hours (${peakHoursStr}) drive ${pct(peak.reduce((s, d) => s + d.revenue, 0), totalRev)} of revenue — keep full staffing through these hours.`,
+      `🔥 Cho'qqi soatlar (${peakHoursStr}) tushumning ${pct(peak.reduce((s, d) => s + d.revenue, 0), totalRev)} beradi — shu soatlarda to'liq xodim tarkibini saqlang.`)],
+    [tr(lang,
+      `💤 Затишье: ${quietHoursStr} — открыто, но выручка < 50% от среднечасовой. Кандидат на сокращение смены или промо в эти часы.`,
+      `💤 Slow hours: ${quietHoursStr} — open but revenue < 50% of hourly average. Candidate for a shorter shift or a promo in this window.`,
+      `💤 Sokin soatlar: ${quietHoursStr} — ochiq, lekin tushum soatlik o'rtachaning 50% dan kam. Smenani qisqartirish yoki promo uchun nomzod.`)],
+  ];
 
   const wb = XLSX.utils.book_new();
   addSheet(wb, buildSheet([
-    meta(lang, tr(lang, 'Продажи по часам', 'Hourly Sales', 'Soatlik sotuvlar'), 'today'),
+    meta(lang, tr(lang, 'Продажи по часам', 'Hourly Sales', 'Soatlik sotuvlar'), 'today', customFrom),
     [header, ...rows, [], totals],
-  ], [10, 16, 13, 10, 13], 4, 3), tr(lang, 'По часам', 'Hourly', 'Soatlik'));
+    insightRows,
+  ], [10, 16, 13, 10, 13, 16], 4, 3), tr(lang, 'По часам', 'Hourly', 'Soatlik'));
   return wb;
 }
 
@@ -703,30 +772,58 @@ async function reportStaffAbc(range: ReportRange, lang: Language): Promise<XLSX.
   return wb;
 }
 
-async function reportVoidTracker(lang: Language): Promise<XLSX.WorkBook> {
-  const data = await traceApi.operations.voidTracker();
+// A waiter is flagged when their void count clears both a floor (so one
+// waiter with 2 voids on a slow day doesn't get flagged) and a multiple of
+// the team's own average — the average is the fraud/error signal, a fixed
+// number isn't (a 10-waiter fine-dining floor and a 2-waiter kiosk don't
+// share one sane threshold).
+const VOID_COUNT_FLOOR = 3;
+const VOID_AVG_MULTIPLIER = 2;
+
+async function reportVoidTracker(range: ReportRange, lang: Language, customFrom?: string, customTo?: string): Promise<XLSX.WorkBook> {
+  const data = await traceApi.operations.voidTracker(range, customFrom, customTo);
   if (!data.length) throw new Error(tr(lang, 'Отмен не зафиксировано', 'No voids recorded', "Bekor qilishlar qayd etilmagan"));
 
   const totalVoids = data.reduce((s, d) => s + d.voidCount, 0);
+  const avgVoids = totalVoids / data.length;
+  const flagged = data.filter(d => d.voidCount >= VOID_COUNT_FLOOR && d.voidCount >= avgVoids * VOID_AVG_MULTIPLIER);
 
   const header = lang === 'ru'
-    ? ['#', 'Официант', 'Кол-во отмен/удалений', 'Первая отмена']
+    ? ['#', 'Официант', 'Кол-во отмен/удалений', 'Первая отмена', 'Флаг']
     : lang === 'uz'
-    ? ['#', 'Ofitsiant', "Bekor qilish/o'chirish soni", 'Birinchi bekor qilish']
-    : ['#', 'Waiter', 'Void/delete count', 'First void'];
+    ? ['#', 'Ofitsiant', "Bekor qilish/o'chirish soni", 'Birinchi bekor qilish', 'Belgi']
+    : ['#', 'Waiter', 'Void/delete count', 'First void', 'Flag'];
 
+  const flagLabel = tr(lang, '⚠ ВЫШЕ НОРМЫ', '⚠ ABOVE NORM', '⚠ ME\'YORDAN YUQORI');
   const rows: (string | number)[][] = data
     .sort((a, b) => b.voidCount - a.voidCount)
-    .map((d, i) => [i + 1, d.waiter, d.voidCount, d.firstVoidAt]);
+    .map((d, i) => [
+      i + 1, d.waiter, d.voidCount, d.firstVoidAt,
+      (d.voidCount >= VOID_COUNT_FLOOR && d.voidCount >= avgVoids * VOID_AVG_MULTIPLIER) ? flagLabel : '',
+    ]);
 
   const totalLabel = tr(lang, 'ИТОГО', 'TOTAL', 'JAMI');
-  const totals = ['', totalLabel, totalVoids, ''];
+  const totals = ['', totalLabel, totalVoids, '', ''];
+
+  const insightRows: (string | number)[][] = flagged.length === 0
+    ? [[tr(lang,
+        `Средний показатель отмен — ${avgVoids.toFixed(1)} на сотрудника. Аномалий не выявлено.`,
+        `Average void count is ${avgVoids.toFixed(1)} per staff member. No anomalies detected.`,
+        `O'rtacha bekor qilish — xodimga ${avgVoids.toFixed(1)}. Anomaliya aniqlanmadi.`)]]
+    : [
+        [tr(lang,
+          `⚠ ${flagged.length} сотрудник(ов) отменяют в ${VOID_AVG_MULTIPLIER}× больше среднего (${avgVoids.toFixed(1)}) — стоит выяснить причину (обучение, ошибки ввода или злоупотребление):`,
+          `⚠ ${flagged.length} staff member(s) void at ${VOID_AVG_MULTIPLIER}× the average (${avgVoids.toFixed(1)}) — worth a conversation (training gap, input errors, or misuse):`,
+          `⚠ ${flagged.length} xodim o'rtachadan (${avgVoids.toFixed(1)}) ${VOID_AVG_MULTIPLIER}× ko'p bekor qilmoqda — sababini aniqlash kerak:`)],
+        ...flagged.map(d => [`  ${d.waiter}: ${d.voidCount} (${tr(lang, 'в', 'vs', 'vs')} ${avgVoids.toFixed(1)} ${tr(lang, 'средних', 'avg', 'o\'rtacha')})`]),
+      ];
 
   const wb = XLSX.utils.book_new();
   addSheet(wb, buildSheet([
-    meta(lang, tr(lang, 'Отмены и удаления', 'Voids & Cancellations', "Bekor qilishlar va o'chirishlar"), 'today'),
+    meta(lang, tr(lang, 'Отмены и удаления', 'Voids & Cancellations', "Bekor qilishlar va o'chirishlar"), range ?? 'today', customFrom, customTo),
     [header, ...rows, [], totals],
-  ], [4, 26, 20, 20], 4, 3), tr(lang, 'Отмены', 'Voids', 'Bekor qilishlar'));
+    insightRows,
+  ], [4, 26, 20, 20, 16], 4, 3), tr(lang, 'Отмены', 'Voids', 'Bekor qilishlar'));
   return wb;
 }
 
@@ -799,10 +896,10 @@ const REPORT_TEMPLATES = [
   { id: 'r8',  key: 'report_gl',             icon: BookOpen,    cat: 'finance', source: 'Server', fn: reportGL,               needsRange: true  },
   { id: 'r9',  key: 'report_invoices',       icon: Receipt,     cat: 'finance', source: 'Server', fn: reportInvoices,         needsRange: true  },
   { id: 'r10', key: 'report_abc',            icon: PieChart,    cat: 'sales',   source: 'OLAP',   fn: reportAbc,              needsRange: true  },
-  { id: 'r11', key: 'report_hourly',         icon: Clock,       cat: 'sales',   source: 'OLAP',   fn: reportHourly,           needsRange: false },
+  { id: 'r11', key: 'report_hourly',         icon: Clock,       cat: 'sales',   source: 'OLAP',   fn: reportHourly,           needsRange: true  },
   { id: 'r12', key: 'report_staff_profit',   icon: UserCheck,   cat: 'staff',   source: 'Server', fn: reportStaffProfitability, needsRange: true  },
   { id: 'r13', key: 'report_staff_abc',      icon: Award,       cat: 'staff',   source: 'OLAP',   fn: reportStaffAbc,         needsRange: true  },
-  { id: 'r14', key: 'report_voids',          icon: XCircle,     cat: 'staff',   source: 'Server', fn: reportVoidTracker,      needsRange: false },
+  { id: 'r14', key: 'report_voids',          icon: XCircle,     cat: 'staff',   source: 'Server', fn: reportVoidTracker,      needsRange: true  },
   { id: 'r15', key: 'report_table_revenue',  icon: LayoutGrid,  cat: 'sales',   source: 'OLAP',   fn: reportTableRevenue,     needsRange: true  },
   { id: 'r16', key: 'report_delivery',       icon: Truck,       cat: 'sales',   source: 'Server', fn: reportDelivery,         needsRange: false },
 ] as const;
@@ -817,7 +914,10 @@ export const Reports: React.FC<{
   const t = TRANSLATIONS[lang];
   const [cat, setCat] = useState<ReportCat2>('all');
   const [range, setRange] = useState<ReportRange>('7days');
+  const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
+  const calendarBtnRef = React.useRef<HTMLButtonElement>(null);
 
   const CATS: { key: ReportCat2; label: string }[] = [
     { key: 'all',     label: t.all },
@@ -832,6 +932,10 @@ export const Reports: React.FC<{
     { key: '7days',  label: tr(lang, '7 дней', '7 days', '7 kun') },
     { key: '30days', label: tr(lang, '30 дней', '30 days', '30 kun') },
   ];
+
+  const rangeLabel = range === 'custom' && customRange
+    ? `${customRange.from} → ${customRange.to}`
+    : RANGES.find(r => r.key === range)?.label ?? '';
 
   const filtered = cat === 'all' ? REPORT_TEMPLATES : REPORT_TEMPLATES.filter(r => r.cat === cat);
 
@@ -849,7 +953,9 @@ export const Reports: React.FC<{
     if (loading) return;
     setLoading(`${id}:${format}`);
     try {
-      const wb: XLSX.WorkBook = needsRange ? await fn(range, lang) : await fn(lang);
+      const wb: XLSX.WorkBook = needsRange
+        ? await fn(range, lang, customRange?.from, customRange?.to)
+        : await fn(lang);
       downloadWorkbook(wb, format, `trace-${id}-${range}-${today()}`);
       onShowToast?.(tr(lang, `${label} — скачан`, `${label} — downloaded`, `${label} — yuklab olindi`), 'success');
     } catch (e: any) {
@@ -863,7 +969,7 @@ export const Reports: React.FC<{
     if (loading) return;
     setLoading(`quick:${format}`);
     try {
-      const wb = await reportQuickSummary(range, lang);
+      const wb = await reportQuickSummary(range, lang, customRange?.from, customRange?.to);
       downloadWorkbook(wb, format, `trace-summary-${range}-${today()}`);
       onShowToast?.(tr(lang, 'Сводный отчёт скачан', 'Summary report downloaded', 'Umumiy hisobot yuklab olindi'), 'success');
     } catch (e: any) {
@@ -881,16 +987,40 @@ export const Reports: React.FC<{
         <h1 className="font-display text-[22px] font-bold text-text tracking-tight">
           {tr(lang, 'Отчёты', 'Reports', 'Hisobotlar')}
         </h1>
-        <div className="flex items-center gap-1 bg-background border border-border rounded-lg p-0.5">
-          {RANGES.map(r => (
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1 bg-background border border-border rounded-lg p-0.5">
+            {RANGES.map(r => (
+              <button
+                key={r.key}
+                onClick={() => { setRange(r.key); setCustomRange(null); }}
+                className={`px-2.5 py-1 text-[9px] font-medium rounded-[3px] transition-all ${range === r.key ? 'bg-card text-text shadow-sm' : 'text-muted hover:text-text'}`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+          <div className="relative">
             <button
-              key={r.key}
-              onClick={() => setRange(r.key)}
-              className={`px-2.5 py-1 text-[9px] font-medium rounded-[3px] transition-all ${range === r.key ? 'bg-card text-text shadow-sm' : 'text-muted hover:text-text'}`}
+              ref={calendarBtnRef}
+              onClick={() => setPickerOpen(o => !o)}
+              title={tr(lang, 'Свой период', 'Custom range', "O'z davri")}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[9px] font-medium rounded-lg border transition-all ${
+                range === 'custom' ? 'bg-primary text-white border-primary' : 'bg-background border-border text-muted hover:text-text'
+              }`}
             >
-              {r.label}
+              <Calendar size={12} />
+              {range === 'custom' && customRange ? `${customRange.from} → ${customRange.to}` : ''}
             </button>
-          ))}
+            <DateRangePicker
+              lang={lang}
+              value={customRange}
+              isOpen={pickerOpen}
+              onClose={() => setPickerOpen(false)}
+              anchorRef={calendarBtnRef}
+              onApply={(r) => { setCustomRange(r); setRange('custom'); }}
+              onClear={() => { setCustomRange(null); setRange('7days'); }}
+            />
+          </div>
         </div>
       </div>
 
@@ -911,9 +1041,9 @@ export const Reports: React.FC<{
               </h3>
               <p className="text-[11px] text-muted leading-relaxed mb-3">
                 {tr(lang,
-                  `5 листов: сводка, категории, блюда, смены, списания · ${RANGES.find(r => r.key === range)?.label}`,
-                  `5 sheets: summary, categories, dishes, shifts, write-offs · ${RANGES.find(r => r.key === range)?.label}`,
-                  `5 varaq: xulosa, kategoriyalar, taomlar, smenalar, chiqindilar · ${RANGES.find(r => r.key === range)?.label}`)}
+                  `5 листов: сводка, категории, блюда, смены, списания · ${rangeLabel}`,
+                  `5 sheets: summary, categories, dishes, shifts, write-offs · ${rangeLabel}`,
+                  `5 varaq: xulosa, kategoriyalar, taomlar, smenalar, chiqindilar · ${rangeLabel}`)}
               </p>
               <div className="flex items-center gap-2">
                 <button
@@ -973,9 +1103,9 @@ export const Reports: React.FC<{
       <Card title={tr(lang, 'Шаблоны отчётов', 'Report Templates', 'Hisobot shablonlari')}>
         <p className="text-[10px] text-muted mb-4">
           {tr(lang,
-            `Реальные данные из iiko · Excel (доли, итоги, автофильтр) или готовый PDF · период: ${RANGES.find(r => r.key === range)?.label}`,
-            `Real iiko data · Excel (shares, totals, auto-filter) or ready-to-send PDF · period: ${RANGES.find(r => r.key === range)?.label}`,
-            `iiko'dan haqiqiy ma'lumotlar · Excel (ulush, jami, avtofiltr) yoki tayyor PDF · davr: ${RANGES.find(r => r.key === range)?.label}`)}
+            `Реальные данные из iiko · Excel (доли, итоги, автофильтр) или готовый PDF · период: ${rangeLabel}`,
+            `Real iiko data · Excel (shares, totals, auto-filter) or ready-to-send PDF · period: ${rangeLabel}`,
+            `iiko'dan haqiqiy ma'lumotlar · Excel (ulush, jami, avtofiltr) yoki tayyor PDF · davr: ${rangeLabel}`)}
         </p>
 
         <div className="flex items-center gap-px border border-border rounded-xl overflow-hidden bg-background w-fit mb-4">
@@ -1005,7 +1135,7 @@ export const Reports: React.FC<{
                   <div>
                     <h4 className="text-[13px] font-medium text-text">{label}</h4>
                     <p className="text-[10px] text-muted mt-0.5">
-                      {report.source} · Excel/PDF · {report.needsRange ? RANGES.find(r => r.key === range)?.label : tr(lang, 'сегодня', 'today', 'bugun')}
+                      {report.source} · Excel/PDF · {report.needsRange ? rangeLabel : tr(lang, 'сегодня', 'today', 'bugun')}
                     </p>
                   </div>
                 </div>

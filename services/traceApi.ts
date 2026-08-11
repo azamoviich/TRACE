@@ -1468,8 +1468,11 @@ export const traceApi = {
       const q = range === 'custom' && customFrom && customTo ? `from=${customFrom}&to=${customTo}` : `range=${range}`;
       return apiFetch(`/financial/gl-summary?${q}`).then(r => r.json()).then(d => d ?? null);
     },
-    cashshifts: (range: 'today' | '7days' | '30days' = '7days'): Promise<CashShiftDoc[]> =>
-      isDemoTenant() ? Promise.resolve(demoCashShiftDocs()) : apiFetch(`/financial/cashshifts?range=${range}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+    cashshifts: (range: 'today' | '7days' | '30days' | 'custom' = '7days', customFrom?: string, customTo?: string): Promise<CashShiftDoc[]> => {
+      if (isDemoTenant()) return Promise.resolve(demoCashShiftDocs());
+      const q = range === 'custom' && customFrom && customTo ? `from=${customFrom}&to=${customTo}` : `range=${range}`;
+      return apiFetch(`/financial/cashshifts?${q}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []);
+    },
     menuAnalysis: (range: 'today' | '7days' | '30days' = '7days'): Promise<MenuAnalysisRow[]> =>
       isDemoTenant() ? Promise.resolve(demoMenuAnalysis()) : apiFetch(`/financial/menu-analysis?range=${range}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
   },
@@ -1553,8 +1556,11 @@ export const traceApi = {
     },
     alerts: (lang: Language = 'ru'): Promise<OpsAlert[]> =>
       isDemoTenant() ? Promise.resolve(demoOpsAlerts()) : apiFetch(`/operations/alerts?lang=${lang}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
-    voidTracker: (): Promise<VoidRow[]> =>
-      isDemoTenant() ? Promise.resolve(demoVoidTracker()) : apiFetch(`/operations/void-tracker`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+    voidTracker: (range: 'today' | '7days' | '30days' | 'custom' = 'today', customFrom?: string, customTo?: string): Promise<VoidRow[]> => {
+      if (isDemoTenant()) return Promise.resolve(demoVoidTracker());
+      const q = range === 'custom' && customFrom && customTo ? `from=${customFrom}&to=${customTo}` : (range !== 'today' ? `range=${range}` : '');
+      return apiFetch(`/operations/void-tracker${q ? `?${q}` : ''}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []);
+    },
     voidEvents: (): Promise<VoidEvent[]> =>
       isDemoTenant() ? Promise.resolve([]) : apiFetch(`/operations/void-events`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     delivery: (): Promise<DeliveryRow[]> =>

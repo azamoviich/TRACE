@@ -116,7 +116,7 @@ function downloadShiftScheduleExcel(
 
 // Client-side PDF export — used in demo mode where there's no backend to
 // render it server-side. Same matrix layout as the Excel export.
-function downloadShiftSchedulePdfClientSide(
+async function downloadShiftSchedulePdfClientSide(
   schedule: ShiftScheduleDay[],
   summary: string | undefined,
   lang: Language,
@@ -135,10 +135,14 @@ function downloadShiftSchedulePdfClientSide(
   }
   waiterNames.sort((a, b) => (totalHours.get(b) ?? 0) - (totalHours.get(a) ?? 0));
 
+  const { registerCyrillicFont } = await import('../../lib/pdfFonts');
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+  registerCyrillicFont(doc);
   const generatedAt = new Date().toISOString().slice(0, 10);
+  doc.setFont('Roboto', 'bold');
   doc.setFontSize(14);
   doc.text(tr(lang, 'TRACE · График смен на неделю', 'TRACE · Weekly Shift Schedule', 'TRACE · Haftalik smena jadvali'), 32, 32);
+  doc.setFont('Roboto', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(120);
   doc.text(tr(lang, `Сформировано: ${generatedAt}`, `Generated: ${generatedAt}`, `Yaratildi: ${generatedAt}`), 32, 48);
@@ -161,8 +165,8 @@ function downloadShiftSchedulePdfClientSide(
       });
       return [cleanName, ...rowCells, `${(totalHours.get(name) ?? 0).toFixed(1)}${tr(lang,'ч','h','s')}`];
     }),
-    styles: { fontSize: 8, cellPadding: 5 },
-    headStyles: { fillColor: [255, 107, 53] },
+    styles: { font: 'Roboto', fontSize: 8, cellPadding: 5 },
+    headStyles: { font: 'Roboto', fillColor: [255, 107, 53] },
   });
 
   doc.save(`TRACE-shift-schedule-${generatedAt}.pdf`);

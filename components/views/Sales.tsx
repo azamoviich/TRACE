@@ -787,24 +787,30 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
     URL.revokeObjectURL(url);
   };
 
-  const handlePdf = () => {
+  const handlePdf = async () => {
     const { rangeLabel, generated, dateStamp } = abcMeta();
     const insights = buildAbcInsights();
     const title = ru ? 'ABC-анализ меню' : isUz ? 'Menyu ABC tahlili' : 'Menu ABC Analysis';
 
+    const { registerCyrillicFont } = await import('../../lib/pdfFonts');
     const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+    registerCyrillicFont(doc);
     const pageW = doc.internal.pageSize.getWidth();
 
+    doc.setFont('Roboto', 'bold');
     doc.setFontSize(16);
     doc.setTextColor(...BRAND_RGB);
     doc.text(title, 32, 32);
+    doc.setFont('Roboto', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(120);
     doc.text(`${ru ? 'Период' : isUz ? 'Davr' : 'Period'}: ${rangeLabel}  ·  ${ru ? 'Создано' : isUz ? 'Yaratildi' : 'Generated'}: ${generated}`, 32, 47);
 
+    doc.setFont('Roboto', 'bold');
     doc.setFontSize(10);
     doc.setTextColor(30);
     doc.text(ru ? 'Ключевые выводы' : isUz ? 'Asosiy xulosalar' : 'Key insights', 32, 68);
+    doc.setFont('Roboto', 'normal');
     doc.setFontSize(8.5);
     doc.setTextColor(60);
     let y = 82;
@@ -834,8 +840,8 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
         item.velocity,
         item.abcQty, item.abcRevenue, item.abcProfit,
       ]),
-      styles: { fontSize: 7.5, cellPadding: 4 },
-      headStyles: { fillColor: BRAND_RGB, textColor: [255, 255, 255], fontStyle: 'bold' },
+      styles: { font: 'Roboto', fontSize: 7.5, cellPadding: 4 },
+      headStyles: { font: 'Roboto', fillColor: BRAND_RGB, textColor: [255, 255, 255], fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [247, 247, 247] },
       columnStyles: {
         3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' },
@@ -854,6 +860,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
       },
       didDrawPage: () => {
         const h = doc.internal.pageSize.getHeight();
+        doc.setFont('Roboto', 'normal');
         doc.setFontSize(8);
         doc.setTextColor(150);
         doc.text(abcFooterText(), 32, h - 18);

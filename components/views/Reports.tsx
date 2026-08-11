@@ -75,8 +75,10 @@ function addSheet(wb: XLSX.WorkBook, ws: XLSX.WorkSheet, name: string) {
 // that structure back out means every report gets a matching PDF export
 // for free, with zero duplication of the 16 report-generator functions
 // above and zero risk of the two formats drifting apart.
-function workbookToPdf(wb: XLSX.WorkBook, brandTitle: string): jsPDF {
+async function workbookToPdf(wb: XLSX.WorkBook, brandTitle: string): Promise<jsPDF> {
+  const { registerCyrillicFont } = await import('../../lib/pdfFonts');
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+  registerCyrillicFont(doc);
   const pageWidth = doc.internal.pageSize.getWidth();
 
   wb.SheetNames.forEach((name, idx) => {
@@ -88,14 +90,17 @@ function workbookToPdf(wb: XLSX.WorkBook, brandTitle: string): jsPDF {
     const metaRow  = aoa[1] ?? [];
     const metaLine = metaRow.filter(c => c !== '' && c != null).join('   ·   ');
 
+    doc.setFont('Roboto', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(140);
     doc.text(brandTitle, pageWidth - 40, 20, { align: 'right' });
 
+    doc.setFont('Roboto', 'bold');
     doc.setFontSize(15);
     doc.setTextColor(20);
     doc.text(String(titleRow), 40, 30);
 
+    doc.setFont('Roboto', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(110);
     doc.text(metaLine, 40, 46);
@@ -111,8 +116,8 @@ function workbookToPdf(wb: XLSX.WorkBook, brandTitle: string): jsPDF {
       startY: 58,
       head: header.length ? [header] : undefined,
       body,
-      styles: { fontSize: 8, cellPadding: 4 },
-      headStyles: { fillColor: [26, 26, 26], textColor: 255, fontStyle: 'bold' },
+      styles: { font: 'Roboto', fontSize: 8, cellPadding: 4 },
+      headStyles: { font: 'Roboto', fillColor: [26, 26, 26], textColor: 255, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [246, 246, 246] },
       theme: 'striped',
       margin: { left: 40, right: 40 },
@@ -941,11 +946,11 @@ export const Reports: React.FC<{
 
   const BRAND = tr(lang, 'TRACE · Отчёты', 'TRACE · Reports', 'TRACE · Hisobotlar');
 
-  const downloadWorkbook = (wb: XLSX.WorkBook, format: ExportFormat, filenameBase: string) => {
+  const downloadWorkbook = async (wb: XLSX.WorkBook, format: ExportFormat, filenameBase: string) => {
     if (format === 'xlsx') {
       XLSX.writeFile(wb, `${filenameBase}.xlsx`);
     } else {
-      workbookToPdf(wb, BRAND).save(`${filenameBase}.pdf`);
+      (await workbookToPdf(wb, BRAND)).save(`${filenameBase}.pdf`);
     }
   };
 

@@ -705,7 +705,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
   const ABC_SECTIONS: { id: string; label: { ru: string; en: string; uz: string }; keywords: string[] }[] = [
     { id: 'kitchen', label: { ru: 'Кухня', en: 'Kitchen', uz: 'Oshxona' }, keywords: ['кухня', 'kitchen', 'oshxona'] },
     { id: 'bar', label: { ru: 'Бар', en: 'Bar', uz: 'Bar' }, keywords: ['бар', 'bar'] },
-    { id: 'bakery', label: { ru: 'Выпечка', en: 'Bakery', uz: 'Non mahsulotlari' }, keywords: ['выпечк', 'bakery', 'нон'] },
+    { id: 'bakery', label: { ru: 'Выпечка', en: 'Bakery', uz: 'Non mahsulotlari' }, keywords: ['выпечк', 'bakery', 'пекар', 'хлеб', 'bread', 'non mahsulot', 'nonvoy'] },
     { id: 'dessert', label: { ru: 'Десерты', en: 'Desserts', uz: 'Shirinliklar' }, keywords: ['кондитер', 'десерт', 'dessert', 'shirinlik'] },
   ];
   const sectionOf = (cat: string): typeof ABC_SECTIONS[number] | null => {

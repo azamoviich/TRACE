@@ -1,37 +1,32 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { CheckCircle2, Circle, RefreshCw, AlertCircle, Delete, LogOut, Camera, TriangleAlert, X, KeyRound, Send, Sun, Moon, Repeat, ChevronLeft, ChevronRight, Archive, Star, ChevronDown } from 'lucide-react';
+import { CheckCircle2, Circle, RefreshCw, AlertCircle, Delete, LogOut, Camera, TriangleAlert, X, KeyRound, Send, ChevronLeft, ChevronRight, Archive, Star, ChevronDown, Users } from 'lucide-react';
 import {
   fetchChecklistPublicToday, toggleChecklistPublicItem, ChecklistPublicData,
   fetchChecklistHasRoster, loginChecklistEmployee,
   getChecklistEmployeeToken, clearChecklistEmployeeToken, uploadChecklistPhoto,
   reportChecklistViolation, submitChecklistPublic,
-  fetchChecklistHasShifts, ChecklistShift, ChecklistDuePeriod, ChecklistAnswerValue,
+  ChecklistDuePeriod, ChecklistAnswerValue,
+  fetchChecklistTeam, ChecklistTeamReport,
 } from '../services/traceApi';
-
-const SHIFT_KEY = `si_shift_${typeof window !== 'undefined' ? window.location.hostname : ''}`;
 
 const PERIOD_ORDER: ChecklistDuePeriod[] = ['any', 'opening', 'midshift', 'closing'];
 const PERIOD_LABELS: Record<ChecklistDuePeriod, string> = {
   any: 'Общие', opening: 'Открытие', midshift: 'В течение смены', closing: 'Закрытие',
 };
 
-// Employee-facing page reached at "{department}-{restaurant}.trace-os.uz".x`
+// Employee-facing page reached at "{department}-{restaurant}.trace-os.uz".
 // The department itself is still identified purely by subdomain (no login
 // needed to know which checklist this is), but each employee on that
 // department now has their own PIN: type it in, and the PIN alone
-// identifies who's logging in — no name-picking step, since a shift phone
+// identifies who's logging in — no name-picking step, since a shared phone
 // gets passed around and the PIN is unique per person anyway. Departments
-// with no roster configured yet fall back to the old shared/anonymous flow,
-// and departments with no day/night split skip the shift picker too — both
-// features roll out gradually per department.
+// with no roster configured yet fall back to the old shared/anonymous flow.
 export const ServiceInspectorPublic: React.FC = () => {
-  const [phase, setPhase] = useState<'loading' | 'pin' | 'shift' | 'checklist' | 'error'>('loading');
+  const [phase, setPhase] = useState<'loading' | 'pin' | 'checklist' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
-  const [hasShifts, setHasShifts] = useState(false);
-  const [shift, setShift] = useState<ChecklistShift | null>(null);
 
   const [data, setData] = useState<ChecklistPublicData | null>(null);
   const [pending, setPending] = useState<Set<string>>(new Set());
@@ -48,6 +43,12 @@ export const ServiceInspectorPublic: React.FC = () => {
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // "My team" — only non-empty for a PIN-only supervisor (e.g. a sous-chef
+  // watching cooks): their direct reports' progress on today's shared
+  // checklist. Refetched whenever the checklist itself reloads (toggling
+  // an item can change a report's tally), only while looking at today.
+  const [teamReports, setTeamReports] = useState<ChecklistTeamReport[]>([]);
 
   // Non-boolean items (text/choice/rating) expand an inline answer editor
   // in place of the plain tap-to-toggle circle. Only one open at a time.
@@ -67,26 +68,31 @@ export const ServiceInspectorPublic: React.FC = () => {
     );
   }, []);
 
-  const loadChecklist = useCallback((forShift?: ChecklistShift | null, forDate?: string) => {
+  const loadChecklist = useCallback((forDate?: string) => {
     setPhase('loading');
     setError(null);
-    fetchChecklistPublicToday(forShift ?? undefined, forDate)
+    fetchChecklistPublicToday(forDate)
       .then(d => { setData(d); setPhase('checklist'); })
       .catch((e: Error) => { setError(e.message); setPhase('error'); });
   }, []);
 
-  // Browsing a past day: keeps the same shift, just swaps the date. Uses a
-  // lighter inline spinner instead of the full-page loading phase so
-  // flipping through days doesn't flash the whole screen each time.
+  // Browsing a past day. Uses a lighter inline spinner instead of the
+  // full-page loading phase so flipping through days doesn't flash the
+  // whole screen each time.
   const [dateSwitching, setDateSwitching] = useState(false);
   const goToDate = (dateStr: string | undefined) => {
     setDateSwitching(true);
     setError(null);
-    fetchChecklistPublicToday(shift ?? undefined, dateStr)
+    fetchChecklistPublicToday(dateStr)
       .then(d => setData(d))
       .catch((e: Error) => setError(e.message))
       .finally(() => setDateSwitching(false));
   };
+
+  useEffect(() => {
+    if (phase !== 'checklist' || !data?.employee || !data.isToday) { setTeamReports([]); return; }
+    fetchChecklistTeam().then(setTeamReports).catch(() => setTeamReports([]));
+  }, [phase, data]);
 
   const shiftDate = (isoDate: string, days: number): string => {
     const d = new Date(isoDate + 'T00:00:00');
@@ -94,29 +100,9 @@ export const ServiceInspectorPublic: React.FC = () => {
     return d.toISOString().slice(0, 10);
   };
 
-  // Resolves whether this department splits into day/night checklists —
-  // if so and nothing's been picked yet this session, show the shift
-  // picker; otherwise (no split, or already picked earlier today) go
-  // straight to the checklist for whatever shift applies.
-  const resolveShift = useCallback(() => {
-    fetchChecklistHasShifts()
-      .then(has => {
-        setHasShifts(has);
-        if (!has) { setShift(null); loadChecklist(null); return; }
-        const stored = localStorage.getItem(SHIFT_KEY);
-        if (stored === 'day' || stored === 'night') {
-          setShift(stored);
-          loadChecklist(stored);
-        } else {
-          setPhase('shift');
-        }
-      })
-      .catch((e: Error) => { setError(e.message); setPhase('error'); });
-  }, [loadChecklist]);
-
   // Entry point: if a department has any employees with PINs set, that's a
   // login-gated department — show the PIN pad unless we already have a
-  // valid token. Otherwise move on to the shift check.
+  // valid token. Otherwise load the checklist straight away.
   useEffect(() => {
     setPhase('loading');
     setError(null);
@@ -128,23 +114,10 @@ export const ServiceInspectorPublic: React.FC = () => {
           setPhase('pin');
           return;
         }
-        resolveShift();
+        loadChecklist();
       })
       .catch((e: Error) => { setError(e.message); setPhase('error'); });
-  }, [resolveShift]);
-
-  const pickShift = (s: ChecklistShift) => {
-    localStorage.setItem(SHIFT_KEY, s);
-    setShift(s);
-    loadChecklist(s);
-  };
-
-  const switchShift = () => {
-    localStorage.removeItem(SHIFT_KEY);
-    setShift(null);
-    setData(null);
-    setPhase('shift');
-  };
+  }, [loadChecklist]);
 
   const submitPin = useCallback(async (candidatePin: string) => {
     if (loggingIn) return;
@@ -152,14 +125,14 @@ export const ServiceInspectorPublic: React.FC = () => {
     setPinError(null);
     try {
       await loginChecklistEmployee(candidatePin);
-      resolveShift();
+      loadChecklist();
     } catch (e: any) {
       setPinError(e.message === 'Wrong PIN' ? 'Неверный PIN' : 'Ошибка входа');
       setPin('');
     } finally {
       setLoggingIn(false);
     }
-  }, [loggingIn, resolveShift]);
+  }, [loggingIn, loadChecklist]);
 
   const pressDigit = (d: string) => {
     if (loggingIn) return;
@@ -277,7 +250,7 @@ export const ServiceInspectorPublic: React.FC = () => {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      await submitChecklistPublic(shift ?? undefined);
+      await submitChecklistPublic();
       setData(d => d ? { ...d, submitted: true } : d);
     } catch (e: any) {
       setSubmitError(e.message ?? 'Не удалось отправить');
@@ -370,42 +343,6 @@ export const ServiceInspectorPublic: React.FC = () => {
     );
   }
 
-  if (phase === 'shift') {
-    // Just a suggestion, not a lock — device local time, 6:00–18:00 reads
-    // as day. Whoever's actually on shift can still tap the other one.
-    const hour = new Date().getHours();
-    const suggested: ChecklistShift = hour >= 6 && hour < 18 ? 'day' : 'night';
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-6">
-        <div className="max-w-[340px] w-full animate-fade-in text-center">
-          <h1 className="font-display text-[20px] font-bold text-text tracking-tight mb-1">Какая смена?</h1>
-          <p className="text-muted text-[12px] mb-6">Выбери смену, чтобы открыть свой чек-лист</p>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => pickShift('day')}
-              className={`glass glass-hover rounded-2xl px-4 py-6 flex flex-col items-center gap-2 transition-colors touch-manipulation relative ${suggested === 'day' ? 'ring-2 ring-amber-500/40' : ''}`}
-            >
-              {suggested === 'day' && (
-                <span className="absolute top-2 right-2 text-[8px] font-semibold uppercase tracking-wide text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded-full">сейчас</span>
-              )}
-              <Sun size={24} className="text-amber-500" />
-              <span className="text-[14px] font-semibold text-text">Дневная</span>
-            </button>
-            <button
-              onClick={() => pickShift('night')}
-              className={`glass glass-hover rounded-2xl px-4 py-6 flex flex-col items-center gap-2 transition-colors touch-manipulation relative ${suggested === 'night' ? 'ring-2 ring-indigo-400/40' : ''}`}
-            >
-              {suggested === 'night' && (
-                <span className="absolute top-2 right-2 text-[8px] font-semibold uppercase tracking-wide text-indigo-400 bg-indigo-400/10 px-1.5 py-0.5 rounded-full">сейчас</span>
-              )}
-              <Moon size={24} className="text-indigo-400" />
-              <span className="text-[14px] font-semibold text-text">Ночная</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   // phase === 'checklist'
   const done = data!.items.filter(i => i.completed).length;
@@ -601,12 +538,6 @@ export const ServiceInspectorPublic: React.FC = () => {
 
         <div className="flex items-center gap-2 mb-3">
           <h1 className="font-display text-[26px] font-bold text-text tracking-tight leading-tight">{data!.department.name}</h1>
-          {shift && (
-            <span className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${shift === 'day' ? 'bg-amber-500/10 text-amber-500' : 'bg-indigo-400/10 text-indigo-400'}`}>
-              {shift === 'day' ? <Sun size={10} /> : <Moon size={10} />}
-              {shift === 'day' ? 'Дневная' : 'Ночная'}
-            </span>
-          )}
         </div>
 
         <div className="flex items-center gap-1 bg-card-hover rounded-xl px-2 py-1.5 mb-4">
@@ -632,11 +563,6 @@ export const ServiceInspectorPublic: React.FC = () => {
               <Archive size={11} /> архив
             </span>
           )}
-          {hasShifts && data!.isToday && (
-            <button onClick={switchShift} className="flex items-center gap-1 text-muted text-[11px] font-medium hover:text-text transition-colors flex-shrink-0">
-              <Repeat size={11} /> сменить
-            </button>
-          )}
         </div>
 
         <div className={`glass rounded-2xl px-4 py-4 mb-5 flex items-center gap-4 transition-colors ${allDone ? 'bg-success/10 border-success/25' : ''}`}>
@@ -655,6 +581,33 @@ export const ServiceInspectorPublic: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {teamReports.length > 0 && (
+          <div className="glass rounded-2xl px-4 py-3.5 mb-5">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted mb-2.5">
+              <Users size={13} /> Моя команда
+            </div>
+            <div className="space-y-1.5">
+              {teamReports.map(r => {
+                const rPct = r.total > 0 ? Math.round((r.done / r.total) * 100) : 0;
+                return (
+                  <div key={r.id} className="flex items-center gap-2">
+                    <span className="text-[13px] text-text flex-1 min-w-0 truncate">{r.name}</span>
+                    <div className="w-16 h-1.5 rounded-full bg-card-hover overflow-hidden flex-shrink-0">
+                      <div
+                        className={`h-full rounded-full ${rPct === 100 ? 'bg-success' : 'bg-primary'}`}
+                        style={{ width: `${rPct}%` }}
+                      />
+                    </div>
+                    <span className={`text-[11px] font-medium flex-shrink-0 w-10 text-right ${rPct === 100 ? 'text-success' : 'text-muted'}`}>
+                      {r.done}/{r.total}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {photoError && (
           <p className="text-danger text-[12px] font-medium mb-3 px-1">{photoError}</p>

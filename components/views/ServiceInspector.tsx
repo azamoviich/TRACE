@@ -3,40 +3,30 @@ import { Card } from '../ui/Card';
 import { Language } from '../../types';
 import { tr } from '../../constants';
 import {
-  Plus, Trash2, Loader2, Copy, Check, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, KeyRound, UserPlus,
-  Camera, TriangleAlert, CheckCheck, X, Flame, Trophy, Send, Clock, LayoutGrid, Building2, BarChart3,
+  Plus, Trash2, Loader2, Copy, Check, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, UserPlus,
+  Camera, CheckCheck, X, Flame, Trophy, Send, Clock, Building2, BarChart3,
+  Pencil, RotateCcw, Eye, EyeOff, RefreshCw, Briefcase, Download, Gauge, ClipboardList,
 } from 'lucide-react';
 import {
-  traceApi, staffApi, ChecklistDepartment, ChecklistResultRow, ChecklistViolation, ChecklistStreak, ChecklistLeaderboardRow,
-  ChecklistDayDetail, ChecklistDuePeriod, ChecklistShift, ChecklistPendingSubmission, ChecklistMonthDay, ChecklistQuestionType,
-  getStaffToken, StaffAccount, StaffPermissions,
+  traceApi, positionsApi, employeesApi, surveysApi, ChecklistDepartment, ChecklistResultRow, ChecklistViolation, ChecklistStreak, ChecklistLeaderboardRow,
+  ChecklistDayDetail, ChecklistDuePeriod, ChecklistPendingSubmission, ChecklistMonthDay, ChecklistQuestionType,
+  getStaffToken, StaffPosition, StaffEmployee, EmployeePermissions, Survey, SurveyQuestionType, SurveyResponsesResult,
 } from '../../services/traceApi';
 
-// Fully custom permission flags — no fixed role templates. Whoever creates
-// or edits an account ticks these individually, matching the "list of
-// permissions per person" hierarchy the owner asked for (Super Admin →
-// Branch Manager → Dept Manager → ... → Employee, plus separate Chef/
-// Finance/HR verticals — all built from the same flag set + reports-to
-// tree rather than hardcoded role names).
-const PERMISSION_KEYS: (keyof StaffPermissions)[] = [
-  'manage_departments', 'manage_checklists', 'manage_employees', 'manage_staff',
-  'create_staff', 'delete_staff', 'assign_managers', 'view_all_branches',
-  'view_finance', 'approve_violations', 'view_team_only',
+// Flat permission bag — no role templates, no hierarchy. Matches the
+// reference product's 6 checkboxes on the employee edit form.
+const EMPLOYEE_PERMISSION_KEYS: (keyof EmployeePermissions)[] = [
+  'mobile_admin', 'take_checklists', 'admin_panel', 'view_reports', 'manage_objects', 'gallery_upload',
 ];
 
-function permissionLabel(key: keyof StaffPermissions, lang: Language): string {
+function employeePermissionLabel(key: keyof EmployeePermissions, lang: Language): string {
   switch (key) {
-    case 'manage_departments': return tr(lang, 'Управлять подразделениями', 'Manage departments', "Bo'limlarni boshqarish");
-    case 'manage_checklists': return tr(lang, 'Управлять чек-листами', 'Manage checklists', 'Chek-listlarni boshqarish');
-    case 'manage_employees': return tr(lang, 'Управлять сотрудниками', 'Manage employees', 'Xodimlarni boshqarish');
-    case 'manage_staff': return tr(lang, 'Редактировать права своей команды', "Edit own team's permissions", "O'z jamoasi huquqlarini tahrirlash");
-    case 'create_staff': return tr(lang, 'Создавать менеджеров', 'Create managers', 'Menejer yaratish');
-    case 'delete_staff': return tr(lang, 'Удалять менеджеров', 'Delete managers', "Menejerni o'chirish");
-    case 'assign_managers': return tr(lang, 'Переназначать подчинение', 'Reassign reporting lines', "Bo'ysunishni qayta belgilash");
-    case 'view_all_branches': return tr(lang, 'Видеть все филиалы', 'View all branches', "Barcha filiallarni ko'rish");
-    case 'view_finance': return tr(lang, 'Видеть финансы', 'View finance', 'Moliyani ko\'rish');
-    case 'approve_violations': return tr(lang, 'Подтверждать/отклонять нарушения', 'Approve/dismiss violations', "Buzilishlarni tasdiqlash/rad etish");
-    case 'view_team_only': return tr(lang, 'Только своя команда', 'Own team only', "Faqat o'z jamoasi");
+    case 'mobile_admin': return tr(lang, 'Администрирование в мобильном приложении', 'Mobile app administration', 'Mobil ilovada boshqaruv');
+    case 'take_checklists': return tr(lang, 'Прохождение чек-листов', 'Take checklists', "Chek-listlarni bajarish");
+    case 'admin_panel': return tr(lang, 'Управление административной панелью', 'Admin panel access', 'Boshqaruv panelidan foydalanish');
+    case 'view_reports': return tr(lang, 'Просмотр отчётов', 'View reports', "Hisobotlarni ko'rish");
+    case 'manage_objects': return tr(lang, 'Управление объектами', 'Manage objects', "Obyektlarni boshqarish");
+    case 'gallery_upload': return tr(lang, 'Добавление фото/видео из галереи', 'Add photo/video from gallery', "Galereyadan foto/video qo'shish");
   }
 }
 
@@ -54,12 +44,6 @@ function formatChecklistDate(iso: string, lang: Language): string {
   return d.toLocaleDateString(lang === 'ru' ? 'ru-RU' : lang === 'uz' ? 'uz-UZ' : 'en-US', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-function shiftLabel(shift: ChecklistShift, lang: Language): string {
-  if (shift === 'day') return tr(lang, 'День', 'Day', 'Kunduzi');
-  if (shift === 'night') return tr(lang, 'Ночь', 'Night', 'Tunda');
-  return tr(lang, 'Любая', 'Any', "Har qanday");
-}
-
 function periodLabel(period: ChecklistDuePeriod, lang: Language): string {
   if (period === 'opening') return tr(lang, 'Открытие', 'Opening', 'Ochilish');
   if (period === 'midshift') return tr(lang, 'В течение смены', 'Midshift', 'Smena davomida');
@@ -68,7 +52,6 @@ function periodLabel(period: ChecklistDuePeriod, lang: Language): string {
 }
 
 const DUE_PERIODS: ChecklistDuePeriod[] = ['any', 'opening', 'midshift', 'closing'];
-const SHIFTS: ChecklistShift[] = ['any', 'day', 'night'];
 const WEEKDAY_LABELS: Record<Language, string[]> = {
   ru: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'],
   en: ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'],
@@ -76,31 +59,45 @@ const WEEKDAY_LABELS: Record<Language, string[]> = {
 };
 
 type Range = 'today' | '7days' | '30days';
-type Tab = 'overview' | 'departments' | 'results' | 'team';
+type Tab = 'overview' | 'departments' | 'results' | 'positions' | 'employees' | 'surveys';
 
 export const ServiceInspector: React.FC<{
   lang: Language;
   onShowToast?: (msg: string, type: 'success' | 'error' | 'info') => void;
 }> = ({ lang, onShowToast }) => {
-  // Staff (delegated manager) sessions never carry the owner token this
-  // component's Team tab needs, and their checklist writes are already
-  // scoped server-side to their departments (see staffAuth.ts /
-  // checklist.ts) — hiding org-structure controls here is just UX polish
-  // on top of that, not the enforcement boundary itself.
+  // Staff (delegated manager) sessions never carry the owner token
+  // Должности needs, and their checklist writes are already scoped
+  // server-side to their departments (see staffAuth.ts / checklist.ts) —
+  // hiding org-structure controls here is just UX polish on top of that,
+  // not the enforcement boundary itself.
   const isStaff = !!getStaffToken();
   const [tab, setTab] = useState<Tab>('overview');
 
-  const [staffAccounts, setStaffAccounts] = useState<StaffAccount[]>([]);
-  const [staffLoading, setStaffLoading] = useState(true);
-  const [newStaffUsername, setNewStaffUsername] = useState('');
-  const [newStaffPassword, setNewStaffPassword] = useState('');
-  const [newStaffDisplayName, setNewStaffDisplayName] = useState('');
-  const [newStaffRoleName, setNewStaffRoleName] = useState('');
-  const [newStaffDepts, setNewStaffDepts] = useState<Set<string>>(new Set());
-  const [newStaffParentId, setNewStaffParentId] = useState('');
-  const [newStaffPermissions, setNewStaffPermissions] = useState<Set<string>>(new Set());
-  const [creatingStaff, setCreatingStaff] = useState(false);
-  const [newEmpManager, setNewEmpManager] = useState<Record<string, string>>({});
+  const [positions, setPositions] = useState<StaffPosition[]>([]);
+  const [positionsLoading, setPositionsLoading] = useState(true);
+  const [showDeletedPositions, setShowDeletedPositions] = useState(false);
+  const [positionSearch, setPositionSearch] = useState('');
+  const [addingPosition, setAddingPosition] = useState(false);
+  const [newPositionName, setNewPositionName] = useState('');
+  const [editingPositionId, setEditingPositionId] = useState<string | null>(null);
+
+  const [employees, setEmployees] = useState<StaffEmployee[]>([]);
+  const [employeesLoading, setEmployeesLoading] = useState(true);
+  const [showInactiveEmployees, setShowInactiveEmployees] = useState(false);
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [editingEmployee, setEditingEmployee] = useState<{ isNew: boolean; employee?: StaffEmployee } | null>(null);
+  const [importingFromPos, setImportingFromPos] = useState(false);
+
+  const [surveys, setSurveys] = useState<Survey[]>([]);
+  const [surveysLoading, setSurveysLoading] = useState(true);
+  const [expandedSurveys, setExpandedSurveys] = useState<Set<string>>(new Set());
+  const [newSurveyName, setNewSurveyName] = useState('');
+  const [creatingSurvey, setCreatingSurvey] = useState(false);
+  const [newSurveyQText, setNewSurveyQText] = useState<Record<string, string>>({});
+  const [newSurveyQType, setNewSurveyQType] = useState<Record<string, SurveyQuestionType>>({});
+  const [newSurveyQOptionsRaw, setNewSurveyQOptionsRaw] = useState<Record<string, string>>({});
+  const [surveyResults, setSurveyResults] = useState<SurveyResponsesResult | null>(null);
+  const [surveyResultsLoading, setSurveyResultsLoading] = useState(false);
 
   const [departments, setDepartments] = useState<ChecklistDepartment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,11 +108,9 @@ export const ServiceInspector: React.FC<{
   const [newItemText, setNewItemText] = useState<Record<string, string>>({});
   const [newItemType, setNewItemType] = useState<Record<string, ChecklistQuestionType>>({});
   const [newItemOptionsRaw, setNewItemOptionsRaw] = useState<Record<string, string>>({});
+  const [copyFromChoice, setCopyFromChoice] = useState<Record<string, string>>({});
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [newEmpName, setNewEmpName] = useState<Record<string, string>>({});
-  const [newEmpPin, setNewEmpPin] = useState<Record<string, string>>({});
-  const [pinDraft, setPinDraft] = useState<Record<string, string>>({});
 
   const [range, setRange] = useState<Range>('7days');
   const [results, setResults] = useState<ChecklistResultRow[]>([]);
@@ -154,10 +149,6 @@ export const ServiceInspector: React.FC<{
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    if (!calendarDept && departments.length > 0) setCalendarDept(departments[0].id);
-  }, [departments, calendarDept]);
-
-  useEffect(() => {
     setResultsLoading(true);
     traceApi.checklist.results(range).then(setResults).finally(() => setResultsLoading(false));
   }, [range]);
@@ -177,9 +168,8 @@ export const ServiceInspector: React.FC<{
   }, [range]);
 
   useEffect(() => {
-    if (!calendarDept) return;
     setMonthLoading(true);
-    traceApi.checklist.month(calendarMonth, calendarDept).then(setMonthDays).finally(() => setMonthLoading(false));
+    traceApi.checklist.month(calendarMonth, calendarDept || undefined).then(setMonthDays).finally(() => setMonthLoading(false));
   }, [calendarMonth, calendarDept]);
 
   const loadViolations = useCallback(() => {
@@ -189,57 +179,140 @@ export const ServiceInspector: React.FC<{
 
   useEffect(() => { loadViolations(); }, [loadViolations]);
 
-  const loadStaffAccounts = useCallback(() => {
-    setStaffLoading(true);
-    staffApi.list().then(setStaffAccounts).catch(() => {}).finally(() => setStaffLoading(false));
-  }, []);
+  const loadPositions = useCallback(() => {
+    setPositionsLoading(true);
+    positionsApi.list(showDeletedPositions).then(setPositions).catch(() => {}).finally(() => setPositionsLoading(false));
+  }, [showDeletedPositions]);
 
-  useEffect(() => { loadStaffAccounts(); }, [loadStaffAccounts]);
+  useEffect(() => { loadPositions(); }, [loadPositions]);
 
-  const handleCreateStaff = async () => {
-    if (!newStaffUsername.trim() || newStaffPassword.length < 6 || !newStaffDisplayName.trim() || !newStaffRoleName.trim()) return;
-    setCreatingStaff(true);
+  const handleCreatePosition = async () => {
+    if (!newPositionName.trim()) return;
     try {
-      const permissions: StaffPermissions = {};
-      for (const key of newStaffPermissions) (permissions as any)[key] = true;
-      await staffApi.create({
-        username: newStaffUsername.trim(),
-        password: newStaffPassword,
-        display_name: newStaffDisplayName.trim(),
-        role_name: newStaffRoleName.trim(),
-        department_ids: Array.from(newStaffDepts),
-        parent_staff_id: newStaffParentId || null,
-        permissions,
-      });
-      setNewStaffUsername(''); setNewStaffPassword(''); setNewStaffDisplayName(''); setNewStaffRoleName('');
-      setNewStaffDepts(new Set()); setNewStaffParentId(''); setNewStaffPermissions(new Set());
-      loadStaffAccounts();
+      await positionsApi.create(newPositionName.trim());
+      setNewPositionName(''); setAddingPosition(false);
+      loadPositions();
     } catch (e: any) {
       onShowToast?.(e.message ?? tr(lang, 'Ошибка', 'Error', 'Xatolik'), 'error');
-    } finally {
-      setCreatingStaff(false);
     }
   };
 
-  const handleToggleStaffActive = (staff: StaffAccount) => withBusy(`staff-${staff.id}`, async () => {
-    await staffApi.update(staff.id, { active: !staff.active });
-    loadStaffAccounts();
+  const handleRenamePosition = (id: string, name: string) => {
+    setEditingPositionId(null);
+    if (!name.trim()) return;
+    withBusy(`pos-${id}`, async () => {
+      await positionsApi.update(id, { name: name.trim() });
+      loadPositions();
+    });
+  };
+
+  const handleTogglePositionActive = (p: StaffPosition) => withBusy(`pos-${p.id}`, async () => {
+    await positionsApi.update(p.id, { active: !p.active });
+    loadPositions();
   });
 
-  const handleDeleteStaff = (staff: StaffAccount) => withBusy(`staff-del-${staff.id}`, async () => {
-    await staffApi.remove(staff.id);
-    loadStaffAccounts();
+  const handleDeletePosition = (id: string) => withBusy(`pos-del-${id}`, async () => {
+    await positionsApi.update(id, { deleted: true });
+    loadPositions();
   });
 
-  const handleTogglePermission = (staff: StaffAccount, key: keyof StaffPermissions) => withBusy(`staff-perm-${staff.id}-${key}`, async () => {
-    await staffApi.update(staff.id, { permissions: { ...staff.permissions, [key]: !staff.permissions[key] } });
-    loadStaffAccounts();
+  const handleRestorePosition = (id: string) => withBusy(`pos-del-${id}`, async () => {
+    await positionsApi.update(id, { deleted: false });
+    loadPositions();
   });
 
-  const handleReparentStaff = (staff: StaffAccount, parentId: string) => withBusy(`staff-parent-${staff.id}`, async () => {
-    await staffApi.update(staff.id, { parent_staff_id: parentId || null });
-    loadStaffAccounts();
+  const loadEmployees = useCallback(() => {
+    setEmployeesLoading(true);
+    employeesApi.list().then(setEmployees).catch(() => {}).finally(() => setEmployeesLoading(false));
+  }, []);
+
+  useEffect(() => { loadEmployees(); }, [loadEmployees]);
+
+  const handleToggleEmployeeActive2 = (e: StaffEmployee) => withBusy(`emp-${e.id}`, async () => {
+    await employeesApi.update(e.id, { active: !e.active });
+    loadEmployees();
   });
+
+  const handleImportFromPos = async () => {
+    setImportingFromPos(true);
+    try {
+      const r = await traceApi.checklist.importFromPos();
+      onShowToast?.(
+        tr(lang,
+          `${r.newEmployees} новых сотрудников, ${r.updatedEmployees} обновлено, ${r.newPositions} новых должностей`,
+          `${r.newEmployees} new employees, ${r.updatedEmployees} updated, ${r.newPositions} new positions`,
+          `${r.newEmployees} yangi xodim, ${r.updatedEmployees} yangilandi, ${r.newPositions} yangi lavozim`),
+        'success',
+      );
+      loadEmployees();
+      loadPositions();
+    } catch (e: any) {
+      onShowToast?.(e.message ?? tr(lang, 'Ошибка', 'Error', 'Xatolik'), 'error');
+    } finally {
+      setImportingFromPos(false);
+    }
+  };
+
+  const loadSurveys = useCallback(() => {
+    setSurveysLoading(true);
+    surveysApi.list().then(setSurveys).catch(() => {}).finally(() => setSurveysLoading(false));
+  }, []);
+
+  useEffect(() => { loadSurveys(); }, [loadSurveys]);
+
+  const handleCreateSurvey = async () => {
+    if (!newSurveyName.trim()) return;
+    setCreatingSurvey(true);
+    try {
+      await surveysApi.create(newSurveyName.trim());
+      setNewSurveyName('');
+      loadSurveys();
+    } catch (e: any) {
+      onShowToast?.(e.message ?? tr(lang, 'Ошибка', 'Error', 'Xatolik'), 'error');
+    } finally {
+      setCreatingSurvey(false);
+    }
+  };
+
+  const handleToggleSurveyActive = (s: Survey) => withBusy(`survey-${s.id}`, async () => {
+    await surveysApi.update(s.id, { active: !s.active });
+    loadSurveys();
+  });
+
+  const handleDeleteSurvey = (s: Survey) => withBusy(`survey-del-${s.id}`, async () => {
+    if (!confirm(tr(lang, `Удалить опрос «${s.name}»?`, `Delete survey "${s.name}"?`, `"${s.name}" so'rovnomasini o'chirasizmi?`))) return;
+    await surveysApi.remove(s.id);
+    loadSurveys();
+  });
+
+  const handleAddSurveyQuestion = (s: Survey) => withBusy(`survey-q-add-${s.id}`, async () => {
+    const text = (newSurveyQText[s.id] ?? '').trim();
+    if (!text) return;
+    const question_type = newSurveyQType[s.id] ?? 'text';
+    const options = (question_type === 'single_choice' || question_type === 'multi_choice')
+      ? (newSurveyQOptionsRaw[s.id] ?? '').split(',').map(v => v.trim()).filter(Boolean)
+      : undefined;
+    await surveysApi.addQuestion(s.id, text, { question_type, options });
+    setNewSurveyQText(p => ({ ...p, [s.id]: '' }));
+    setNewSurveyQOptionsRaw(p => ({ ...p, [s.id]: '' }));
+    loadSurveys();
+  });
+
+  const handleDeleteSurveyQuestion = (id: string) => withBusy(`survey-q-${id}`, async () => {
+    await surveysApi.deleteQuestion(id);
+    loadSurveys();
+  });
+
+  const openSurveyResults = (s: Survey) => {
+    setSurveyResults(null);
+    setSurveyResultsLoading(true);
+    surveysApi.responses(s.id)
+      .then(setSurveyResults)
+      .catch((e: Error) => onShowToast?.(e.message, 'error'))
+      .finally(() => setSurveyResultsLoading(false));
+  };
+
+  const surveyLink = (s: Survey) => `https://${window.location.host}/survey/${s.slug}`;
 
   const handleViolationStatus = (id: string, status: 'resolved' | 'dismissed') => withBusy(`vio-${id}`, async () => {
     await traceApi.checklist.updateViolationStatus(id, status);
@@ -336,52 +409,17 @@ export const ServiceInspector: React.FC<{
     refresh();
   });
 
-  const handleCycleShift = (itemId: string, current: ChecklistShift) => withBusy(`shift-${itemId}`, async () => {
-    const next = SHIFTS[(SHIFTS.indexOf(current) + 1) % SHIFTS.length];
-    await traceApi.checklist.updateItem(itemId, { shift: next });
-    refresh();
-  });
-
-  const handleAddEmployee = (dept: ChecklistDepartment) => withBusy(`add-emp-${dept.id}`, async () => {
-    const name = (newEmpName[dept.id] ?? '').trim();
-    const pin = (newEmpPin[dept.id] ?? '').trim();
-    if (!name) return;
-    if (pin && !/^\d{4,6}$/.test(pin)) {
-      onShowToast?.(tr(lang, 'PIN должен быть 4-6 цифр', 'PIN must be 4-6 digits', 'PIN 4-6 raqamdan iborat bo\'lishi kerak'), 'error');
-      return;
-    }
-    const reportsTo = newEmpManager[dept.id] || undefined;
-    await traceApi.checklist.addEmployee(dept.id, name, pin || undefined, reportsTo);
-    setNewEmpName(p => ({ ...p, [dept.id]: '' }));
-    setNewEmpPin(p => ({ ...p, [dept.id]: '' }));
-    refresh();
-  });
-
-  const handleSetEmployeeManager = (empId: string, managerId: string) => withBusy(`emp-manager-${empId}`, async () => {
-    await traceApi.checklist.updateEmployee(empId, { reports_to_staff_id: managerId || null });
-    refresh();
-  });
-
-  const handleSetPin = (empId: string) => withBusy(`pin-${empId}`, async () => {
-    const pin = (pinDraft[empId] ?? '').trim();
-    if (!/^\d{4,6}$/.test(pin)) {
-      onShowToast?.(tr(lang, 'PIN должен быть 4-6 цифр', 'PIN must be 4-6 digits', 'PIN 4-6 raqamdan iborat bo\'lishi kerak'), 'error');
-      return;
-    }
-    await traceApi.checklist.updateEmployee(empId, { pin });
-    setPinDraft(p => ({ ...p, [empId]: '' }));
-    onShowToast?.(tr(lang, 'PIN обновлён', 'PIN updated', 'PIN yangilandi'), 'success');
-    refresh();
-  });
-
-  const handleToggleEmployeeActive = (empId: string, active: boolean) => withBusy(`emp-active-${empId}`, async () => {
-    await traceApi.checklist.updateEmployee(empId, { active });
-    refresh();
-  });
-
-  const handleDeleteEmployee = (empId: string, name: string) => withBusy(`del-emp-${empId}`, async () => {
-    if (!confirm(tr(lang, `Удалить сотрудника «${name}»?`, `Delete employee "${name}"?`, `"${name}" xodimini o'chirasizmi?`))) return;
-    await traceApi.checklist.deleteEmployee(empId);
+  // Copies every active item from another department into this one — a
+  // one-time copy (not a live link), the same "reusable list" job a
+  // separate Шаблоны tab used to do before departments absorbed it.
+  const handleCopyItemsFrom = (dept: ChecklistDepartment) => withBusy(`copy-${dept.id}`, async () => {
+    const sourceId = copyFromChoice[dept.id];
+    if (!sourceId) return;
+    const r = await traceApi.checklist.copyItemsFrom(dept.id, sourceId);
+    onShowToast?.(
+      tr(lang, `Скопировано ${r.copied} пунктов`, `${r.copied} items copied`, `${r.copied} band nusxalandi`),
+      'success',
+    );
     refresh();
   });
 
@@ -401,10 +439,12 @@ export const ServiceInspector: React.FC<{
   const pendingCount = pending.length;
 
   const TABS: { key: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
-    { key: 'overview', label: tr(lang, 'Обзор', 'Overview', 'Umumiy'), icon: <LayoutGrid size={13} />, badge: (violationFilter === 'open' ? openViolationsCount : 0) + pendingCount || undefined },
+    { key: 'overview', label: tr(lang, 'Дашборд', 'Dashboard', 'Boshqaruv paneli'), icon: <Gauge size={13} />, badge: (violationFilter === 'open' ? openViolationsCount : 0) + pendingCount || undefined },
+    { key: 'surveys', label: tr(lang, 'Онлайн-опросы', 'Surveys', "So'rovnomalar"), icon: <ClipboardList size={13} /> },
     { key: 'departments', label: tr(lang, 'Отделы', 'Departments', "Bo'limlar"), icon: <Building2 size={13} /> },
-    { key: 'results', label: tr(lang, 'Результаты', 'Results', 'Natijalar'), icon: <BarChart3 size={13} /> },
-    { key: 'team' as Tab, label: tr(lang, 'Команда', 'Team', 'Jamoa'), icon: <UserPlus size={13} /> },
+    { key: 'results', label: tr(lang, 'Пройденные чек-листы', 'Completed checklists', "O'tilgan chek-listlar"), icon: <BarChart3 size={13} /> },
+    { key: 'employees', label: tr(lang, 'Сотрудники', 'Employees', 'Xodimlar'), icon: <UserPlus size={13} /> },
+    { key: 'positions', label: tr(lang, 'Должности', 'Positions', 'Lavozimlar'), icon: <Briefcase size={13} /> },
   ];
 
   // ── Calendar grid ──────────────────────────────────────────────────────
@@ -472,12 +512,11 @@ export const ServiceInspector: React.FC<{
               <div className="flex flex-wrap gap-2">
                 {pending.map(p => (
                   <button
-                    key={`${p.department_id}:${p.shift}`}
+                    key={p.department_id}
                     onClick={() => openDayDetail(p.department_id, todayIso)}
                     className="flex items-center gap-1.5 text-[11px] font-medium bg-amber-500/10 text-amber-600 px-2.5 py-1.5 rounded-lg hover:bg-amber-500/15 transition-colors"
                   >
                     {p.department_name}
-                    {p.shift !== 'any' && <span className="opacity-70">· {shiftLabel(p.shift, lang)}</span>}
                   </button>
                 ))}
               </div>
@@ -573,6 +612,200 @@ export const ServiceInspector: React.FC<{
         </div>
       )}
 
+      {tab === 'surveys' && (
+        <div className="space-y-4 animate-fade-in">
+          <Card title={tr(lang, 'Новый опрос', 'New survey', "Yangi so'rovnoma")}>
+            <div className="flex gap-2">
+              <input
+                value={newSurveyName}
+                onChange={e => setNewSurveyName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleCreateSurvey(); }}
+                placeholder={tr(lang, 'Название опроса', 'Survey name', "So'rovnoma nomi")}
+                className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary"
+              />
+              <button
+                onClick={handleCreateSurvey}
+                disabled={creatingSurvey || !newSurveyName.trim()}
+                className="px-4 py-2 bg-primary text-white text-[12px] font-semibold rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 whitespace-nowrap"
+              >
+                {creatingSurvey ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                {tr(lang, 'Создать', 'Create', 'Yaratish')}
+              </button>
+            </div>
+          </Card>
+
+          {surveysLoading ? (
+            <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-muted" /></div>
+          ) : surveys.length === 0 ? (
+            <Card><p className="text-[12px] text-muted text-center py-6">{tr(lang, 'Опросов пока нет', 'No surveys yet', "Hozircha so'rovnomalar yo'q")}</p></Card>
+          ) : (
+            <div className="space-y-3">
+              {surveys.map(s => {
+                const isOpen = expandedSurveys.has(s.id);
+                return (
+                  <Card key={s.id} className={!s.active ? 'opacity-70' : ''}>
+                    <button
+                      onClick={() => setExpandedSurveys(p => { const n = new Set(p); n.has(s.id) ? n.delete(s.id) : n.add(s.id); return n; })}
+                      className="w-full flex items-center justify-between gap-3 text-left"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-[14px] font-semibold text-text truncate">{s.name}</h3>
+                          {!s.active && <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted/15 text-muted uppercase tracking-wide">{tr(lang, 'скрыт', 'hidden', 'yashirin')}</span>}
+                        </div>
+                        <p className="text-[11px] text-muted mt-0.5">
+                          {s.questions.length} {tr(lang, 'вопросов', 'questions', 'savol')} · {s.responseCount} {tr(lang, 'ответов', 'responses', 'javob')}
+                        </p>
+                      </div>
+                      <span className="p-1.5 text-muted flex-shrink-0">
+                        {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      </span>
+                    </button>
+
+                    {isOpen && (
+                      <div className="mt-4 pt-4 border-t border-border space-y-4">
+                        <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg bg-background border border-border">
+                          <code className="text-[10px] text-muted truncate flex-1">{surveyLink(s)}</code>
+                          <span
+                            role="button"
+                            onClick={() => { navigator.clipboard?.writeText(surveyLink(s)); setCopiedId(s.id); setTimeout(() => setCopiedId(null), 1500); }}
+                            className="text-muted hover:text-primary flex-shrink-0"
+                          >
+                            {copiedId === s.id ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                          </span>
+                        </div>
+
+                        <div className="space-y-2">
+                          {s.questions.map(q => (
+                            <div key={q.id} className="flex items-center gap-2 rounded-xl bg-background border border-border p-2.5">
+                              <span className="flex-1 text-[12px] text-text">{q.text}</span>
+                              <span className="text-[9px] px-2 py-1 rounded-full bg-card text-muted border border-border flex-shrink-0">
+                                {q.question_type === 'text' ? tr(lang, 'Текст', 'Text', 'Matn')
+                                  : q.question_type === 'single_choice' ? tr(lang, 'Один вариант', 'Single choice', 'Bitta variant')
+                                  : q.question_type === 'multi_choice' ? tr(lang, 'Несколько вариантов', 'Multiple choice', "Bir nechta variant")
+                                  : tr(lang, 'Оценка 1-5', 'Rating 1-5', 'Baho 1-5')}
+                              </span>
+                              <button onClick={() => handleDeleteSurveyQuestion(q.id)} className="p-1.5 text-muted hover:text-danger flex-shrink-0">
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          ))}
+                          {s.questions.length === 0 && (
+                            <p className="text-[11px] text-muted py-1">{tr(lang, 'Вопросов пока нет', 'No questions yet', "Hozircha savollar yo'q")}</p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <input
+                            value={newSurveyQText[s.id] ?? ''}
+                            onChange={e => setNewSurveyQText(p => ({ ...p, [s.id]: e.target.value }))}
+                            onKeyDown={e => { if (e.key === 'Enter' && (newSurveyQType[s.id] ?? 'text') === 'text') handleAddSurveyQuestion(s); }}
+                            placeholder={tr(lang, 'Новый вопрос...', 'New question...', 'Yangi savol...')}
+                            className="flex-1 bg-background border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-text focus:outline-none focus:border-primary"
+                          />
+                          <select
+                            value={newSurveyQType[s.id] ?? 'text'}
+                            onChange={e => setNewSurveyQType(p => ({ ...p, [s.id]: e.target.value as SurveyQuestionType }))}
+                            className="bg-background border border-border rounded-lg px-2 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary flex-shrink-0"
+                          >
+                            <option value="text">{tr(lang, 'Текст', 'Text', 'Matn')}</option>
+                            <option value="single_choice">{tr(lang, 'Один вариант', 'Single choice', 'Bitta variant')}</option>
+                            <option value="multi_choice">{tr(lang, 'Несколько вариантов', 'Multiple choice', "Bir nechta variant")}</option>
+                            <option value="rating">{tr(lang, 'Оценка 1-5', 'Rating 1-5', 'Baho 1-5')}</option>
+                          </select>
+                          <button
+                            onClick={() => handleAddSurveyQuestion(s)}
+                            disabled={busyIds.has(`survey-q-add-${s.id}`) || !(newSurveyQText[s.id] ?? '').trim()}
+                            className="p-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-lg flex-shrink-0 transition-colors disabled:opacity-40"
+                          >
+                            {busyIds.has(`survey-q-add-${s.id}`) ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                          </button>
+                        </div>
+                        {(newSurveyQType[s.id] === 'single_choice' || newSurveyQType[s.id] === 'multi_choice') && (
+                          <input
+                            value={newSurveyQOptionsRaw[s.id] ?? ''}
+                            onChange={e => setNewSurveyQOptionsRaw(p => ({ ...p, [s.id]: e.target.value }))}
+                            placeholder={tr(lang, 'Варианты через запятую', 'Options, comma-separated', 'Variantlar, vergul bilan')}
+                            className="w-full bg-background border border-border rounded-lg px-2.5 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary"
+                          />
+                        )}
+
+                        <div className="flex items-center justify-between pt-3 border-t border-border gap-2 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => openSurveyResults(s)}
+                              className="px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white text-[11px] font-semibold rounded-lg transition-colors flex items-center gap-1.5"
+                            >
+                              <BarChart3 size={12} /> {tr(lang, 'Результаты', 'Results', 'Natijalar')}
+                            </button>
+                            <button
+                              onClick={() => handleToggleSurveyActive(s)}
+                              disabled={busyIds.has(`survey-${s.id}`)}
+                              className="text-[11px] font-medium text-muted hover:text-text px-2 py-1.5"
+                            >
+                              {s.active ? tr(lang, 'скрыть', 'hide', 'yashirish') : tr(lang, 'показать', 'show', "ko'rsatish")}
+                            </button>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteSurvey(s)}
+                            disabled={busyIds.has(`survey-del-${s.id}`)}
+                            className="text-[11px] font-semibold text-danger hover:bg-danger/8 px-2 py-1 rounded-lg flex items-center gap-1.5"
+                          >
+                            {busyIds.has(`survey-del-${s.id}`) ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
+                            {tr(lang, 'Удалить', 'Delete', "O'chirish")}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {(surveyResultsLoading || surveyResults) && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-4" onClick={() => setSurveyResults(null)}>
+          <div className="glass rounded-3xl p-5 max-w-[480px] w-full max-h-[80vh] overflow-y-auto animate-fade-in" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[14px] font-semibold text-text">
+                {surveyResults ? surveyResults.survey.name : tr(lang, 'Загрузка...', 'Loading...', 'Yuklanmoqda...')}
+              </h3>
+              <button onClick={() => setSurveyResults(null)} className="text-muted hover:text-text flex-shrink-0"><X size={18} /></button>
+            </div>
+            {surveyResultsLoading ? (
+              <div className="flex justify-center py-8"><Loader2 size={18} className="animate-spin text-muted" /></div>
+            ) : surveyResults && (
+              <div className="space-y-4">
+                <p className="text-[12px] text-muted">{surveyResults.responses.length} {tr(lang, 'ответов', 'responses', 'javob')}</p>
+                {surveyResults.survey.questions.map(q => (
+                  <div key={q.id}>
+                    <p className="text-[12px] font-semibold text-text mb-1.5">{q.text}</p>
+                    {q.question_type === 'text' ? (
+                      <div className="space-y-1">
+                        {surveyResults.responses.map(r => r.answers[q.id] != null && (
+                          <p key={r.id} className="text-[11px] text-muted bg-background border border-border rounded-lg px-2.5 py-1.5">{String(r.answers[q.id])}</p>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        {Object.entries(surveyResults.summary[q.id] ?? {}).map(([value, count]) => (
+                          <div key={value} className="flex items-center gap-2 text-[11px]">
+                            <span className="flex-1 text-text">{value}</span>
+                            <span className="text-muted font-semibold">{count}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {tab === 'departments' && (
         <div className="space-y-4 animate-fade-in">
           {!isStaff && (
@@ -633,8 +866,8 @@ export const ServiceInspector: React.FC<{
                             </span>
                           )}
                           {deptStreaks.map(s => (
-                            <span key={s.shift} className="flex items-center gap-0.5 text-[10px] font-semibold text-orange-500 flex-shrink-0">
-                              <Flame size={11} /> {s.streak}{s.shift !== 'any' && <span className="text-[9px] opacity-70">({shiftLabel(s.shift, lang)})</span>}
+                            <span key={s.department_id} className="flex items-center gap-0.5 text-[10px] font-semibold text-orange-500 flex-shrink-0">
+                              <Flame size={11} /> {s.streak}
                             </span>
                           ))}
                         </div>
@@ -699,14 +932,6 @@ export const ServiceInspector: React.FC<{
                                   >
                                     {periodLabel(item.due_period, lang)}
                                   </button>
-                                  <button
-                                    onClick={() => handleCycleShift(item.id, item.shift)}
-                                    disabled={busyIds.has(`shift-${item.id}`)}
-                                    title={tr(lang, 'Какая смена', 'Which shift', 'Qaysi smena')}
-                                    className={`text-[9px] px-2 py-1 rounded-full font-medium transition-colors ${item.shift !== 'any' ? 'bg-orange-500/10 text-orange-600' : 'bg-card text-muted hover:text-text border border-border'}`}
-                                  >
-                                    {shiftLabel(item.shift, lang)}
-                                  </button>
                                   <select
                                     value={item.question_type}
                                     onChange={e => handleChangeQuestionType(item.id, e.target.value as ChecklistQuestionType)}
@@ -766,116 +991,28 @@ export const ServiceInspector: React.FC<{
                               className="w-full mt-2 bg-background border border-border rounded-lg px-2.5 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary"
                             />
                           )}
-                        </div>
-
-                        <div className="pt-4 border-t border-border">
-                          <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted mb-2.5">
-                            <UserPlus size={12} />
-                            {tr(lang, 'Сотрудники', 'Employees', 'Xodimlar')}
-                          </div>
-                          <p className="text-[10px] text-muted mb-3 leading-relaxed">
-                            {tr(lang,
-                              'Добавь сотрудников с PIN — на входной странице они введут PIN вместо общего доступа.',
-                              'Add employees with a PIN — on the entry page they enter their PIN instead of shared access.',
-                              "PIN bilan xodim qo'sh — kirish sahifasida umumiy kirish o'rniga PIN kiritadi.")}
-                          </p>
-                          <div className="space-y-2 mb-3">
-                            {dept.employees.map(emp => (
-                              <div key={emp.id} className={`flex items-center gap-2 px-2.5 py-2 rounded-lg bg-background border border-border ${!emp.active ? 'opacity-50' : ''}`}>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-[12px] font-medium text-text truncate">{emp.name}</span>
-                                    {!emp.has_pin && (
-                                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500 uppercase tracking-wide flex-shrink-0">
-                                        {tr(lang, 'нет PIN', 'no PIN', 'PIN yo\'q')}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                                <select
-                                  value={emp.reports_to_staff_id ?? ''}
-                                  onChange={e => handleSetEmployeeManager(emp.id, e.target.value)}
-                                  disabled={busyIds.has(`emp-manager-${emp.id}`)}
-                                  title={tr(lang, 'Подчиняется', 'Reports to', "Bo'ysunadi")}
-                                  className="w-28 bg-card border border-border rounded-lg px-1.5 py-1 text-[10px] text-text focus:outline-none focus:border-primary flex-shrink-0"
-                                >
-                                  <option value="">{tr(lang, 'без менеджера', 'no manager', "menejersiz")}</option>
-                                  {staffAccounts.map(s => (
-                                    <option key={s.id} value={s.id}>{s.display_name}</option>
-                                  ))}
-                                </select>
-                                <input
-                                  value={pinDraft[emp.id] ?? ''}
-                                  onChange={e => setPinDraft(p => ({ ...p, [emp.id]: e.target.value.replace(/\D/g, '') }))}
-                                  placeholder={tr(lang, 'новый PIN', 'new PIN', 'yangi PIN')}
-                                  inputMode="numeric"
-                                  maxLength={6}
-                                  className="w-24 bg-card border border-border rounded-lg px-2 py-1 text-[11px] text-text focus:outline-none focus:border-primary"
-                                />
-                                <button
-                                  onClick={() => handleSetPin(emp.id)}
-                                  disabled={busyIds.has(`pin-${emp.id}`) || !pinDraft[emp.id]}
-                                  className="p-1.5 text-muted hover:text-primary disabled:opacity-40 flex-shrink-0"
-                                  title={tr(lang, 'Установить PIN', 'Set PIN', 'PIN belgilash')}
-                                >
-                                  {busyIds.has(`pin-${emp.id}`) ? <Loader2 size={13} className="animate-spin" /> : <KeyRound size={13} />}
-                                </button>
-                                <button
-                                  onClick={() => handleToggleEmployeeActive(emp.id, !emp.active)}
-                                  disabled={busyIds.has(`emp-active-${emp.id}`)}
-                                  className="text-[10px] font-medium text-muted hover:text-text flex-shrink-0 px-1"
-                                >
-                                  {emp.active ? tr(lang, 'скрыть', 'hide', 'yashirish') : tr(lang, 'вернуть', 'restore', 'qaytarish')}
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteEmployee(emp.id, emp.name)}
-                                  disabled={busyIds.has(`del-emp-${emp.id}`)}
-                                  className="p-1.5 text-muted hover:text-danger flex-shrink-0"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </div>
-                            ))}
-                            {dept.employees.length === 0 && (
-                              <p className="text-[11px] text-muted py-1">{tr(lang, 'Сотрудников пока нет — общий доступ по ссылке', 'No employees yet — shared access via link', "Hozircha xodimlar yo'q — havola orqali umumiy kirish")}</p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <input
-                              value={newEmpName[dept.id] ?? ''}
-                              onChange={e => setNewEmpName(p => ({ ...p, [dept.id]: e.target.value }))}
-                              placeholder={tr(lang, 'Имя', 'Name', 'Ism')}
-                              className="flex-1 min-w-[100px] bg-background border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-text focus:outline-none focus:border-primary"
-                            />
-                            <input
-                              value={newEmpPin[dept.id] ?? ''}
-                              onChange={e => setNewEmpPin(p => ({ ...p, [dept.id]: e.target.value.replace(/\D/g, '') }))}
-                              placeholder={tr(lang, 'PIN (необязательно)', 'PIN (optional)', 'PIN (majburiy emas)')}
-                              inputMode="numeric"
-                              maxLength={6}
-                              className="w-28 bg-background border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-text focus:outline-none focus:border-primary"
-                            />
-                            {staffAccounts.length > 0 && (
+                          {departments.length > 1 && (
+                            <div className="flex items-center gap-2 mt-2">
                               <select
-                                value={newEmpManager[dept.id] ?? ''}
-                                onChange={e => setNewEmpManager(p => ({ ...p, [dept.id]: e.target.value }))}
-                                title={tr(lang, 'Подчиняется', 'Reports to', "Bo'ysunadi")}
-                                className="w-32 bg-background border border-border rounded-lg px-2 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary"
+                                value={copyFromChoice[dept.id] ?? ''}
+                                onChange={e => setCopyFromChoice(p => ({ ...p, [dept.id]: e.target.value }))}
+                                className="flex-1 bg-background border border-border rounded-lg px-2 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary"
                               >
-                                <option value="">{tr(lang, 'без менеджера', 'no manager', 'menejersiz')}</option>
-                                {staffAccounts.map(s => (
-                                  <option key={s.id} value={s.id}>{s.display_name}</option>
+                                <option value="">{tr(lang, 'Скопировать пункты из...', 'Copy items from...', 'Bandlarni nusxalash...')}</option>
+                                {departments.filter(d => d.id !== dept.id).map(d => (
+                                  <option key={d.id} value={d.id}>{d.name}</option>
                                 ))}
                               </select>
-                            )}
-                            <button
-                              onClick={() => handleAddEmployee(dept)}
-                              disabled={busyIds.has(`add-emp-${dept.id}`) || !(newEmpName[dept.id] ?? '').trim()}
-                              className="p-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-lg flex-shrink-0 transition-colors disabled:opacity-40"
-                            >
-                              {busyIds.has(`add-emp-${dept.id}`) ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
-                            </button>
-                          </div>
+                              <button
+                                onClick={() => handleCopyItemsFrom(dept)}
+                                disabled={busyIds.has(`copy-${dept.id}`) || !copyFromChoice[dept.id]}
+                                className="px-3 py-1.5 bg-background border border-border text-text text-[11px] font-semibold rounded-lg hover:border-primary/40 transition-colors disabled:opacity-40 flex items-center gap-1.5 whitespace-nowrap"
+                              >
+                                {busyIds.has(`copy-${dept.id}`) ? <Loader2 size={12} className="animate-spin" /> : <Copy size={12} />}
+                                {tr(lang, 'Копировать', 'Copy', 'Nusxalash')}
+                              </button>
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex items-center justify-between pt-3 border-t border-border">
@@ -912,12 +1049,13 @@ export const ServiceInspector: React.FC<{
           <Card
             title={tr(lang, 'Календарь', 'Calendar', 'Taqvim')}
             action={
-              departments.length > 1 ? (
+              departments.length > 0 ? (
                 <select
                   value={calendarDept}
                   onChange={e => setCalendarDept(e.target.value)}
                   className="bg-background border border-border rounded-lg px-2 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary"
                 >
+                  <option value="">{tr(lang, 'Все подразделения', 'All departments', "Barcha bo'limlar")}</option>
                   {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
               ) : undefined
@@ -1004,7 +1142,6 @@ export const ServiceInspector: React.FC<{
                     <tr className="text-left text-muted border-b border-border">
                       <th className="pb-2 font-medium">{tr(lang, 'Дата', 'Date', 'Sana')}</th>
                       <th className="pb-2 font-medium">{tr(lang, 'Подразделение', 'Department', "Bo'lim")}</th>
-                      <th className="pb-2 font-medium">{tr(lang, 'Смена', 'Shift', 'Smena')}</th>
                       <th className="pb-2 font-medium">{tr(lang, 'Отправлено', 'Submitted', 'Yuborildi')}</th>
                       <th className="pb-2 font-medium text-right">{tr(lang, 'Выполнено', 'Done', 'Bajarildi')}</th>
                     </tr>
@@ -1022,7 +1159,6 @@ export const ServiceInspector: React.FC<{
                         >
                           <td className="py-2 text-text">{formatChecklistDate(r.date, lang)}</td>
                           <td className="py-2 text-text">{r.department_name}</td>
-                          <td className="py-2 text-muted">{r.shift !== 'any' ? shiftLabel(r.shift, lang) : '—'}</td>
                           <td className="py-2 text-muted">
                             {r.submitted_by ? (
                               <span className="flex items-center gap-1 text-success">
@@ -1044,221 +1180,210 @@ export const ServiceInspector: React.FC<{
         </div>
       )}
 
-      {tab === 'team' && (() => {
-        // Tree render: root = whoever this account reports to (owner = no
-        // staff row at all). Depth comes from walking parent_staff_id, used
-        // purely for indentation — no fixed role→level mapping, matches
-        // the "custom hierarchy per restaurant" model.
-        const byParent = new Map<string, StaffAccount[]>();
-        for (const s of staffAccounts) {
-          const key = s.parent_staff_id ?? '';
-          if (!byParent.has(key)) byParent.set(key, []);
-          byParent.get(key)!.push(s);
-        }
-        const rows: { staff: StaffAccount; depth: number }[] = [];
-        const walk = (parentKey: string, depth: number) => {
-          for (const s of byParent.get(parentKey) ?? []) {
-            rows.push({ staff: s, depth });
-            walk(s.id, depth + 1);
-          }
-        };
-        walk('', 0);
 
-        return (
+      {tab === 'positions' && (
         <div className="space-y-4 animate-fade-in">
-          <Card title={tr(lang, 'Новый сотрудник команды', 'New team member', 'Jamoaga yangi a\'zo')}>
-            <p className="text-[11px] text-muted mb-3 leading-relaxed">
-              {tr(lang,
-                'Создайте аккаунт с должностью, подчинением и списком разрешений — управляющий, шеф, финдиректор, кассир и т.д.',
-                'Create an account with a job title, a reporting line, and a permission list — branch manager, chef, finance director, cashier, etc.',
-                "Lavozim, bo'ysunish va ruxsatlar ro'yxati bilan hisob yarating — boshqaruvchi, shef, moliya direktori, kassir va h.k.")}
-            </p>
-            <div className="grid sm:grid-cols-2 gap-2 mb-2">
-              <input
-                value={newStaffDisplayName}
-                onChange={e => setNewStaffDisplayName(e.target.value)}
-                placeholder={tr(lang, 'Имя', 'Display name', 'Ismi')}
-                className="bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary"
-              />
-              <input
-                value={newStaffRoleName}
-                onChange={e => setNewStaffRoleName(e.target.value)}
-                placeholder={tr(lang, 'Должность (например Су-шеф)', 'Job title (e.g. Sous-chef)', 'Lavozim (masalan Su-shef)')}
-                className="bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary"
-              />
-              <input
-                value={newStaffUsername}
-                onChange={e => setNewStaffUsername(e.target.value)}
-                placeholder={tr(lang, 'Логин', 'Username', 'Login')}
-                autoComplete="off"
-                className="bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary"
-              />
-              <input
-                value={newStaffPassword}
-                onChange={e => setNewStaffPassword(e.target.value)}
-                placeholder={tr(lang, 'Пароль (мин. 6 символов)', 'Password (min 6 chars)', 'Parol (kamida 6 belgi)')}
-                type="password"
-                autoComplete="new-password"
-                className="bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary"
-              />
+          <Card>
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+              <label className="flex items-center gap-2 text-[12px] text-muted">
+                <input type="checkbox" checked={showDeletedPositions} onChange={e => setShowDeletedPositions(e.target.checked)} />
+                {tr(lang, 'Показать удалённые', 'Show deleted', "O'chirilganlarni ko'rsatish")}
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  value={positionSearch}
+                  onChange={e => setPositionSearch(e.target.value)}
+                  placeholder={tr(lang, 'Поиск', 'Search', 'Qidirish')}
+                  className="bg-background border border-border rounded-lg px-3 py-1.5 text-[12px] text-text focus:outline-none focus:border-primary"
+                />
+                <button
+                  onClick={() => setAddingPosition(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-[12px] font-semibold rounded-lg hover:bg-primary/90 transition-colors whitespace-nowrap"
+                >
+                  <Plus size={13} /> {tr(lang, 'Добавить', 'Add', "Qo'shish")}
+                </button>
+              </div>
             </div>
 
-            <div className="mb-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-muted mb-2">
-                {tr(lang, 'Подчиняется', 'Reports to', "Bo'ysunadi")}
+            {addingPosition && (
+              <div className="flex items-center gap-2 mb-3 p-2.5 rounded-lg bg-background border border-border">
+                <input
+                  autoFocus
+                  value={newPositionName}
+                  onChange={e => setNewPositionName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleCreatePosition(); if (e.key === 'Escape') setAddingPosition(false); }}
+                  placeholder={tr(lang, 'Название должности', 'Position name', 'Lavozim nomi')}
+                  className="flex-1 bg-card border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-text focus:outline-none focus:border-primary"
+                />
+                <button onClick={handleCreatePosition} disabled={!newPositionName.trim()} className="p-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-lg disabled:opacity-40">
+                  <Check size={13} />
+                </button>
+                <button onClick={() => { setAddingPosition(false); setNewPositionName(''); }} className="p-1.5 text-muted hover:text-danger rounded-lg">
+                  <X size={13} />
+                </button>
               </div>
-              <select
-                value={newStaffParentId}
-                onChange={e => setNewStaffParentId(e.target.value)}
-                className="w-full bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary"
-              >
-                <option value="">{tr(lang, 'Владелец (верхний уровень)', 'Owner (top level)', 'Egasi (yuqori daraja)')}</option>
-                {rows.map(({ staff: s, depth }) => (
-                  <option key={s.id} value={s.id}>{'—'.repeat(depth)} {s.display_name} ({s.role_name})</option>
-                ))}
-              </select>
-            </div>
+            )}
 
-            <div className="mb-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-muted mb-2">
-                {tr(lang, 'Доступные подразделения', 'Departments this account can manage', "Boshqara oladigan bo'limlar")}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {departments.map(d => {
-                  const checked = newStaffDepts.has(d.id);
-                  return (
-                    <button
-                      key={d.id}
-                      type="button"
-                      onClick={() => setNewStaffDepts(p => { const n = new Set(p); checked ? n.delete(d.id) : n.add(d.id); return n; })}
-                      className={`text-[11px] font-medium px-2.5 py-1.5 rounded-lg border transition-colors ${
-                        checked ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-background border-border text-muted hover:text-text'
-                      }`}
-                    >
-                      {d.name}
-                    </button>
-                  );
-                })}
-                {departments.length === 0 && (
-                  <p className="text-[11px] text-muted">{tr(lang, 'Сначала создайте подразделение', 'Create a department first', "Avval bo'lim yarating")}</p>
+            {positionsLoading ? (
+              <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-muted" /></div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[12px]">
+                  <thead>
+                    <tr className="text-left text-muted border-b border-border">
+                      <th className="pb-2 font-medium">{tr(lang, 'Название', 'Name', 'Nomi')}</th>
+                      <th className="pb-2 font-medium text-center">{tr(lang, 'Активность', 'Active', 'Faollik')}</th>
+                      <th className="pb-2 font-medium text-right"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {positions
+                      .filter(p => p.name.toLowerCase().includes(positionSearch.toLowerCase()))
+                      .map(p => (
+                        <tr key={p.id} className={`border-b border-border/50 ${p.deleted_at ? 'opacity-50' : ''}`}>
+                          <td className="py-2 text-text">
+                            {editingPositionId === p.id ? (
+                              <input
+                                autoFocus
+                                defaultValue={p.name}
+                                onBlur={e => handleRenamePosition(p.id, e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                                className="bg-background border border-border rounded-lg px-2 py-1 text-[12px] text-text focus:outline-none focus:border-primary"
+                              />
+                            ) : p.name}
+                          </td>
+                          <td className="py-2 text-center">
+                            <button onClick={() => handleTogglePositionActive(p)} disabled={busyIds.has(`pos-${p.id}`)}>
+                              {p.active ? <Check size={14} className="text-success mx-auto" /> : <X size={14} className="text-muted mx-auto" />}
+                            </button>
+                          </td>
+                          <td className="py-2 text-right">
+                            <button onClick={() => setEditingPositionId(p.id)} className="p-1.5 text-muted hover:text-primary" title={tr(lang, 'Переименовать', 'Rename', "Qayta nomlash")}>
+                              <Pencil size={13} />
+                            </button>
+                            {p.deleted_at ? (
+                              <button onClick={() => handleRestorePosition(p.id)} disabled={busyIds.has(`pos-del-${p.id}`)} className="p-1.5 text-muted hover:text-success" title={tr(lang, 'Восстановить', 'Restore', 'Tiklash')}>
+                                <RotateCcw size={13} />
+                              </button>
+                            ) : (
+                              <button onClick={() => handleDeletePosition(p.id)} disabled={busyIds.has(`pos-del-${p.id}`)} className="p-1.5 text-muted hover:text-danger" title={tr(lang, 'Удалить', 'Delete', "O'chirish")}>
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+                {positions.length === 0 && (
+                  <p className="text-[12px] text-muted text-center py-6">{tr(lang, 'Должностей пока нет', 'No positions yet', "Hozircha lavozimlar yo'q")}</p>
                 )}
               </div>
-            </div>
-
-            <div className="mb-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-muted mb-2">
-                {tr(lang, 'Разрешения', 'Permissions', 'Ruxsatlar')}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {PERMISSION_KEYS.map(key => {
-                  const checked = newStaffPermissions.has(key);
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setNewStaffPermissions(p => { const n = new Set(p); checked ? n.delete(key) : n.add(key); return n; })}
-                      className={`text-[11px] font-medium px-2.5 py-1.5 rounded-lg border transition-colors ${
-                        checked ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-background border-border text-muted hover:text-text'
-                      }`}
-                    >
-                      {permissionLabel(key, lang)}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <button
-              onClick={handleCreateStaff}
-              disabled={creatingStaff || !newStaffUsername.trim() || newStaffPassword.length < 6 || !newStaffDisplayName.trim() || !newStaffRoleName.trim()}
-              className="px-4 py-2 bg-primary text-white text-[12px] font-semibold rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 whitespace-nowrap"
-            >
-              {creatingStaff ? <Loader2 size={13} className="animate-spin" /> : <UserPlus size={13} />}
-              {tr(lang, 'Создать', 'Create', 'Yaratish')}
-            </button>
+            )}
           </Card>
-
-          {staffLoading ? (
-            <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-muted" /></div>
-          ) : staffAccounts.length === 0 ? (
-            <Card><p className="text-[12px] text-muted text-center py-6">{tr(lang, 'Команда пока пуста', 'Team is empty so far', "Jamoa hozircha bo'sh")}</p></Card>
-          ) : (
-            <div className="space-y-2">
-              {rows.map(({ staff: s, depth }) => (
-                <Card key={s.id} className={!s.active ? 'opacity-60' : ''} style={{ marginLeft: depth * 18 }}>
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {depth > 0 && <span className="text-muted text-[11px]">└</span>}
-                        <h3 className="text-[13px] font-semibold text-text truncate">{s.display_name}</h3>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/15 text-muted uppercase tracking-wide">{s.role_name}</span>
-                      </div>
-                      <div className="text-[11px] text-muted mt-1">
-                        {s.username} · {s.departments.map(d => d.name).join(', ') || tr(lang, 'нет доступа', 'no access', "kirish yo'q")}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <button
-                        onClick={() => handleToggleStaffActive(s)}
-                        disabled={busyIds.has(`staff-${s.id}`)}
-                        className="text-[11px] font-medium text-muted hover:text-text px-2 py-1"
-                      >
-                        {s.active ? tr(lang, 'отключить', 'disable', "o'chirish") : tr(lang, 'включить', 'enable', 'yoqish')}
-                      </button>
-                      <button
-                        onClick={() => handleDeleteStaff(s)}
-                        disabled={busyIds.has(`staff-del-${s.id}`)}
-                        className="p-1.5 text-muted hover:text-danger flex-shrink-0"
-                      >
-                        {busyIds.has(`staff-del-${s.id}`) ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="mt-2.5 pt-2.5 border-t border-border">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted flex-shrink-0">
-                        {tr(lang, 'Подчиняется', 'Reports to', "Bo'ysunadi")}
-                      </span>
-                      <select
-                        value={s.parent_staff_id ?? ''}
-                        onChange={e => handleReparentStaff(s, e.target.value)}
-                        disabled={busyIds.has(`staff-parent-${s.id}`)}
-                        className="bg-background border border-border rounded-lg px-2 py-1 text-[11px] text-text focus:outline-none focus:border-primary"
-                      >
-                        <option value="">{tr(lang, 'Владелец', 'Owner', 'Egasi')}</option>
-                        {staffAccounts.filter(o => o.id !== s.id).map(o => (
-                          <option key={o.id} value={o.id}>{o.display_name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {PERMISSION_KEYS.map(key => {
-                        const checked = s.permissions?.[key] === true;
-                        const busy = busyIds.has(`staff-perm-${s.id}-${key}`);
-                        return (
-                          <button
-                            key={key}
-                            type="button"
-                            onClick={() => handleTogglePermission(s, key)}
-                            disabled={busy}
-                            className={`text-[10px] font-medium px-2 py-1 rounded-lg border transition-colors disabled:opacity-50 ${
-                              checked ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-background border-border text-muted hover:text-text'
-                            }`}
-                          >
-                            {permissionLabel(key, lang)}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          )}
         </div>
-        );
-      })()}
+      )}
+
+      {tab === 'employees' && (
+        <div className="space-y-4 animate-fade-in">
+          <Card>
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+              <label className="flex items-center gap-2 text-[12px] text-muted">
+                <input type="checkbox" checked={showInactiveEmployees} onChange={e => setShowInactiveEmployees(e.target.checked)} />
+                {tr(lang, 'Показать неактивных', 'Show inactive', 'Nofaollarni ko\'rsatish')}
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  value={employeeSearch}
+                  onChange={e => setEmployeeSearch(e.target.value)}
+                  placeholder={tr(lang, 'Поиск', 'Search', 'Qidirish')}
+                  className="bg-background border border-border rounded-lg px-3 py-1.5 text-[12px] text-text focus:outline-none focus:border-primary"
+                />
+                <button
+                  onClick={handleImportFromPos}
+                  disabled={importingFromPos || departments.length === 0}
+                  title={tr(lang, 'Выгрузка сотрудников, ролей и подразделений из POS', 'Pull employees, roles and departments from POS', "POS'dan xodimlar, lavozimlar va bo'limlarni yuklash")}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-background border border-border text-text text-[12px] font-semibold rounded-lg hover:border-primary/40 transition-colors disabled:opacity-40 whitespace-nowrap"
+                >
+                  {importingFromPos ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                  {tr(lang, 'Выгрузка из POS', 'Import from POS', "POS'dan yuklash")}
+                </button>
+                <button
+                  onClick={() => setEditingEmployee({ isNew: true })}
+                  disabled={departments.length === 0}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-[12px] font-semibold rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-40 whitespace-nowrap"
+                >
+                  <Plus size={13} /> {tr(lang, 'Добавить', 'Add', "Qo'shish")}
+                </button>
+              </div>
+            </div>
+
+            {employeesLoading ? (
+              <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-muted" /></div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[12px]">
+                  <thead>
+                    <tr className="text-left text-muted border-b border-border">
+                      <th className="pb-2 font-medium">{tr(lang, 'Имя', 'Name', 'Ism')}</th>
+                      <th className="pb-2 font-medium">{tr(lang, 'Место работы', 'Departments', "Ish joyi")}</th>
+                      <th className="pb-2 font-medium">{tr(lang, 'Должность', 'Position', 'Lavozim')}</th>
+                      <th className="pb-2 font-medium text-center">{tr(lang, 'Инспектор', 'Inspector', 'Inspektor')}</th>
+                      <th className="pb-2 font-medium text-center">{tr(lang, 'Активность', 'Active', 'Faollik')}</th>
+                      <th className="pb-2 font-medium text-right"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {employees
+                      .filter(e => showInactiveEmployees || e.active)
+                      .filter(e => e.name.toLowerCase().includes(employeeSearch.toLowerCase()))
+                      .map(e => (
+                        <tr key={e.id} className={`border-b border-border/50 ${!e.active ? 'opacity-50' : ''}`}>
+                          <td className="py-2 text-text font-medium">{e.name}</td>
+                          <td className="py-2 text-muted">
+                            {e.department_ids.length === 0
+                              ? tr(lang, 'Работает везде', 'Works everywhere', 'Hamma joyda ishlaydi')
+                              : e.department_ids.map(id => departments.find(d => d.id === id)?.name).filter(Boolean).join(', ')}
+                          </td>
+                          <td className="py-2 text-muted">{e.position_name ?? tr(lang, 'Не задана', 'Not set', 'Belgilanmagan')}</td>
+                          <td className="py-2 text-center">
+                            {e.permissions?.take_checklists ? <Check size={14} className="text-success mx-auto" /> : <span className="text-muted">—</span>}
+                          </td>
+                          <td className="py-2 text-center">
+                            <button onClick={() => handleToggleEmployeeActive2(e)} disabled={busyIds.has(`emp-${e.id}`)}>
+                              {e.active ? <Check size={14} className="text-success mx-auto" /> : <X size={14} className="text-muted mx-auto" />}
+                            </button>
+                          </td>
+                          <td className="py-2 text-right">
+                            <button onClick={() => setEditingEmployee({ isNew: false, employee: e })} className="p-1.5 text-muted hover:text-primary">
+                              <Pencil size={13} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+                {employees.length === 0 && (
+                  <p className="text-[12px] text-muted text-center py-6">{tr(lang, 'Сотрудников пока нет', 'No employees yet', "Hozircha xodimlar yo'q")}</p>
+                )}
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {editingEmployee && (
+        <EmployeeEditModal
+          lang={lang}
+          departments={departments}
+          positions={positions}
+          employees={employees}
+          initial={editingEmployee.isNew ? null : editingEmployee.employee ?? null}
+          onClose={() => setEditingEmployee(null)}
+          onSaved={() => { setEditingEmployee(null); loadEmployees(); }}
+          onError={(msg: string) => onShowToast?.(msg, 'error')}
+        />
+      )}
 
       {(dayDetailLoading || dayDetail || dayDetailError) && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-4" onClick={() => { setDayDetail(null); setDayDetailError(null); }}>
@@ -1283,7 +1408,6 @@ export const ServiceInspector: React.FC<{
                     {dayDetail.submissions.map((s, i) => (
                       <div key={i} className="flex items-center gap-1.5 text-[11px] text-success bg-success/10 rounded-lg px-2.5 py-1.5 w-fit">
                         <Send size={11} />
-                        {s.shift !== 'any' && <span className="font-semibold">{shiftLabel(s.shift, lang)}:</span>}
                         {s.employee_name ?? tr(lang, 'сотрудник', 'employee', 'xodim')}
                       </div>
                     ))}
@@ -1298,9 +1422,6 @@ export const ServiceInspector: React.FC<{
                       <div className="flex-1 min-w-0">
                         <p className={`text-[12px] ${item.completed ? 'text-text' : 'text-muted'}`}>{item.text}</p>
                         <div className="flex items-center gap-1.5 mt-0.5">
-                          {item.shift !== 'any' && (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted/15 text-muted uppercase tracking-wide">{shiftLabel(item.shift, lang)}</span>
-                          )}
                           {item.employee_name && (
                             <p className="text-[10px] text-muted">{item.employee_name}</p>
                           )}
@@ -1319,6 +1440,229 @@ export const ServiceInspector: React.FC<{
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+// Full-screen edit form for one Сотрудник — matches the reference product's
+// employee edit fields: ФИО, Должность, Место работы (multi-select, empty
+// = "Работает везде"), Telegram Id, MAX Id, Активен, Логин/Пароль, and the
+// flat Права checkbox list. Handles both create (initial=null) and edit.
+const EmployeeEditModal: React.FC<{
+  lang: Language;
+  departments: ChecklistDepartment[];
+  positions: StaffPosition[];
+  employees: StaffEmployee[];
+  initial: StaffEmployee | null;
+  onClose: () => void;
+  onSaved: () => void;
+  onError: (msg: string) => void;
+}> = ({ lang, departments, positions, employees, initial, onClose, onSaved, onError }) => {
+  const [name, setName] = useState(initial?.name ?? '');
+  const [positionId, setPositionId] = useState(initial?.position_id ?? '');
+  const [homeDepartmentId, setHomeDepartmentId] = useState(initial?.department_id ?? departments[0]?.id ?? '');
+  const [departmentIds, setDepartmentIds] = useState<Set<string>>(new Set(initial?.department_ids ?? []));
+  const [telegramId, setTelegramId] = useState(initial?.telegram_id ?? '');
+  const [maxId, setMaxId] = useState(initial?.max_id ?? '');
+  const [active, setActive] = useState(initial?.active ?? true);
+  const [username, setUsername] = useState(initial?.username ?? '');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [permissions, setPermissions] = useState<EmployeePermissions>(initial?.permissions ?? {});
+  const [supervisorId, setSupervisorId] = useState(initial?.supervisor_employee_id ?? '');
+  const [saving, setSaving] = useState(false);
+
+  const regeneratePassword = () => {
+    setPassword(Math.random().toString(36).slice(2, 10));
+    setShowPassword(true);
+  };
+
+  const handleSave = async () => {
+    if (!name.trim()) return;
+    if (!initial && !homeDepartmentId) return;
+    if (password && password.length < 6) { onError(tr(lang, 'Пароль минимум 6 символов', 'Password must be at least 6 characters', 'Parol kamida 6 belgi')); return; }
+    setSaving(true);
+    try {
+      const data = {
+        name: name.trim(),
+        position_id: positionId || null,
+        department_ids: Array.from(departmentIds),
+        telegram_id: telegramId.trim() || undefined,
+        max_id: maxId.trim() || undefined,
+        active,
+        username: username.trim() || undefined,
+        password: password || undefined,
+        permissions,
+        supervisor_employee_id: supervisorId || null,
+      };
+      if (initial) {
+        await employeesApi.update(initial.id, data);
+      } else {
+        await employeesApi.create(homeDepartmentId, data);
+      }
+      onSaved();
+    } catch (e: any) {
+      onError(e.message ?? tr(lang, 'Ошибка', 'Error', 'Xatolik'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!initial) return;
+    if (!confirm(tr(lang, `Удалить сотрудника «${initial.name}»?`, `Delete employee "${initial.name}"?`, `"${initial.name}" xodimini o'chirasizmi?`))) return;
+    setSaving(true);
+    try {
+      await employeesApi.remove(initial.id);
+      onSaved();
+    } catch (e: any) {
+      onError(e.message ?? tr(lang, 'Ошибка', 'Error', 'Xatolik'));
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
+      <div className="glass rounded-3xl p-5 max-w-[480px] w-full max-h-[85vh] overflow-y-auto animate-fade-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-[15px] font-semibold text-text">
+            {initial ? tr(lang, 'Редактирование сотрудника', 'Edit employee', 'Xodimni tahrirlash') : tr(lang, 'Новый сотрудник', 'New employee', 'Yangi xodim')}
+          </h3>
+          <button onClick={onClose} className="text-muted hover:text-text flex-shrink-0"><X size={18} /></button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-[10px] font-semibold uppercase tracking-wide text-muted mb-1">{tr(lang, 'ФИО', 'Full name', 'F.I.Sh.')}</label>
+            <input value={name} onChange={e => setName(e.target.value)} className="w-full bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary" />
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-semibold uppercase tracking-wide text-muted mb-1">{tr(lang, 'Должность', 'Position', 'Lavozim')}</label>
+            <select value={positionId} onChange={e => setPositionId(e.target.value)} className="w-full bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary">
+              <option value="">{tr(lang, 'Не задана', 'Not set', 'Belgilanmagan')}</option>
+              {positions.filter(p => p.active).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+
+          {!initial && (
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wide text-muted mb-1">{tr(lang, 'Основное подразделение (PIN-вход)', 'Home department (PIN login)', "Asosiy bo'lim (PIN kirish)")}</label>
+              <select value={homeDepartmentId} onChange={e => setHomeDepartmentId(e.target.value)} className="w-full bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary">
+                {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-[10px] font-semibold uppercase tracking-wide text-muted mb-1">{tr(lang, 'Место работы', 'Departments', "Ish joyi")}</label>
+            <p className="text-[10px] text-muted mb-1.5">{tr(lang, 'Если не выбрано ни одного, сотрудник работает везде', 'If none selected, the employee works everywhere', "Hech biri tanlanmasa, xodim hamma joyda ishlaydi")}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {departments.map(d => {
+                const checked = departmentIds.has(d.id);
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => setDepartmentIds(p => { const n = new Set(p); checked ? n.delete(d.id) : n.add(d.id); return n; })}
+                    className={`text-[11px] font-medium px-2.5 py-1.5 rounded-lg border transition-colors ${checked ? 'bg-primary/10 border-primary/40 text-primary' : 'bg-background border-border text-muted hover:text-text'}`}
+                  >
+                    {d.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {employees.filter(e => e.id !== initial?.id).length > 0 && (
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wide text-muted mb-1">{tr(lang, 'Старший сотрудник', 'Supervisor', 'Katta xodim')}</label>
+              <select value={supervisorId} onChange={e => setSupervisorId(e.target.value)} className="w-full bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary">
+                <option value="">{tr(lang, 'без старшего', 'no supervisor', 'katta xodimsiz')}</option>
+                {employees.filter(e => e.id !== initial?.id).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wide text-muted mb-1">Telegram Id</label>
+              <input value={telegramId} onChange={e => setTelegramId(e.target.value)} className="w-full bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wide text-muted mb-1">MAX Id</label>
+              <input value={maxId} onChange={e => setMaxId(e.target.value)} className="w-full bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary" />
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 text-[12px] text-text">
+            <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} /> {tr(lang, 'Активен', 'Active', 'Faol')}
+          </label>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wide text-muted mb-1">{tr(lang, 'Логин', 'Username', 'Login')}</label>
+              <input value={username} onChange={e => setUsername(e.target.value)} autoComplete="off" className="w-full bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wide text-muted mb-1">{tr(lang, 'Пароль', 'Password', 'Parol')}</label>
+              <div className="flex items-center gap-1">
+                <input
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  placeholder={initial?.has_login ? tr(lang, '••••••', '••••••', '••••••') : ''}
+                  className="flex-1 min-w-0 bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary"
+                />
+                <button type="button" onClick={() => setShowPassword(p => !p)} className="p-2 text-muted hover:text-text flex-shrink-0">
+                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+                <button type="button" onClick={regeneratePassword} className="p-2 text-muted hover:text-text flex-shrink-0" title={tr(lang, 'Сгенерировать', 'Generate', "Yaratish")}>
+                  <RefreshCw size={14} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-semibold uppercase tracking-wide text-muted mb-1.5">{tr(lang, 'Права', 'Permissions', 'Ruxsatlar')}</label>
+            <div className="grid grid-cols-2 gap-1.5">
+              {EMPLOYEE_PERMISSION_KEYS.map(key => (
+                <label key={key} className="flex items-center gap-1.5 text-[11px] text-text">
+                  <input
+                    type="checkbox"
+                    checked={permissions[key] === true}
+                    onChange={e => setPermissions(p => ({ ...p, [key]: e.target.checked }))}
+                  />
+                  {employeePermissionLabel(key, lang)}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 mt-5 pt-4 border-t border-border">
+          {initial ? (
+            <button onClick={handleDelete} disabled={saving} className="text-[12px] font-semibold text-danger hover:bg-danger/8 px-3 py-2 rounded-lg flex items-center gap-1.5">
+              <Trash2 size={13} /> {tr(lang, 'Удалить', 'Delete', "O'chirish")}
+            </button>
+          ) : <span />}
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-[12px] font-semibold text-muted hover:text-text rounded-lg">
+              {tr(lang, 'Отменить', 'Cancel', 'Bekor qilish')}
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving || !name.trim() || (!initial && !homeDepartmentId)}
+              className="px-4 py-2 bg-primary text-white text-[12px] font-semibold rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+              {tr(lang, 'Сохранить', 'Save', 'Saqlash')}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

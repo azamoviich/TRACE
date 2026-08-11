@@ -15,9 +15,10 @@ import { Admin } from './components/views/Admin';
 import { Compare } from './components/views/Compare';
 import { Globe, Sun, Moon } from 'lucide-react';
 import { TRANSLATIONS, nextLang, tr } from './constants';
-import { isAdminSubdomain, isDemoTenant, isManagerPortal, getServiceInspectorRawSlug, LIVE_MODE, tenantAuth, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, staffLogin, getStaffToken, clearStaffToken, StaffLoginResult } from './services/traceApi';
+import { isAdminSubdomain, isDemoTenant, isManagerPortal, getServiceInspectorRawSlug, getSurveySlugFromPath, LIVE_MODE, tenantAuth, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, staffLogin, getStaffToken, clearStaffToken, StaffLoginResult } from './services/traceApi';
 import { ManagerPortal } from './components/ManagerPortal';
 import { ServiceInspectorPublic } from './components/ServiceInspectorPublic';
+import { SurveyPublic } from './components/SurveyPublic';
 import { ServiceInspector } from './components/views/ServiceInspector';
 import { PWAInstallGuide } from './components/PWAInstallGuide';
 import { Sidebar } from './components/Sidebar';
@@ -173,6 +174,8 @@ export default function App() {
   if (isAdminSubdomain()) return <Admin />;
   if (isManagerPortal()) return <ManagerPortal />;
   if (getServiceInspectorRawSlug()) return <ServiceInspectorPublic />;
+  const surveySlug = getSurveySlugFromPath();
+  if (surveySlug) return <SurveyPublic slug={surveySlug} />;
 
   const [isLoggedIn, setIsLoggedIn] = useState(() => isDemoTenant());
   const [authChecking, setAuthChecking] = useState(() => !isDemoTenant() && localStorage.getItem('trace_remember') === '1');

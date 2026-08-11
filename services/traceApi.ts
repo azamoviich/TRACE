@@ -1633,7 +1633,7 @@ export const traceApi = {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, ...extra }),
       }).then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
-    updateItem: (id: string, data: { text?: string; active?: boolean; sort_order?: number; photo_required?: boolean; due_period?: ChecklistDuePeriod; shift?: ChecklistShift; question_type?: ChecklistQuestionType; options?: string[] }): Promise<ChecklistItem> =>
+    updateItem: (id: string, data: { text?: string; active?: boolean; sort_order?: number; photo_required?: boolean; due_period?: ChecklistDuePeriod; question_type?: ChecklistQuestionType; options?: string[] }): Promise<ChecklistItem> =>
       apiFetch(`/checklist/items/${id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -1642,18 +1642,6 @@ export const traceApi = {
       apiFetch(`/checklist/items/${id}`, { method: 'DELETE' }).then(() => undefined),
     results: (range: 'today' | '7days' | '30days'): Promise<ChecklistResultRow[]> =>
       isDemoTenant() ? Promise.resolve([]) : apiFetch(`/checklist/results?range=${range}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
-    addEmployee: (departmentId: string, name: string, pin?: string, reportsToStaffId?: string | null): Promise<ChecklistEmployee> =>
-      apiFetch(`/checklist/departments/${departmentId}/employees`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, pin, reports_to_staff_id: reportsToStaffId }),
-      }).then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
-    updateEmployee: (id: string, data: { name?: string; pin?: string; active?: boolean; reports_to_staff_id?: string | null }): Promise<ChecklistEmployee> =>
-      apiFetch(`/checklist/employees/${id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      }).then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
-    deleteEmployee: (id: string): Promise<void> =>
-      apiFetch(`/checklist/employees/${id}`, { method: 'DELETE' }).then(() => undefined),
     violations: (status: 'open' | 'resolved' | 'dismissed' | 'all' = 'open'): Promise<ChecklistViolation[]> =>
       isDemoTenant() ? Promise.resolve([]) : apiFetch(`/checklist/violations?status=${status}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     updateViolationStatus: (id: string, status: 'open' | 'resolved' | 'dismissed'): Promise<ChecklistViolation> =>
@@ -1671,11 +1659,16 @@ export const traceApi = {
       isDemoTenant() ? Promise.resolve([]) : apiFetch(`/checklist/pending-submissions`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     month: (month: string, departmentId?: string): Promise<ChecklistMonthDay[]> =>
       isDemoTenant() ? Promise.resolve([]) : apiFetch(`/checklist/month?month=${month}${departmentId ? `&department_id=${departmentId}` : ''}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+    importFromPos: (): Promise<{ newEmployees: number; updatedEmployees: number; newPositions: number; departmentNamesSeen: string[] }> =>
+      apiFetch('/checklist/import-from-pos', { method: 'POST' })
+        .then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
+    copyItemsFrom: (departmentId: string, sourceDepartmentId: string): Promise<{ copied: number }> =>
+      apiFetch(`/checklist/departments/${departmentId}/copy-from/${sourceDepartmentId}`, { method: 'POST' })
+        .then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
   },
 };
 
 export type ChecklistDuePeriod = 'any' | 'opening' | 'midshift' | 'closing';
-export type ChecklistShift = 'any' | 'day' | 'night';
 export type ChecklistQuestionType = 'boolean' | 'text' | 'single_choice' | 'multi_choice' | 'rating';
 export type ChecklistAnswerValue = string | string[] | number | null;
 
@@ -1686,7 +1679,6 @@ export interface ChecklistItem {
   active: boolean;
   photo_required: boolean;
   due_period: ChecklistDuePeriod;
-  shift: ChecklistShift;
   question_type: ChecklistQuestionType;
   options: string[] | null;
   completed?: boolean | null;
@@ -1694,13 +1686,83 @@ export interface ChecklistItem {
   answer_value?: ChecklistAnswerValue;
 }
 
-export interface ChecklistEmployee {
+// ── Онлайн-опросы (surveys) ───────────────────────────────────────────────
+
+export type SurveyQuestionType = 'text' | 'single_choice' | 'multi_choice' | 'rating';
+
+export interface SurveyQuestion {
   id: string;
+  text: string;
+  sort_order: number;
+  question_type: SurveyQuestionType;
+  options: string[] | null;
+}
+
+export interface Survey {
+  id: string;
+  slug: string;
   name: string;
   active: boolean;
-  sort_order: number;
-  has_pin: boolean;
-  reports_to_staff_id?: string | null;
+  created_at: string;
+  questions: SurveyQuestion[];
+  responseCount: number;
+}
+
+export interface SurveyResponse {
+  id: string;
+  answers: Record<string, string | string[] | number>;
+  created_at: string;
+}
+
+export interface SurveyResponsesResult {
+  survey: Survey;
+  responses: SurveyResponse[];
+  summary: Record<string, Record<string, number>>;
+}
+
+export const surveysApi = {
+  list: (): Promise<Survey[]> =>
+    apiFetch('/surveys').then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+  create: (name: string): Promise<Survey> =>
+    apiFetch('/surveys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
+      .then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
+  update: (id: string, data: { name?: string; active?: boolean }): Promise<Survey> =>
+    apiFetch(`/surveys/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+      .then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
+  remove: (id: string): Promise<void> =>
+    apiFetch(`/surveys/${id}`, { method: 'DELETE' }).then(() => undefined),
+  addQuestion: (surveyId: string, text: string, data?: { question_type?: SurveyQuestionType; options?: string[] }): Promise<SurveyQuestion> =>
+    apiFetch(`/surveys/${surveyId}/questions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, ...data }) })
+      .then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
+  deleteQuestion: (id: string): Promise<void> =>
+    apiFetch(`/surveys/questions/${id}`, { method: 'DELETE' }).then(() => undefined),
+  responses: (surveyId: string): Promise<SurveyResponsesResult> =>
+    apiFetch(`/surveys/${surveyId}/responses`).then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
+};
+
+// Public survey page — no login, reached at the tenant's own subdomain
+// (e.g. benedict.trace-os.uz/survey/:slug), unlike checklist-public which
+// needs a department-prefixed subdomain. Plain fetch, no staff/owner token.
+export interface SurveyPublicData {
+  id: string;
+  name: string;
+  tenantName: string;
+  questions: SurveyQuestion[];
+}
+
+export async function fetchSurveyPublic(slug: string): Promise<SurveyPublicData> {
+  const r = await fetch(`${BASE}/survey-public/${slug}`);
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`);
+  return r.json();
+}
+
+export async function submitSurveyPublic(slug: string, answers: Record<string, string | string[] | number>): Promise<void> {
+  const r = await fetch(`${BASE}/survey-public/${slug}/submit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ answers }),
+  });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`);
 }
 
 export interface ChecklistDepartment {
@@ -1711,7 +1773,6 @@ export interface ChecklistDepartment {
   active: boolean;
   subdomainPreview: string;
   items: ChecklistItem[];
-  employees: ChecklistEmployee[];
   todayDone: number;
   todayTotal: number;
 }
@@ -1720,7 +1781,6 @@ export interface ChecklistResultRow {
   department_id: string;
   department_name: string;
   date: string;
-  shift: ChecklistShift;
   done: string;
   total: string;
   submitted_by: string | null;
@@ -1730,10 +1790,10 @@ export interface ChecklistResultRow {
 export interface ChecklistDayDetail {
   department_name: string;
   date: string;
-  submissions: { shift: ChecklistShift; employee_name: string | null; created_at: string }[];
+  submissions: { employee_name: string | null; created_at: string }[];
   items: {
     id: string; text: string; completed: boolean; photo_url: string | null; employee_name: string | null;
-    shift: ChecklistShift; due_period: ChecklistDuePeriod;
+    due_period: ChecklistDuePeriod;
     question_type: ChecklistQuestionType; options: string[] | null; answer_value: ChecklistAnswerValue;
   }[];
 }
@@ -1753,7 +1813,6 @@ export interface ChecklistViolation {
 export interface ChecklistStreak {
   department_id: string;
   department_name: string;
-  shift: ChecklistShift;
   streak: number;
 }
 
@@ -1765,7 +1824,6 @@ export interface ChecklistLeaderboardRow {
 export interface ChecklistPendingSubmission {
   department_id: string;
   department_name: string;
-  shift: ChecklistShift;
 }
 
 export interface ChecklistMonthDay {
@@ -1785,7 +1843,6 @@ export interface ChecklistPublicData {
   employee: { id: string; name: string } | null;
   date: string;
   isToday: boolean;
-  shift: ChecklistShift | null;
   submitted: boolean;
   items: {
     id: string; text: string; completed: boolean; photoRequired: boolean; photoUrl: string | null; duePeriod: ChecklistDuePeriod;
@@ -1835,19 +1892,26 @@ export async function loginChecklistEmployee(pin: string): Promise<{ id: string;
   return data.employee;
 }
 
-// Whether this department actually splits items into day/night shifts —
-// decides "show the shift picker" vs "skip straight to the one checklist",
-// same rollout pattern as fetchChecklistHasRoster.
-export async function fetchChecklistHasShifts(): Promise<boolean> {
-  const r = await fetch(`${BASE}/checklist-public/shifts`);
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`);
-  const data = await r.json();
-  return data.hasShifts === true;
+export interface ChecklistTeamReport {
+  id: string;
+  name: string;
+  done: number;
+  total: number;
 }
 
-export async function fetchChecklistPublicToday(shift?: ChecklistShift, date?: string): Promise<ChecklistPublicData> {
+// For a PIN-only supervisor (e.g. a sous-chef watching cooks): their
+// direct reports plus each one's today tally on the shared department
+// checklist. Empty array if this employee supervises no one, or isn't
+// logged in — the public page treats that as "no team section to show".
+export async function fetchChecklistTeam(): Promise<ChecklistTeamReport[]> {
+  const r = await fetch(`${BASE}/checklist-public/team`, { headers: employeeAuthHeaders() });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`);
+  const data = await r.json();
+  return Array.isArray(data.reports) ? data.reports : [];
+}
+
+export async function fetchChecklistPublicToday(date?: string): Promise<ChecklistPublicData> {
   const params = new URLSearchParams();
-  if (shift && shift !== 'any') params.set('shift', shift);
   if (date) params.set('date', date);
   const qs = params.toString() ? `?${params.toString()}` : '';
   const r = await fetch(`${BASE}/checklist-public/today${qs}`, { headers: employeeAuthHeaders() });
@@ -1901,11 +1965,10 @@ export async function reportChecklistViolation(itemId: string, photoUrl: string,
 // Doesn't require every item done; just records who sent it and when so
 // the manager's Результаты can show it as formally submitted (with
 // whatever photos were attached to individual items along the way).
-export async function submitChecklistPublic(shift?: ChecklistShift): Promise<void> {
+export async function submitChecklistPublic(): Promise<void> {
   const r = await fetch(`${BASE}/checklist-public/submit`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...employeeAuthHeaders() },
-    body: JSON.stringify({ shift: shift && shift !== 'any' ? shift : undefined }),
   });
   if (!r.ok) {
     const body = await r.json().catch(() => ({}));
@@ -2473,41 +2536,10 @@ export function getTenantPlan(): 'base' | 'pro' {
   return sessionStorage.getItem(TENANT_PLAN_KEY) === 'base' ? 'base' : 'pro';
 }
 
-// ── ServiceInspector staff (delegated manager) accounts ──────────────────────
+// ── ServiceInspector: Должности + Сотрудники (flat, no hierarchy) ────────────
 
-// Fully custom permission flags — see PERMISSION_KEYS in the backend's
-// staff.ts. No fixed role templates; the owner (or a manager with
-// manage_staff) ticks these individually per account.
-export interface StaffPermissions {
-  manage_departments?: boolean;
-  manage_checklists?: boolean;
-  manage_employees?: boolean;
-  manage_staff?: boolean;
-  create_staff?: boolean;
-  delete_staff?: boolean;
-  assign_managers?: boolean;
-  view_all_branches?: boolean;
-  view_finance?: boolean;
-  approve_violations?: boolean;
-  view_team_only?: boolean;
-}
-
-export interface StaffAccount {
-  id: string;
-  username: string;
-  display_name: string;
-  role_name: string;
-  active: boolean;
-  created_at: string;
-  departments: { id: string; name: string }[];
-  parent_staff_id: string | null;
-  permissions: StaffPermissions;
-}
-
-// Whichever bearer token this browser is currently signed in with —
-// the owner's tenant token, or a delegated manager's staff token (see
-// getStaffToken). Staff-hierarchy endpoints accept either: the owner sees
-// the whole org, a manager sees/edits only their own subtree.
+// Whichever bearer token this browser is currently signed in with — the
+// owner's tenant token, or a logged-in employee's token (see getStaffToken).
 function staffAuthToken(): string {
   return getStaffToken() ?? getTenantOwnerToken() ?? '';
 }
@@ -2535,18 +2567,83 @@ export async function staffLogin(username: string, password: string): Promise<St
   }
 }
 
-// Owner-only management of staff accounts — every call needs the owner's
-// bearer token (see getTenantOwnerToken), verified server-side by
-// requireOwnerToken, distinct from a staff account's own token.
-export const staffApi = {
-  list: (): Promise<StaffAccount[]> =>
-    authedGet<StaffAccount[]>('/staff', staffAuthToken()),
-  create: (data: { username: string; password: string; display_name: string; role_name: string; department_ids: string[]; parent_staff_id?: string | null; permissions?: StaffPermissions }): Promise<StaffAccount> =>
-    post<StaffAccount>('/staff', data, staffAuthToken()),
-  update: (id: string, data: { display_name?: string; role_name?: string; active?: boolean; password?: string; department_ids?: string[]; parent_staff_id?: string | null; permissions?: StaffPermissions }): Promise<StaffAccount> =>
-    patch<StaffAccount>(`/staff/${id}`, data, staffAuthToken()),
+// Должности — owner-only plain named list (title + active flag only, no
+// permissions attached to a position itself — see EmployeePermissions).
+export interface StaffPosition {
+  id: string;
+  name: string;
+  active: boolean;
+  created_at: string;
+  deleted_at: string | null;
+}
+
+export const positionsApi = {
+  list: (includeDeleted = false): Promise<StaffPosition[]> =>
+    authedGet<StaffPosition[]>(`/positions${includeDeleted ? '?include_deleted=1' : ''}`, getTenantOwnerToken() ?? ''),
+  create: (name: string): Promise<StaffPosition> =>
+    post<StaffPosition>('/positions', { name }, getTenantOwnerToken() ?? ''),
+  update: (id: string, data: { name?: string; active?: boolean; deleted?: boolean }): Promise<StaffPosition> =>
+    patch<StaffPosition>(`/positions/${id}`, data, getTenantOwnerToken() ?? ''),
   remove: (id: string): Promise<void> =>
-    del(`/staff/${id}`, staffAuthToken()),
+    del(`/positions/${id}`, getTenantOwnerToken() ?? ''),
+};
+
+// Flat permission bag — no role templates, no inheritance. Matches the
+// reference product's 6 checkboxes on the employee edit form.
+export interface EmployeePermissions {
+  mobile_admin?: boolean;
+  take_checklists?: boolean;
+  admin_panel?: boolean;
+  view_reports?: boolean;
+  manage_objects?: boolean;
+  gallery_upload?: boolean;
+}
+
+// Сотрудники — the one unified employee list (replaces the old
+// staff_accounts/checklist_employees split). department_id is the "home"
+// department (PIN login context); department_ids is the real access scope
+// ("Место работы") — empty means "works everywhere".
+export interface StaffEmployee {
+  id: string;
+  name: string;
+  active: boolean;
+  created_at: string;
+  department_id: string;
+  department_ids: string[];
+  position_id: string | null;
+  position_name: string | null;
+  username: string | null;
+  telegram_id: string | null;
+  max_id: string | null;
+  permissions: EmployeePermissions;
+  supervisor_employee_id: string | null;
+  has_pin: boolean;
+  has_login: boolean;
+}
+
+export interface StaffEmployeeInput {
+  name?: string;
+  pin?: string;
+  active?: boolean;
+  department_ids?: string[];
+  position_id?: string | null;
+  username?: string;
+  password?: string;
+  permissions?: EmployeePermissions;
+  telegram_id?: string;
+  max_id?: string;
+  supervisor_employee_id?: string | null;
+}
+
+export const employeesApi = {
+  list: (): Promise<StaffEmployee[]> =>
+    authedGet<StaffEmployee[]>('/checklist/employees', staffAuthToken()),
+  create: (homeDepartmentId: string, data: StaffEmployeeInput): Promise<StaffEmployee> =>
+    post<StaffEmployee>(`/checklist/departments/${homeDepartmentId}/employees`, data, staffAuthToken()),
+  update: (id: string, data: StaffEmployeeInput): Promise<StaffEmployee> =>
+    patch<StaffEmployee>(`/checklist/employees/${id}`, data, staffAuthToken()),
+  remove: (id: string): Promise<void> =>
+    del(`/checklist/employees/${id}`, staffAuthToken()),
 };
 
 export function getSubdomain(): string {
@@ -2584,6 +2681,15 @@ export function getServiceInspectorRawSlug(): string | null {
   if (sub === 'admin' || sub === 'www' || sub === 'reportmirabad' || sub === 'reportnukus') return null;
   if (!sub.includes('-') || SERVICE_INSPECTOR_EXCLUDE.includes(sub)) return null;
   return sub;
+}
+
+// Survey public link path — /survey/:slug on the tenant's own subdomain
+// (not department-prefixed like ServiceInspector, since a survey isn't
+// tied to a department). Path-based rather than subdomain-based since a
+// tenant can have many surveys and minting a subdomain per one doesn't fit.
+export function getSurveySlugFromPath(): string | null {
+  const match = window.location.pathname.match(/^\/survey\/([a-z0-9-]+)/i);
+  return match ? match[1] : null;
 }
 
 export function getManagerTenant(): string {

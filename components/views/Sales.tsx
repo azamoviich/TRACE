@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { Card } from '../ui/Card';
 import { AIInsightCard } from '../ui/AIInsightCard';
 import { ChartTooltip } from '../ui/ChartTooltip';
@@ -585,67 +587,132 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
     { id: 'abcProfit',  labelRu: 'по Марже',   labelEn: 'by Margin',  labelUz: 'Marja boyicha'  },
   ];
 
-  const handlePrint = () => {
-    const win = window.open('', '_blank');
-    if (!win) return;
+  // ── Shared export helpers ─────────────────────────────────────────────────
+  const GRADE_HEX: Record<'A' | 'B' | 'C', string> = { A: '22C55E', B: 'F59E0B', C: 'EF4444' };
+  const GRADE_RGB: Record<'A' | 'B' | 'C', [number, number, number]> = { A: [34, 197, 94], B: [245, 158, 11], C: [239, 68, 68] };
+  const BRAND_HEX = 'FF6B35';
+  const BRAND_RGB: [number, number, number] = [255, 107, 53];
+
+  const abcMeta = () => {
     const rangeLabel = range === 'custom' && customRange
       ? `${customRange.from} – ${customRange.to}`
       : ABC_TIME_RANGES.find(r => r.key === range)?.[ru ? 'ru' : isUz ? 'uz' : 'en'] ?? range;
     const generated = new Date().toLocaleString(ru ? 'ru-RU' : isUz ? 'uz-Latn-UZ' : 'en-US');
-    const rows = filtered.map((item, i) => `
-      <tr>
-        <td>${i + 1}</td>
-        <td>${item.name}</td>
-        <td>${item.cat}</td>
-        <td class="num">${item.revenue.toLocaleString('ru-RU')}</td>
-        <td class="num">${item.share}%</td>
-        <td class="num">${item.qty}</td>
-        <td class="num">${item.avgPrice.toLocaleString('ru-RU')}</td>
-        <td class="num">${(item.cost ?? 0) > 0 ? (item.cost ?? 0).toLocaleString('ru-RU') : '—'}</td>
-        <td class="num">${item.costPerUnit != null ? item.costPerUnit.toLocaleString('ru-RU') : '—'}</td>
-        <td class="num">${item.velocity}</td>
-        <td class="center">${item.abcQty}</td>
-        <td class="center">${item.abcRevenue}</td>
-        <td class="center">${item.abcProfit}</td>
-      </tr>`).join('');
-
-    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${ru ? 'ABC-анализ меню' : isUz ? 'Menyu ABC tahlili' : 'Menu ABC Analysis'}</title>
-      <style>
-        body { font-family: -apple-system, Arial, sans-serif; color: #111; padding: 24px; }
-        h1 { font-size: 18px; margin-bottom: 4px; }
-        p.meta { font-size: 12px; color: #666; margin: 0 0 16px; }
-        table { width: 100%; border-collapse: collapse; font-size: 11px; }
-        th, td { border-bottom: 1px solid #ddd; padding: 6px 8px; text-align: left; }
-        th { text-transform: uppercase; font-size: 9px; color: #888; letter-spacing: 0.05em; }
-        td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-        td.center, th.center { text-align: center; }
-        @media print { body { padding: 0; } }
-      </style></head><body>
-      <h1>${ru ? 'ABC-анализ меню' : isUz ? 'Menyu ABC tahlili' : 'Menu ABC Analysis'}</h1>
-      <p class="meta">${ru ? 'Период' : isUz ? 'Davr' : 'Period'}: ${rangeLabel} · ${ru ? 'Создано' : isUz ? 'Yaratildi' : 'Generated'}: ${generated}</p>
-      <table>
-        <thead><tr>
-          <th>#</th><th>${ru ? 'Блюдо' : isUz ? 'Taom' : 'Item'}</th><th>${ru ? 'Категория' : isUz ? 'Kategoriya' : 'Category'}</th>
-          <th class="num">${ru ? 'Выручка' : isUz ? 'Tushum' : 'Revenue'}</th><th class="num">%</th>
-          <th class="num">${ru ? 'Кол-во' : isUz ? 'Soni' : 'Qty'}</th><th class="num">${ru ? 'Ср. цена' : isUz ? "O'rt. narx" : 'Avg price'}</th>
-          <th class="num">${ru ? 'Себест.' : isUz ? 'Tannarx' : 'Cost'}</th><th class="num">${ru ? 'Себест/шт' : isUz ? 'Tannarx/dona' : 'Cost/unit'}</th>
-          <th class="num">${ru ? 'В день' : isUz ? 'Kuniga' : '/day'}</th>
-          <th class="center">${ru ? 'К' : isUz ? 'S' : 'Q'}</th><th class="center">${ru ? 'В' : isUz ? 'T' : 'R'}</th><th class="center">${ru ? 'М' : isUz ? 'M' : 'M'}</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => win.print(), 300);
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    return { rangeLabel, generated, dateStamp };
   };
 
-  const handleExcel = () => {
-    const rangeLabel = range === 'custom' && customRange
-      ? `${customRange.from} – ${customRange.to}`
-      : ABC_TIME_RANGES.find(r => r.key === range)?.[ru ? 'ru' : isUz ? 'uz' : 'en'] ?? range;
-    const generated = new Date().toLocaleString(ru ? 'ru-RU' : isUz ? 'uz-Latn-UZ' : 'en-US');
+  // Plain-language takeaways computed from the same numbers already on
+  // screen — turns the export into something a manager acts on, not just
+  // a data dump they have to re-analyze themselves.
+  const buildAbcInsights = (): string[] => {
+    const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');
+    const list: string[] = [];
+    const total = filtered.length || 1;
+    const aPct = Math.round((aCount / total) * 100);
+    list.push(
+      ru ? `${aCount} из ${total} позиций (${aPct}%) формируют ~70% выручки — классическое ядро Парето, держите их в наличии всегда.`
+        : isUz ? `${aCount}/${total} taom (${aPct}%) tushumning ~70% ini beradi — doim yetkazib turing.`
+        : `${aCount} of ${total} items (${aPct}%) drive ~70% of revenue — the Pareto core. Never let these run out.`
+    );
+    if (deadWeight > 0) {
+      list.push(
+        ru ? `${deadWeight} позиций — класс C по выручке при скорости <0.5/день: мёртвый груз, кандидаты на удаление или ребрендинг в меню.`
+          : isUz ? `${deadWeight} taom — C toifa va kunlik tezlik <0.5: menyudan olib tashlash kandidati.`
+          : `${deadWeight} items are grade C with velocity under 0.5/day — dead weight, candidates to cut or reposition.`
+      );
+    }
+    const top = filtered[0];
+    if (top) {
+      list.push(
+        ru ? `Лидер — «${top.name}» (${top.cat}): ${fmt(top.revenue)} UZS, ${top.share}% всей выручки.`
+          : isUz ? `Yetakchi — «${top.name}» (${top.cat}): ${fmt(top.revenue)} UZS, jami tushumning ${top.share}%.`
+          : `Top performer — "${top.name}" (${top.cat}): ${fmt(top.revenue)} UZS, ${top.share}% of total revenue.`
+      );
+    }
+    const withMargin = filtered.filter(i => i.marginPct != null) as (AbcRow & { marginPct: number })[];
+    if (withMargin.length) {
+      const aMargin = withMargin.filter(i => i.abcRevenue === 'A');
+      const cMargin = withMargin.filter(i => i.abcRevenue === 'C');
+      if (aMargin.length) {
+        const avgA = Math.round(aMargin.reduce((s, i) => s + i.marginPct, 0) / aMargin.length);
+        list.push(
+          ru ? `Средняя маржа топовых (A) позиций — ${avgA}%. Проверьте, нет ли среди хитов продаж позиций с маржой ниже этого уровня — их стоит переоценить.`
+            : isUz ? `A toifa taomlarining o'rtacha marjasi — ${avgA}%. Shundan past marjali hit-taomlarni qaytadan narxlang.`
+            : `Average margin on A-grade items is ${avgA}%. Any bestseller below that line is underpriced relative to its own peer group.`
+        );
+      }
+      if (cMargin.length) {
+        const highMarginC = cMargin.filter(i => i.marginPct > (withMargin.reduce((s, i2) => s + i2.marginPct, 0) / withMargin.length)).length;
+        if (highMarginC > 0) {
+          list.push(
+            ru ? `${highMarginC} позиций класса C имеют маржу выше среднего — низкие продажи, но выгодны поштучно: стоит продвигать, а не убирать.`
+              : isUz ? `${highMarginC} ta C toifa taom o'rtachadan yuqori marjaga ega — sotuvi kam, lekin foydali: targ'ib qiling, o'chirmang.`
+              : `${highMarginC} grade-C items carry above-average margin — low volume but profitable per unit. Promote rather than cut these.`
+          );
+        }
+      }
+    }
+    const byCat = new Map<string, number>();
+    for (const it of filtered) byCat.set(it.cat, (byCat.get(it.cat) ?? 0) + it.revenue);
+    const totalRev = filtered.reduce((s, i) => s + i.revenue, 0) || 1;
+    const topCat = [...byCat.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (topCat && byCat.size > 1) {
+      const catPct = Math.round((topCat[1] / totalRev) * 100);
+      list.push(
+        ru ? `Категория «${topCat[0]}» даёт ${catPct}% выручки — при её просадке пострадает вся выручка непропорционально.`
+          : isUz ? `«${topCat[0]}» kategoriyasi tushumning ${catPct}% ini beradi — bu toifa qulasa, umumiy tushum keskin tushadi.`
+          : `Category "${topCat[0]}" accounts for ${catPct}% of revenue — a dip there hits total revenue disproportionately.`
+      );
+    }
+    return list;
+  };
 
+  const abcFooterText = () => ru ? 'Сделано с TRACE-OS · trace-os.uz' : isUz ? 'TRACE-OS bilan yaratildi · trace-os.uz' : 'Made by TRACE · trace-os.uz';
+
+  const handleExcel = async () => {
+    const { rangeLabel, generated, dateStamp } = abcMeta();
+    const insights = buildAbcInsights();
+    const title = ru ? 'ABC-анализ меню' : isUz ? 'Menyu ABC tahlili' : 'Menu ABC Analysis';
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'TRACE-OS';
+    wb.created = new Date();
+    const ws = wb.addWorksheet((ru ? 'ABC-анализ' : isUz ? 'ABC tahlil' : 'ABC Analysis').slice(0, 31), {
+      views: [{ state: 'frozen', ySplit: 0 }],
+    });
+
+    const COLS = 13;
+    ws.mergeCells(1, 1, 1, COLS);
+    const titleCell = ws.getCell(1, 1);
+    titleCell.value = title;
+    titleCell.font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
+    titleCell.alignment = { vertical: 'middle' };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${BRAND_HEX}` } };
+    ws.getRow(1).height = 26;
+
+    ws.mergeCells(2, 1, 2, COLS);
+    const metaCell = ws.getCell(2, 1);
+    metaCell.value = `${ru ? 'Период' : isUz ? 'Davr' : 'Period'}: ${rangeLabel}  ·  ${ru ? 'Создано' : isUz ? 'Yaratildi' : 'Generated'}: ${generated}`;
+    metaCell.font = { italic: true, size: 10, color: { argb: 'FF666666' } };
+
+    let r = 4;
+    ws.mergeCells(r, 1, r, COLS);
+    ws.getCell(r, 1).value = ru ? 'Ключевые выводы' : isUz ? 'Asosiy xulosalar' : 'Key insights';
+    ws.getCell(r, 1).font = { bold: true, size: 11, color: { argb: `FF${BRAND_HEX}` } };
+    r++;
+    for (const line of insights) {
+      ws.mergeCells(r, 1, r, COLS);
+      const c = ws.getCell(r, 1);
+      c.value = `•  ${line}`;
+      c.font = { size: 10 };
+      c.alignment = { wrapText: true };
+      ws.getRow(r).height = 24;
+      r++;
+    }
+    r++;
+
+    const headerRowIdx = r;
     const headers = [
       '#', ru ? 'Блюдо' : isUz ? 'Taom' : 'Item', ru ? 'Категория' : isUz ? 'Kategoriya' : 'Category',
       ru ? 'Выручка' : isUz ? 'Tushum' : 'Revenue', '%',
@@ -656,37 +723,145 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
       ru ? 'ABC Выручка' : isUz ? 'ABC Tushum' : 'ABC Revenue',
       ru ? 'ABC Маржа' : isUz ? 'ABC Marja' : 'ABC Margin',
     ];
+    const hRow = ws.getRow(headerRowIdx);
+    hRow.values = headers;
+    hRow.eachCell((cell: ExcelJS.Cell) => {
+      cell.font = { bold: true, size: 9, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${BRAND_HEX}` } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+    hRow.height = 20;
 
-    const rows: (string | number)[][] = [
-      [ru ? 'ABC-анализ меню' : isUz ? 'Menyu ABC tahlili' : 'Menu ABC Analysis'],
-      [`${ru ? 'Период' : isUz ? 'Davr' : 'Period'}: ${rangeLabel} · ${ru ? 'Создано' : isUz ? 'Yaratildi' : 'Generated'}: ${generated}`],
-      [],
-      headers,
-      ...filtered.map((item, i) => [
+    filtered.forEach((item, i) => {
+      const row = ws.getRow(headerRowIdx + 1 + i);
+      row.values = [
         i + 1, item.name, item.cat,
-        item.revenue, item.share,
+        item.revenue, item.share / 100,
         item.qty, item.avgPrice,
-        (item.cost ?? 0) > 0 ? (item.cost ?? 0) : '',
-        item.costPerUnit != null ? item.costPerUnit : '',
+        (item.cost ?? 0) > 0 ? (item.cost ?? 0) : null,
+        item.costPerUnit ?? null,
+        item.velocity,
+        item.abcQty, item.abcRevenue, item.abcProfit,
+      ];
+      row.getCell(4).numFmt = '#,##0';
+      row.getCell(5).numFmt = '0%';
+      row.getCell(7).numFmt = '#,##0';
+      row.getCell(8).numFmt = '#,##0';
+      row.getCell(9).numFmt = '#,##0';
+      row.getCell(10).numFmt = '0.00';
+      row.eachCell((c: ExcelJS.Cell) => { c.alignment = { ...c.alignment, vertical: 'middle' }; });
+      if (i % 2 === 1) {
+        for (let col = 1; col <= COLS; col++) {
+          row.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF7F7F7' } };
+        }
+      }
+      for (const col of [11, 12, 13] as const) {
+        const grade = row.getCell(col).value as 'A' | 'B' | 'C';
+        const cell = row.getCell(col);
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${GRADE_HEX[grade]}` } };
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      }
+    });
+
+    ws.columns = [
+      { width: 4 }, { width: 30 }, { width: 16 }, { width: 13 }, { width: 8 }, { width: 8 }, { width: 12 },
+      { width: 12 }, { width: 12 }, { width: 8 }, { width: 11 }, { width: 12 }, { width: 11 },
+    ];
+    ws.autoFilter = { from: { row: headerRowIdx, column: 1 }, to: { row: headerRowIdx, column: COLS } };
+    ws.views = [{ state: 'frozen', xSplit: 0, ySplit: headerRowIdx }];
+
+    const footerRow = headerRowIdx + filtered.length + 2;
+    ws.mergeCells(footerRow, 1, footerRow, COLS);
+    const footerCell = ws.getCell(footerRow, 1);
+    footerCell.value = abcFooterText();
+    footerCell.font = { italic: true, size: 9, color: { argb: 'FF999999' } };
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `TRACE-abc-analysis-${dateStamp}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePdf = () => {
+    const { rangeLabel, generated, dateStamp } = abcMeta();
+    const insights = buildAbcInsights();
+    const title = ru ? 'ABC-анализ меню' : isUz ? 'Menyu ABC tahlili' : 'Menu ABC Analysis';
+
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+    const pageW = doc.internal.pageSize.getWidth();
+
+    doc.setFontSize(16);
+    doc.setTextColor(...BRAND_RGB);
+    doc.text(title, 32, 32);
+    doc.setFontSize(9);
+    doc.setTextColor(120);
+    doc.text(`${ru ? 'Период' : isUz ? 'Davr' : 'Period'}: ${rangeLabel}  ·  ${ru ? 'Создано' : isUz ? 'Yaratildi' : 'Generated'}: ${generated}`, 32, 47);
+
+    doc.setFontSize(10);
+    doc.setTextColor(30);
+    doc.text(ru ? 'Ключевые выводы' : isUz ? 'Asosiy xulosalar' : 'Key insights', 32, 68);
+    doc.setFontSize(8.5);
+    doc.setTextColor(60);
+    let y = 82;
+    for (const line of insights) {
+      const wrapped = doc.splitTextToSize(`•  ${line}`, pageW - 64);
+      doc.text(wrapped, 32, y);
+      y += wrapped.length * 11 + 4;
+    }
+    y += 6;
+
+    autoTable(doc, {
+      startY: y,
+      head: [[
+        '#', ru ? 'Блюдо' : isUz ? 'Taom' : 'Item', ru ? 'Категория' : isUz ? 'Kategoriya' : 'Category',
+        ru ? 'Выручка' : isUz ? 'Tushum' : 'Revenue', '%',
+        ru ? 'Кол-во' : isUz ? 'Soni' : 'Qty', ru ? 'Ср. цена' : isUz ? "O'rt. narx" : 'Avg price',
+        ru ? 'Себест.' : isUz ? 'Tannarx' : 'Cost', ru ? 'Себест/шт' : isUz ? 'Tannarx/dona' : 'Cost/unit',
+        ru ? 'В день' : isUz ? 'Kuniga' : '/day',
+        ru ? 'К' : isUz ? 'S' : 'Q', ru ? 'В' : isUz ? 'T' : 'R', ru ? 'М' : isUz ? 'M' : 'M',
+      ]],
+      body: filtered.map((item, i) => [
+        i + 1, item.name, item.cat,
+        item.revenue.toLocaleString('ru-RU'), `${item.share}%`,
+        item.qty, item.avgPrice.toLocaleString('ru-RU'),
+        (item.cost ?? 0) > 0 ? (item.cost ?? 0).toLocaleString('ru-RU') : '—',
+        item.costPerUnit != null ? item.costPerUnit.toLocaleString('ru-RU') : '—',
         item.velocity,
         item.abcQty, item.abcRevenue, item.abcProfit,
       ]),
-    ];
+      styles: { fontSize: 7.5, cellPadding: 4 },
+      headStyles: { fillColor: BRAND_RGB, textColor: [255, 255, 255], fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [247, 247, 247] },
+      columnStyles: {
+        3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' },
+        6: { halign: 'right' }, 7: { halign: 'right' }, 8: { halign: 'right' }, 9: { halign: 'right' },
+        10: { halign: 'center' }, 11: { halign: 'center' }, 12: { halign: 'center' },
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body' && [10, 11, 12].includes(data.column.index)) {
+          const grade = String(data.cell.raw) as 'A' | 'B' | 'C';
+          if (GRADE_RGB[grade]) {
+            data.cell.styles.fillColor = GRADE_RGB[grade];
+            data.cell.styles.textColor = [255, 255, 255];
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+      },
+      didDrawPage: () => {
+        const h = doc.internal.pageSize.getHeight();
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        doc.text(abcFooterText(), 32, h - 18);
+        doc.text(String(doc.getNumberOfPages()), pageW - 32, h - 18, { align: 'right' });
+      },
+    });
 
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [
-      { wch: 4 }, { wch: 28 }, { wch: 16 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 12 },
-      { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 10 },
-    ];
-    const headerRowIdx = 3;
-    const ref = XLSX.utils.decode_range(ws['!ref'] ?? 'A1');
-    ws['!autofilter'] = { ref: `${XLSX.utils.encode_cell({ r: headerRowIdx, c: ref.s.c })}:${XLSX.utils.encode_cell({ r: headerRowIdx, c: ref.e.c })}` };
-    ws['!freeze'] = { xSplit: 0, ySplit: headerRowIdx + 1 } as any;
-
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, (ru ? 'ABC-анализ' : isUz ? 'ABC tahlil' : 'ABC Analysis').slice(0, 31));
-    const dateStamp = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(wb, `TRACE-abc-analysis-${dateStamp}.xlsx`);
+    doc.save(`TRACE-abc-analysis-${dateStamp}.pdf`);
   };
 
   return (
@@ -783,12 +958,12 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
                     </div>
                   </button>
                   <button
-                    onClick={() => { handlePrint(); setDownloadOpen(false); }}
+                    onClick={() => { handlePdf(); setDownloadOpen(false); }}
                     className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-card-hover text-left transition-colors">
                     <FileText size={14} className="text-primary" />
                     <div>
                       <p className="text-[11.5px] text-text font-medium leading-tight">PDF</p>
-                      <p className="text-[10px] text-muted leading-tight">{ru ? 'печать' : isUz ? 'chop etish' : 'print'}</p>
+                      <p className="text-[10px] text-muted leading-tight">.pdf</p>
                     </div>
                   </button>
                 </div>

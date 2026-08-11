@@ -22,8 +22,8 @@ import { ServiceInspector } from './components/views/ServiceInspector';
 import { PWAInstallGuide } from './components/PWAInstallGuide';
 import { Sidebar } from './components/Sidebar';
 import {
-  NavStyle, MobileNavStyle, NAV_STYLE_KEY, MOBILE_NAV_STYLE_KEY, HIDDEN_PAGES_KEY,
-  loadNavStyle, loadMobileNavStyle, loadHiddenPages,
+  NavStyle, MobileNavStyle, NAV_STYLE_KEY, MOBILE_NAV_STYLE_KEY, HIDDEN_PAGES_KEY, DEFAULT_PAGE_KEY, ACCENT_KEY, LOGO_URL_KEY,
+  loadNavStyle, loadMobileNavStyle, loadHiddenPages, loadDefaultPage, loadAccent, applyAccent, loadLogoUrl,
 } from './components/navConfig';
 
 const Login: React.FC<{ onLogin: (remember: boolean) => void; onStaffLogin: (info: StaffLoginResult) => void; lang: Language; setLang: (l: Language) => void }> = ({ onLogin, onStaffLogin, lang, setLang }) => {
@@ -183,7 +183,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState<ViewState>(() => {
     const v = new URLSearchParams(window.location.search).get('view');
     const valid: ViewState[] = ['dashboard', 'sales', 'operations', 'financial', 'reviews', 'loyalty', 'reports', 'settings', 'compare', 'service_inspector'];
-    return valid.includes(v as ViewState) ? (v as ViewState) : 'dashboard';
+    return valid.includes(v as ViewState) ? (v as ViewState) : loadDefaultPage();
   });
   const [lang, setLangState] = useState<Language>(() => {
     const saved = localStorage.getItem('trace_lang');
@@ -208,6 +208,19 @@ export default function App() {
   useEffect(() => {
     if (hiddenPages.includes(currentView)) setCurrentView('dashboard');
   }, [hiddenPages]);
+
+  const [defaultPage, setDefaultPageState] = useState<ViewState>(loadDefaultPage);
+  const setDefaultPage = (p: ViewState) => { setDefaultPageState(p); localStorage.setItem(DEFAULT_PAGE_KEY, p); };
+
+  const [accent, setAccentState] = useState<string>(loadAccent);
+  const setAccent = (rgb: string) => { setAccentState(rgb); localStorage.setItem(ACCENT_KEY, rgb); applyAccent(rgb); };
+  useEffect(() => { applyAccent(accent); }, []);
+
+  const [logoUrl, setLogoUrlState] = useState<string | null>(loadLogoUrl);
+  const setLogoUrl = (url: string | null) => {
+    setLogoUrlState(url);
+    if (url) localStorage.setItem(LOGO_URL_KEY, url); else localStorage.removeItem(LOGO_URL_KEY);
+  };
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -348,6 +361,12 @@ export default function App() {
           setMobileNavStyle={setMobileNavStyle}
           hiddenPages={hiddenPages}
           setHiddenPages={setHiddenPages}
+          defaultPage={defaultPage}
+          setDefaultPage={setDefaultPage}
+          accent={accent}
+          setAccent={setAccent}
+          logoUrl={logoUrl}
+          setLogoUrl={setLogoUrl}
         />
       );
       case 'compare':     return <Compare lang={lang} branches={branches} />;
@@ -367,6 +386,7 @@ export default function App() {
           onLogout={() => { localStorage.removeItem('trace_remember'); clearTenantToken(); setIsLoggedIn(false); }}
           lang={lang}
           hiddenPages={hiddenPages}
+          logoUrl={logoUrl}
         />
       )}
 
@@ -386,6 +406,7 @@ export default function App() {
         navStyle={navStyle}
         mobileNavStyle={mobileNavStyle}
         hiddenPages={hiddenPages}
+        logoUrl={logoUrl}
       />
 
       {demoBannerVisible && (

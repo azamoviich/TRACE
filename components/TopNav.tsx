@@ -26,6 +26,7 @@ interface TopNavProps {
   navStyle: NavStyle;
   mobileNavStyle: MobileNavStyle;
   hiddenPages: ViewState[];
+  logoUrl: string | null;
 }
 
 const NAV = NAV_ITEMS;
@@ -41,7 +42,7 @@ const STAGGER = 22;
 export const TopNav: React.FC<TopNavProps> = ({
   currentView, onNavigate, onLogout, lang, setLang, onOpenAI,
   branches = [], activeBranchId, onSwitchBranch, showAllBranchesOption, theme, setTheme,
-  navStyle, mobileNavStyle, hiddenPages,
+  navStyle, mobileNavStyle, hiddenPages, logoUrl,
 }) => {
   const t = TRANSLATIONS[lang];
   const [navHovered, setNavHovered] = useState(false);
@@ -78,13 +79,22 @@ export const TopNav: React.FC<TopNavProps> = ({
           </button>
         )}
 
-        {/* Logo */}
-        <span
-          className="font-display font-black text-[16px] tracking-[0.22em] text-text cursor-pointer select-none mr-6 flex-shrink-0"
-          onClick={() => handleNav('dashboard')}
-        >
-          TRACE
-        </span>
+        {/* Logo — a custom upload from Settings replaces the wordmark */}
+        {logoUrl ? (
+          <img
+            src={logoUrl}
+            alt="Logo"
+            onClick={() => handleNav('dashboard')}
+            className="h-7 w-auto max-w-[120px] object-contain cursor-pointer select-none mr-6 flex-shrink-0 rounded"
+          />
+        ) : (
+          <span
+            className="font-display font-black text-[16px] tracking-[0.22em] text-text cursor-pointer select-none mr-6 flex-shrink-0"
+            onClick={() => handleNav('dashboard')}
+          >
+            TRACE
+          </span>
+        )}
 
         <div className="hidden md:block w-px h-4 bg-border mr-6 flex-shrink-0" />
 

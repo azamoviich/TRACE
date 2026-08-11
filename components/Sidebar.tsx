@@ -10,6 +10,7 @@ interface SidebarProps {
   onLogout: () => void;
   lang: Language;
   hiddenPages: ViewState[];
+  logoUrl: string | null;
 }
 
 // Desktop-only icon rail. Mobile navigation (bottom tabs or drawer) lives in
@@ -20,6 +21,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   lang,
   hiddenPages,
+  logoUrl,
 }) => {
   const t = TRANSLATIONS[lang];
   const navItems = NAV_ITEMS.filter(({ id }) => !hiddenPages.includes(id));
@@ -28,7 +30,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <aside className="hidden lg:flex fixed top-0 left-0 z-50 h-screen w-14 bg-[#080808] border-r border-border flex-col items-center py-4 gap-1">
       <div className="w-8 h-8 mb-4 flex-shrink-0 overflow-hidden rounded-lg">
         <img
-          src="/trace-logo.png"
+          src={logoUrl || '/trace-logo.png'}
           alt="TRACE"
           className="w-full h-full object-cover"
           onError={(e) => {

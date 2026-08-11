@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Card } from '../ui/Card';
 import { Language, ViewState } from '../../types';
-import { Mail, Loader2, Plus, Trash2, Send, Sun, Moon, Link2, PanelLeft, PanelTop, Rows3, PanelBottom, Eye, EyeOff } from 'lucide-react';
-import { traceApi, isDemoTenant, ReportSubscription, ReportType, ReportChannel, TelegramStatus } from '../../services/traceApi';
+import { Mail, Loader2, Plus, Trash2, Send, Sun, Moon, Link2, PanelLeft, PanelTop, Rows3, PanelBottom, Eye, EyeOff, Palette, Check, ImagePlus, X, Home } from 'lucide-react';
+import { traceApi, isDemoTenant, ReportSubscription, ReportType, ReportChannel, TelegramStatus, uploadPhoto, getSubdomain } from '../../services/traceApi';
 import { TRANSLATIONS } from '../../constants';
-import { NAV_ITEMS, HIDEABLE_PAGE_IDS, NavStyle, MobileNavStyle } from '../navConfig';
+import { NAV_ITEMS, HIDEABLE_PAGE_IDS, DEFAULT_PAGE_CHOICES, ACCENT_SWATCHES, NavStyle, MobileNavStyle } from '../navConfig';
 
 const NEW_PREFIX = 'new-';
 
@@ -32,7 +32,16 @@ export const Settings: React.FC<{
   setMobileNavStyle: (s: MobileNavStyle) => void;
   hiddenPages: ViewState[];
   setHiddenPages: (pages: ViewState[]) => void;
-}> = ({ lang, onShowToast, theme, setTheme, navStyle, setNavStyle, mobileNavStyle, setMobileNavStyle, hiddenPages, setHiddenPages }) => {
+  defaultPage: ViewState;
+  setDefaultPage: (p: ViewState) => void;
+  accent: string;
+  setAccent: (rgb: string) => void;
+  logoUrl: string | null;
+  setLogoUrl: (url: string | null) => void;
+}> = ({
+  lang, onShowToast, theme, setTheme, navStyle, setNavStyle, mobileNavStyle, setMobileNavStyle,
+  hiddenPages, setHiddenPages, defaultPage, setDefaultPage, accent, setAccent, logoUrl, setLogoUrl,
+}) => {
   const ru = lang === 'ru';
   const isUz = lang === 'uz';
   const t = TRANSLATIONS[lang];
@@ -149,6 +158,19 @@ export const Settings: React.FC<{
 
   const togglePageHidden = (id: ViewState) => {
     setHiddenPages(hiddenPages.includes(id) ? hiddenPages.filter(p => p !== id) : [...hiddenPages, id]);
+  };
+
+  const [logoUploading, setLogoUploading] = useState(false);
+  const handleLogoUpload = async (file: File) => {
+    setLogoUploading(true);
+    try {
+      const url = await uploadPhoto(getSubdomain(), file);
+      setLogoUrl(url);
+    } catch {
+      onShowToast?.(ru ? 'Ошибка загрузки' : isUz ? 'Yuklashda xatolik' : 'Upload failed', 'error');
+    } finally {
+      setLogoUploading(false);
+    }
   };
 
   const handleSendTest = async (sub: ReportSubscription) => {
@@ -278,6 +300,71 @@ export const Settings: React.FC<{
               </div>
             );
           })}
+        </div>
+      </Card>
+
+      <Card title={t.default_page_title} action={<Home size={18} className="text-muted" />}>
+        <p className="text-[13px] text-muted -mt-1 mb-4">{t.default_page_desc}</p>
+        <select
+          value={hiddenPages.includes(defaultPage) ? 'dashboard' : defaultPage}
+          onChange={e => setDefaultPage(e.target.value as ViewState)}
+          className="w-full bg-card border border-border rounded-lg px-3 py-2.5 text-[13px] text-text focus:outline-none focus:border-primary transition-colors cursor-pointer"
+        >
+          {DEFAULT_PAGE_CHOICES.filter(id => !hiddenPages.includes(id)).map(id => (
+            <option key={id} value={id}>{t[id as keyof typeof t] as string}</option>
+          ))}
+        </select>
+      </Card>
+
+      <Card title={t.accent_title} action={<Palette size={18} className="text-muted" />}>
+        <p className="text-[13px] text-muted -mt-1 mb-4">{t.accent_desc}</p>
+        <div className="flex gap-2.5 flex-wrap">
+          {ACCENT_SWATCHES.map(swatch => {
+            const isActive = accent === swatch.rgb;
+            return (
+              <button
+                key={swatch.id}
+                onClick={() => setAccent(swatch.rgb)}
+                style={{ backgroundColor: `rgb(${swatch.rgb})` }}
+                className="w-9 h-9 rounded-full flex items-center justify-center transition-transform hover:scale-110 shrink-0"
+              >
+                {isActive && <Check size={16} className="text-white" strokeWidth={3} />}
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
+      <Card title={t.logo_title} action={<ImagePlus size={18} className="text-muted" />}>
+        <p className="text-[13px] text-muted -mt-1 mb-4">{t.logo_desc}</p>
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-lg border border-border bg-background flex items-center justify-center overflow-hidden shrink-0">
+            {logoUrl
+              ? <img src={logoUrl} alt="Logo" className="w-full h-full object-contain" />
+              : <span className="font-display font-black text-[12px] tracking-[0.15em] text-muted">TRACE</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="px-4 py-2 bg-card border border-border text-text text-[12px] font-semibold rounded-lg hover:bg-card-hover transition-colors cursor-pointer flex items-center gap-2">
+              {logoUploading ? <Loader2 size={13} className="animate-spin" /> : <ImagePlus size={13} />}
+              {logoUploading ? t.logo_uploading : logoUrl ? t.logo_change : t.logo_upload}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={logoUploading}
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f); e.target.value = ''; }}
+              />
+            </label>
+            {logoUrl && (
+              <button
+                onClick={() => setLogoUrl(null)}
+                className="px-3 py-2 text-danger text-[12px] font-semibold rounded-lg hover:bg-danger/8 transition-colors flex items-center gap-1.5"
+              >
+                <X size={13} />
+                {t.logo_remove}
+              </button>
+            )}
+          </div>
         </div>
       </Card>
 

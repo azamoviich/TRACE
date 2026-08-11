@@ -20,6 +20,11 @@ import { ManagerPortal } from './components/ManagerPortal';
 import { ServiceInspectorPublic } from './components/ServiceInspectorPublic';
 import { ServiceInspector } from './components/views/ServiceInspector';
 import { PWAInstallGuide } from './components/PWAInstallGuide';
+import { Sidebar } from './components/Sidebar';
+import {
+  NavStyle, MobileNavStyle, NAV_STYLE_KEY, MOBILE_NAV_STYLE_KEY, HIDDEN_PAGES_KEY,
+  loadNavStyle, loadMobileNavStyle, loadHiddenPages,
+} from './components/navConfig';
 
 const Login: React.FC<{ onLogin: (remember: boolean) => void; onStaffLogin: (info: StaffLoginResult) => void; lang: Language; setLang: (l: Language) => void }> = ({ onLogin, onStaffLogin, lang, setLang }) => {
   const [staffMode, setStaffMode] = useState(false);
@@ -192,6 +197,18 @@ export default function App() {
   });
   const [themeChosen, setThemeChosen] = useState(() => localStorage.getItem('trace_theme') !== null);
 
+  const [navStyle, setNavStyleState] = useState<NavStyle>(loadNavStyle);
+  const setNavStyle = (s: NavStyle) => { setNavStyleState(s); localStorage.setItem(NAV_STYLE_KEY, s); };
+  const [mobileNavStyle, setMobileNavStyleState] = useState<MobileNavStyle>(loadMobileNavStyle);
+  const setMobileNavStyle = (s: MobileNavStyle) => { setMobileNavStyleState(s); localStorage.setItem(MOBILE_NAV_STYLE_KEY, s); };
+  const [hiddenPages, setHiddenPagesState] = useState<ViewState[]>(loadHiddenPages);
+  const setHiddenPages = (pages: ViewState[]) => { setHiddenPagesState(pages); localStorage.setItem(HIDDEN_PAGES_KEY, JSON.stringify(pages)); };
+
+  // A page hidden while it was the active tab needs somewhere safe to land.
+  useEffect(() => {
+    if (hiddenPages.includes(currentView)) setCurrentView('dashboard');
+  }, [hiddenPages]);
+
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
@@ -319,7 +336,20 @@ export default function App() {
       case 'reviews':     return <Reviews key={branchKey} lang={lang} onContextReady={setAiContext} />;
       case 'loyalty':     return <Loyalty key={branchKey} lang={lang} />;
       case 'reports':     return <Reports lang={lang} onShowToast={showToast} onNavigate={setCurrentView} />;
-      case 'settings':    return <Settings lang={lang} onShowToast={showToast} theme={theme} setTheme={setTheme} />;
+      case 'settings':    return (
+        <Settings
+          lang={lang}
+          onShowToast={showToast}
+          theme={theme}
+          setTheme={setTheme}
+          navStyle={navStyle}
+          setNavStyle={setNavStyle}
+          mobileNavStyle={mobileNavStyle}
+          setMobileNavStyle={setMobileNavStyle}
+          hiddenPages={hiddenPages}
+          setHiddenPages={setHiddenPages}
+        />
+      );
       case 'compare':     return <Compare lang={lang} branches={branches} />;
       case 'service_inspector': return isDemoTenant() ? <Dashboard key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} /> : <ServiceInspector lang={lang} onShowToast={showToast} />;
       default:            return <Dashboard lang={lang} onShowToast={showToast} branch={selectedBranch} />;
@@ -329,6 +359,16 @@ export default function App() {
   return (
     <div className="min-h-screen bg-background text-text font-sans selection:bg-primary/20">
       <ToastContainer toasts={toasts} removeToast={removeToast} />
+
+      {navStyle === 'side' && (
+        <Sidebar
+          currentView={currentView}
+          onNavigate={setCurrentView}
+          onLogout={() => { localStorage.removeItem('trace_remember'); clearTenantToken(); setIsLoggedIn(false); }}
+          lang={lang}
+          hiddenPages={hiddenPages}
+        />
+      )}
 
       <TopNav
         currentView={currentView}
@@ -343,10 +383,13 @@ export default function App() {
         showAllBranchesOption={showAllBranchesOption}
         theme={theme}
         setTheme={setTheme}
+        navStyle={navStyle}
+        mobileNavStyle={mobileNavStyle}
+        hiddenPages={hiddenPages}
       />
 
       {demoBannerVisible && (
-        <div className="fixed top-[52px] left-0 right-0 z-40 flex justify-center px-3 pt-2">
+        <div className={`fixed top-[52px] left-0 right-0 z-40 flex justify-center px-3 pt-2 ${navStyle === 'side' ? 'lg:pl-14' : ''}`}>
           <div className="flex items-center gap-2 px-4 py-2 rounded-2xl text-[11px] font-medium max-w-full glass"
             style={{ borderColor: 'rgba(245,158,11,0.22)', background: 'rgba(245,158,11,0.08)' }}>
             <span style={{ color: '#f59e0b' }}>⚠</span>
@@ -359,7 +402,7 @@ export default function App() {
         </div>
       )}
 
-      <main className={`min-h-screen pb-[76px] md:pb-0 ${demoBannerVisible ? 'pt-[96px]' : 'pt-[52px]'}`}>
+      <main className={`min-h-screen ${mobileNavStyle === 'bottom' ? 'pb-[76px] md:pb-0' : ''} ${demoBannerVisible ? 'pt-[96px]' : 'pt-[52px]'} ${navStyle === 'side' ? 'lg:pl-14' : ''}`}>
         <div className="px-4 md:px-10 py-5 md:py-8 max-w-[1400px] mx-auto">
           {renderContent()}
         </div>

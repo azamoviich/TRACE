@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import {
-  LayoutDashboard, TrendingUp, Activity, DollarSign,
-  Star, Heart, FileText, LogOut, Menu, X, Globe, Sparkles, Settings2, GitCompare, Sun, Moon, ClipboardCheck
+  LogOut, Menu, X, Globe, Sparkles, GitCompare, Sun, Moon,
 } from 'lucide-react';
 import { ViewState, Language } from '../types';
 import { TRANSLATIONS, nextLang, tr } from '../constants';
 import { BranchSummary, ALL_BRANCHES_ID, isDemoTenant } from '../services/traceApi';
+import { NAV_ITEMS, NavStyle, MobileNavStyle } from './navConfig';
 
 interface TopNavProps {
   currentView: ViewState;
@@ -22,21 +22,15 @@ interface TopNavProps {
   showAllBranchesOption?: boolean;
   theme: 'light' | 'dark';
   setTheme: (t: 'light' | 'dark') => void;
+  // Customizable from Settings — see components/navConfig.ts.
+  navStyle: NavStyle;
+  mobileNavStyle: MobileNavStyle;
+  hiddenPages: ViewState[];
 }
 
-const NAV = [
-  { id: 'dashboard', icon: LayoutDashboard },
-  { id: 'sales',     icon: TrendingUp      },
-  { id: 'operations',icon: Activity        },
-  { id: 'financial', icon: DollarSign      },
-  { id: 'reviews',   icon: Star            },
-  { id: 'loyalty',   icon: Heart           },
-  { id: 'reports',   icon: FileText        },
-  { id: 'service_inspector', icon: ClipboardCheck },
-  { id: 'settings',  icon: Settings2       },
-];
+const NAV = NAV_ITEMS;
 
-const COMPARE_NAV = { id: 'compare', icon: GitCompare };
+const COMPARE_NAV = { id: 'compare' as ViewState, icon: GitCompare };
 
 // Spring easing: slight overshoot feels snappy
 const SPRING = 'cubic-bezier(0.34, 1.56, 0.64, 1)';
@@ -47,6 +41,7 @@ const STAGGER = 22;
 export const TopNav: React.FC<TopNavProps> = ({
   currentView, onNavigate, onLogout, lang, setLang, onOpenAI,
   branches = [], activeBranchId, onSwitchBranch, showAllBranchesOption, theme, setTheme,
+  navStyle, mobileNavStyle, hiddenPages,
 }) => {
   const t = TRANSLATIONS[lang];
   const [navHovered, setNavHovered] = useState(false);
@@ -55,12 +50,14 @@ export const TopNav: React.FC<TopNavProps> = ({
 
   const showBranches = branches.length > 1;
   // ServiceInspector isn't part of the sales demo — real tenants only.
-  const baseNav = isDemoTenant() ? NAV.filter(n => n.id !== 'service_inspector') : NAV;
+  const baseNav = (isDemoTenant() ? NAV.filter(n => n.id !== 'service_inspector') : NAV)
+    .filter(n => !hiddenPages.includes(n.id));
   const navItems = showBranches ? [...baseNav, COMPARE_NAV] : baseNav;
 
-  // Mobile bottom tab bar: primary 4 sections always visible + "More" sheet for the rest
-  const BOTTOM_NAV = navItems.slice(0, 4);
-  const MORE_NAV = navItems.slice(4);
+  // Mobile bottom tab bar: primary 4 sections always visible + "More" sheet for the rest.
+  // In drawer mode there's no bottom bar, so the sheet carries every item instead.
+  const BOTTOM_NAV = mobileNavStyle === 'bottom' ? navItems.slice(0, 4) : [];
+  const MORE_NAV = mobileNavStyle === 'bottom' ? navItems.slice(4) : navItems;
 
   const handleNav = (id: string) => {
     onNavigate(id as ViewState);
@@ -69,7 +66,17 @@ export const TopNav: React.FC<TopNavProps> = ({
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50 h-[52px] glass-strong flex items-center px-5 md:px-8 shadow-[0_4px_16px_rgba(0,0,0,0.06)]">
+      <header className={`fixed top-0 left-0 right-0 z-50 h-[52px] glass-strong flex items-center px-5 md:px-8 shadow-[0_4px_16px_rgba(0,0,0,0.06)] ${navStyle === 'side' ? 'lg:pl-[72px]' : ''}`}>
+
+        {/* Mobile menu trigger — only when the phone nav is set to drawer mode */}
+        {mobileNavStyle === 'drawer' && (
+          <button
+            onClick={() => setMobileOpen(true)}
+            className="md:hidden mr-3 -ml-1 flex-shrink-0 text-muted hover:text-text transition-colors"
+          >
+            <Menu size={20} />
+          </button>
+        )}
 
         {/* Logo */}
         <span
@@ -81,9 +88,9 @@ export const TopNav: React.FC<TopNavProps> = ({
 
         <div className="hidden md:block w-px h-4 bg-border mr-6 flex-shrink-0" />
 
-        {/* Desktop nav */}
+        {/* Desktop nav — hidden when the desktop nav style is set to sidebar */}
         <nav
-          className="hidden md:flex items-center gap-0.5 flex-1 h-full"
+          className={`${navStyle === 'side' ? 'lg:hidden' : ''} hidden md:flex items-center gap-0.5 flex-1 h-full`}
           onMouseEnter={() => setNavHovered(true)}
           onMouseLeave={() => { setNavHovered(false); setItemHover(null); }}
         >
@@ -285,7 +292,8 @@ export const TopNav: React.FC<TopNavProps> = ({
         </div>
       )}
 
-      {/* Mobile bottom tab bar — always visible, labelled, so other sections are obvious */}
+      {/* Mobile bottom tab bar — only in 'bottom' phone nav style; 'drawer' style uses the burger + sheet instead */}
+      {mobileNavStyle === 'bottom' && (
       <nav
         className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch bg-surface border-t border-border"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
@@ -315,6 +323,7 @@ export const TopNav: React.FC<TopNavProps> = ({
           {t.more}
         </button>
       </nav>
+      )}
     </>
   );
 };

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Card } from '../ui/Card';
-import { Language } from '../../types';
-import { Mail, Loader2, Plus, Trash2, Send, Sun, Moon, Link2 } from 'lucide-react';
+import { Language, ViewState } from '../../types';
+import { Mail, Loader2, Plus, Trash2, Send, Sun, Moon, Link2, PanelLeft, PanelTop, Rows3, PanelBottom, Eye, EyeOff } from 'lucide-react';
 import { traceApi, isDemoTenant, ReportSubscription, ReportType, ReportChannel, TelegramStatus } from '../../services/traceApi';
 import { TRANSLATIONS } from '../../constants';
+import { NAV_ITEMS, HIDEABLE_PAGE_IDS, NavStyle, MobileNavStyle } from '../navConfig';
 
 const NEW_PREFIX = 'new-';
 
@@ -25,7 +26,13 @@ export const Settings: React.FC<{
   onShowToast?: (msg: string, type: 'success' | 'error' | 'info') => void;
   theme: 'light' | 'dark';
   setTheme: (t: 'light' | 'dark') => void;
-}> = ({ lang, onShowToast, theme, setTheme }) => {
+  navStyle: NavStyle;
+  setNavStyle: (s: NavStyle) => void;
+  mobileNavStyle: MobileNavStyle;
+  setMobileNavStyle: (s: MobileNavStyle) => void;
+  hiddenPages: ViewState[];
+  setHiddenPages: (pages: ViewState[]) => void;
+}> = ({ lang, onShowToast, theme, setTheme, navStyle, setNavStyle, mobileNavStyle, setMobileNavStyle, hiddenPages, setHiddenPages }) => {
   const ru = lang === 'ru';
   const isUz = lang === 'uz';
   const t = TRANSLATIONS[lang];
@@ -140,6 +147,10 @@ export const Settings: React.FC<{
     }
   };
 
+  const togglePageHidden = (id: ViewState) => {
+    setHiddenPages(hiddenPages.includes(id) ? hiddenPages.filter(p => p !== id) : [...hiddenPages, id]);
+  };
+
   const handleSendTest = async (sub: ReportSubscription) => {
     if (sub.channel === 'email' && !sub.email) return;
     if (sub.channel === 'telegram' && !telegram?.connected) return;
@@ -186,6 +197,87 @@ export const Settings: React.FC<{
             <Moon size={16} />
             {ru ? 'Тёмная' : isUz ? 'Qora' : 'Dark'}
           </button>
+        </div>
+      </Card>
+
+      <Card title={t.nav_settings_title} action={navStyle === 'side' ? <PanelLeft size={18} className="text-muted" /> : <PanelTop size={18} className="text-muted" />}>
+        <p className="text-[13px] text-muted -mt-1 mb-5">{t.nav_settings_desc}</p>
+
+        <div className="mb-4">
+          <label className="text-[11px] text-muted block mb-1.5">{t.nav_style_desktop}</label>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setNavStyle('top')}
+              className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-[14px] font-semibold border transition-colors ${
+                navStyle === 'top' ? 'bg-primary text-white border-primary' : 'bg-card border-border text-text hover:bg-card-hover'
+              }`}
+            >
+              <PanelTop size={16} />
+              {t.nav_style_top}
+            </button>
+            <button
+              onClick={() => setNavStyle('side')}
+              className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-[14px] font-semibold border transition-colors ${
+                navStyle === 'side' ? 'bg-primary text-white border-primary' : 'bg-card border-border text-text hover:bg-card-hover'
+              }`}
+            >
+              <PanelLeft size={16} />
+              {t.nav_style_side}
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-[11px] text-muted block mb-1.5">{t.nav_style_mobile}</label>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setMobileNavStyle('bottom')}
+              className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-[14px] font-semibold border transition-colors ${
+                mobileNavStyle === 'bottom' ? 'bg-primary text-white border-primary' : 'bg-card border-border text-text hover:bg-card-hover'
+              }`}
+            >
+              <PanelBottom size={16} />
+              {t.nav_style_bottom_tabs}
+            </button>
+            <button
+              onClick={() => setMobileNavStyle('drawer')}
+              className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-[14px] font-semibold border transition-colors ${
+                mobileNavStyle === 'drawer' ? 'bg-primary text-white border-primary' : 'bg-card border-border text-text hover:bg-card-hover'
+              }`}
+            >
+              <Rows3 size={16} />
+              {t.nav_style_drawer}
+            </button>
+          </div>
+        </div>
+      </Card>
+
+      <Card title={t.pages_visibility_title} action={<Eye size={18} className="text-muted" />}>
+        <p className="text-[13px] text-muted -mt-1 mb-5">{t.pages_visibility_desc}</p>
+        <div className="space-y-1">
+          {NAV_ITEMS.filter(({ id }) => id !== 'settings').map(({ id, icon: Icon }) => {
+            const isHideable = HIDEABLE_PAGE_IDS.includes(id);
+            const isHidden = hiddenPages.includes(id);
+            return (
+              <div key={id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-background transition-colors">
+                <Icon size={16} className="text-muted shrink-0" />
+                <span className="text-[13px] text-text flex-1">{t[id as keyof typeof t] as string}</span>
+                {!isHideable ? (
+                  <span className="text-[11px] text-muted">{t.page_locked_note}</span>
+                ) : (
+                  <button
+                    onClick={() => togglePageHidden(id)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold border transition-colors ${
+                      isHidden ? 'bg-card border-border text-muted hover:bg-card-hover' : 'bg-primary/10 border-primary/25 text-primary'
+                    }`}
+                  >
+                    {isHidden ? <EyeOff size={13} /> : <Eye size={13} />}
+                    {isHidden ? (ru ? 'Скрыто' : isUz ? 'Yashirin' : 'Hidden') : (ru ? 'Видно' : isUz ? "Ko'rinadi" : 'Visible')}
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       </Card>
 

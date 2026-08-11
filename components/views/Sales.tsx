@@ -10,7 +10,7 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, 
 import { TRANSLATIONS, tr, formatMinutes, formatMinutesShort } from '../../constants';
 import { SalesSkeleton } from '../ui/Skeleton';
 import { Language, TimeRange, ComparisonPeriod } from '../../types';
-import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, Calendar, ChevronDown, ChevronUp, ChevronsUpDown, X, Sparkles, TrendingUp, TrendingDown, Minus, ExternalLink, Users, Download, FileText, FileSpreadsheet, Lock, SlidersHorizontal } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, Calendar, ChevronDown, ChevronUp, ChevronsUpDown, X, Sparkles, TrendingUp, TrendingDown, Minus, ExternalLink, Users, Download, FileText, FileSpreadsheet, Lock, SlidersHorizontal, Tags } from 'lucide-react';
 import { ComparisonSelector } from '../ui/ComparisonSelector';
 import { useRealtimeData, RealtimeEvent } from '../../hooks/useRealtimeData';
 import { traceApi, getTenantPlan, RevenueRow, HourlyRow, DishRow, CategoryPerfRow, AbcRow, AbcHistoryItem, DaypartData } from '../../services/traceApi';
@@ -482,6 +482,31 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
   }, [colsOpen]);
   const toggleCol = (id: OptCol) => setVisibleCols(v => ({ ...v, [id]: !v[id] }));
 
+  // Category visibility — a persisted blacklist so newly-seen categories
+  // (new iiko section, seasonal menu, etc.) default to visible instead of
+  // silently vanishing until the user opts back in.
+  const [hiddenCats, setHiddenCats] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('trace_abc_hidden_cats');
+      if (saved) return new Set(JSON.parse(saved));
+    } catch {}
+    return new Set();
+  });
+  const [catsOpen, setCatsOpen] = useState(false);
+  const catsBtnRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { localStorage.setItem('trace_abc_hidden_cats', JSON.stringify([...hiddenCats])); }, [hiddenCats]);
+  useEffect(() => {
+    if (!catsOpen) return;
+    const onClick = (e: MouseEvent) => { if (catsBtnRef.current && !catsBtnRef.current.contains(e.target as Node)) setCatsOpen(false); };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [catsOpen]);
+  const toggleCat = (cat: string) => setHiddenCats(s => {
+    const next = new Set(s);
+    if (next.has(cat)) next.delete(cat); else next.add(cat);
+    return next;
+  });
+
   const [downloadOpen, setDownloadOpen] = useState(false);
   const downloadBtnRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -531,6 +556,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
     let list = items;
     if (abcFilter !== 'all') list = list.filter(i => i[abcMetric] === abcFilter);
     if (catFilter !== 'all') list = list.filter(i => i.cat === catFilter);
+    if (hiddenCats.size > 0) list = list.filter(i => !hiddenCats.has(i.cat));
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       list = list.filter(i => i.name.toLowerCase().includes(q));
@@ -540,7 +566,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
       const bv = b[sort.key] ?? -1;
       return sort.dir === 'desc' ? bv - av : av - bv;
     });
-  }, [items, abcFilter, abcMetric, catFilter, sort, searchQuery]);
+  }, [items, abcFilter, abcMetric, catFilter, hiddenCats, sort, searchQuery]);
 
   const aCount = items.filter(i => i.abcRevenue === 'A').length;
   const deadWeight = items.filter(i => i.abcRevenue === 'C' && i.velocity < 0.5).length;
@@ -605,24 +631,27 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
   // Plain-language takeaways computed from the same numbers already on
   // screen — turns the export into something a manager acts on, not just
   // a data dump they have to re-analyze themselves.
-  const buildAbcInsights = (): string[] => {
+  const buildAbcInsights = (list_?: AbcRow[]): string[] => {
+    const scope = list_ ?? filtered;
     const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');
     const list: string[] = [];
-    const total = filtered.length || 1;
-    const aPct = Math.round((aCount / total) * 100);
+    const total = scope.length || 1;
+    const scopeACount = scope.filter(i => i.abcRevenue === 'A').length;
+    const scopeDeadWeight = scope.filter(i => i.abcRevenue === 'C' && i.velocity < 0.5).length;
+    const aPct = Math.round((scopeACount / total) * 100);
     list.push(
-      ru ? `${aCount} из ${total} позиций (${aPct}%) формируют ~70% выручки — классическое ядро Парето, держите их в наличии всегда.`
-        : isUz ? `${aCount}/${total} taom (${aPct}%) tushumning ~70% ini beradi — doim yetkazib turing.`
-        : `${aCount} of ${total} items (${aPct}%) drive ~70% of revenue — the Pareto core. Never let these run out.`
+      ru ? `${scopeACount} из ${total} позиций (${aPct}%) формируют ~70% выручки — классическое ядро Парето, держите их в наличии всегда.`
+        : isUz ? `${scopeACount}/${total} taom (${aPct}%) tushumning ~70% ini beradi — doim yetkazib turing.`
+        : `${scopeACount} of ${total} items (${aPct}%) drive ~70% of revenue — the Pareto core. Never let these run out.`
     );
-    if (deadWeight > 0) {
+    if (scopeDeadWeight > 0) {
       list.push(
-        ru ? `${deadWeight} позиций — класс C по выручке при скорости <0.5/день: мёртвый груз, кандидаты на удаление или ребрендинг в меню.`
-          : isUz ? `${deadWeight} taom — C toifa va kunlik tezlik <0.5: menyudan olib tashlash kandidati.`
-          : `${deadWeight} items are grade C with velocity under 0.5/day — dead weight, candidates to cut or reposition.`
+        ru ? `${scopeDeadWeight} позиций — класс C по выручке при скорости <0.5/день: мёртвый груз, кандидаты на удаление или ребрендинг в меню.`
+          : isUz ? `${scopeDeadWeight} taom — C toifa va kunlik tezlik <0.5: menyudan olib tashlash kandidati.`
+          : `${scopeDeadWeight} items are grade C with velocity under 0.5/day — dead weight, candidates to cut or reposition.`
       );
     }
-    const top = filtered[0];
+    const top = scope[0];
     if (top) {
       list.push(
         ru ? `Лидер — «${top.name}» (${top.cat}): ${fmt(top.revenue)} UZS, ${top.share}% всей выручки.`
@@ -630,7 +659,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
           : `Top performer — "${top.name}" (${top.cat}): ${fmt(top.revenue)} UZS, ${top.share}% of total revenue.`
       );
     }
-    const withMargin = filtered.filter(i => i.marginPct != null) as (AbcRow & { marginPct: number })[];
+    const withMargin = scope.filter(i => i.marginPct != null) as (AbcRow & { marginPct: number })[];
     if (withMargin.length) {
       const aMargin = withMargin.filter(i => i.abcRevenue === 'A');
       const cMargin = withMargin.filter(i => i.abcRevenue === 'C');
@@ -654,8 +683,8 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
       }
     }
     const byCat = new Map<string, number>();
-    for (const it of filtered) byCat.set(it.cat, (byCat.get(it.cat) ?? 0) + it.revenue);
-    const totalRev = filtered.reduce((s, i) => s + i.revenue, 0) || 1;
+    for (const it of scope) byCat.set(it.cat, (byCat.get(it.cat) ?? 0) + it.revenue);
+    const totalRev = scope.reduce((s, i) => s + i.revenue, 0) || 1;
     const topCat = [...byCat.entries()].sort((a, b) => b[1] - a[1])[0];
     if (topCat && byCat.size > 1) {
       const catPct = Math.round((topCat[1] / totalRev) * 100);
@@ -670,17 +699,26 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
 
   const abcFooterText = () => ru ? 'Сделано с TRACE-OS · trace-os.uz' : isUz ? 'TRACE-OS bilan yaratildi · trace-os.uz' : 'Made by TRACE · trace-os.uz';
 
-  const handleExcel = async () => {
-    const { rangeLabel, generated, dateStamp } = abcMeta();
-    const insights = buildAbcInsights();
-    const title = ru ? 'ABC-анализ меню' : isUz ? 'Menyu ABC tahlili' : 'Menu ABC Analysis';
+  // Section keyword matching — mirrors TRACEBACKEND's CATEGORY_ALIASES so
+  // "Кухня"/"Kitchen", "Бар"/"Bar" etc. all map to the same logical section
+  // regardless of which language/spelling this tenant's iiko categories use.
+  const ABC_SECTIONS: { id: string; label: { ru: string; en: string; uz: string }; keywords: string[] }[] = [
+    { id: 'kitchen', label: { ru: 'Кухня', en: 'Kitchen', uz: 'Oshxona' }, keywords: ['кухня', 'kitchen', 'oshxona'] },
+    { id: 'bar', label: { ru: 'Бар', en: 'Bar', uz: 'Bar' }, keywords: ['бар', 'bar'] },
+    { id: 'bakery', label: { ru: 'Выпечка', en: 'Bakery', uz: 'Non mahsulotlari' }, keywords: ['выпечк', 'bakery', 'нон'] },
+    { id: 'dessert', label: { ru: 'Десерты', en: 'Desserts', uz: 'Shirinliklar' }, keywords: ['кондитер', 'десерт', 'dessert', 'shirinlik'] },
+  ];
+  const sectionOf = (cat: string): typeof ABC_SECTIONS[number] | null => {
+    const low = cat.toLowerCase();
+    return ABC_SECTIONS.find(s => s.keywords.some(k => low.includes(k))) ?? null;
+  };
 
-    const wb = new ExcelJS.Workbook();
-    wb.creator = 'TRACE-OS';
-    wb.created = new Date();
-    const ws = wb.addWorksheet((ru ? 'ABC-анализ' : isUz ? 'ABC tahlil' : 'ABC Analysis').slice(0, 31), {
-      views: [{ state: 'frozen', ySplit: 0 }],
-    });
+  // Writes one fully-styled ABC sheet (title, insights, colored table, footer)
+  // into an existing workbook — shared by the overview sheet and each
+  // per-section sheet (Bar/Kitchen/Bakery/Desserts) so they stay identical.
+  const writeAbcSheet = (wb: ExcelJS.Workbook, sheetName: string, title: string, sheetItems: AbcRow[], sheetInsights: string[]) => {
+    const { rangeLabel, generated } = abcMeta();
+    const ws = wb.addWorksheet(sheetName.slice(0, 31), { views: [{ state: 'frozen', ySplit: 0 }] });
 
     const COLS = 13;
     ws.mergeCells(1, 1, 1, COLS);
@@ -701,7 +739,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
     ws.getCell(r, 1).value = ru ? 'Ключевые выводы' : isUz ? 'Asosiy xulosalar' : 'Key insights';
     ws.getCell(r, 1).font = { bold: true, size: 11, color: { argb: `FF${BRAND_HEX}` } };
     r++;
-    for (const line of insights) {
+    for (const line of sheetInsights) {
       ws.mergeCells(r, 1, r, COLS);
       const c = ws.getCell(r, 1);
       c.value = `•  ${line}`;
@@ -732,7 +770,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
     });
     hRow.height = 20;
 
-    filtered.forEach((item, i) => {
+    sheetItems.forEach((item, i) => {
       const row = ws.getRow(headerRowIdx + 1 + i);
       row.values = [
         i + 1, item.name, item.cat,
@@ -744,7 +782,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
         item.abcQty, item.abcRevenue, item.abcProfit,
       ];
       row.getCell(4).numFmt = '#,##0';
-      row.getCell(5).numFmt = '0%';
+      row.getCell(5).numFmt = '0.0%';
       row.getCell(7).numFmt = '#,##0';
       row.getCell(8).numFmt = '#,##0';
       row.getCell(9).numFmt = '#,##0';
@@ -771,11 +809,32 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
     ws.autoFilter = { from: { row: headerRowIdx, column: 1 }, to: { row: headerRowIdx, column: COLS } };
     ws.views = [{ state: 'frozen', xSplit: 0, ySplit: headerRowIdx }];
 
-    const footerRow = headerRowIdx + filtered.length + 2;
+    const footerRow = headerRowIdx + sheetItems.length + 2;
     ws.mergeCells(footerRow, 1, footerRow, COLS);
     const footerCell = ws.getCell(footerRow, 1);
     footerCell.value = abcFooterText();
     footerCell.font = { italic: true, size: 9, color: { argb: 'FF999999' } };
+  };
+
+  const handleExcel = async () => {
+    const { dateStamp } = abcMeta();
+    const title = ru ? 'ABC-анализ меню' : isUz ? 'Menyu ABC tahlili' : 'Menu ABC Analysis';
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'TRACE-OS';
+    wb.created = new Date();
+
+    writeAbcSheet(wb, (ru ? 'Общее' : isUz ? 'Umumiy' : 'Overview'), title, filtered, buildAbcInsights(filtered));
+
+    // One extra sheet per recognized section (Bar/Kitchen/Bakery/Desserts),
+    // but only if that section actually has items in the current view —
+    // a tenant without a bakery just won't get a Bakery sheet.
+    for (const section of ABC_SECTIONS) {
+      const sectionItems = filtered.filter(i => sectionOf(i.cat)?.id === section.id);
+      if (sectionItems.length === 0) continue;
+      const sectionTitle = `${title} — ${tr(lang, section.label.ru, section.label.en, section.label.uz)}`;
+      writeAbcSheet(wb, tr(lang, section.label.ru, section.label.en, section.label.uz), sectionTitle, sectionItems, buildAbcInsights(sectionItems));
+    }
 
     const buf = await wb.xlsx.writeBuffer();
     const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -942,6 +1001,31 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
                     <label key={c.id} className="flex items-center gap-2 px-1.5 py-1.5 rounded-lg hover:bg-card-hover cursor-pointer">
                       <input type="checkbox" checked={visibleCols[c.id]} onChange={() => toggleCol(c.id)} className="accent-primary" />
                       <span className="text-[11.5px] text-text">{tr(lang, c.ru, c.en, c.uz)}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div ref={catsBtnRef} className="relative">
+              <button onClick={() => setCatsOpen(o => !o)}
+                className={`p-1.5 rounded-lg border transition-colors ${catsOpen ? 'border-primary text-primary' : 'border-border text-muted hover:text-text hover:bg-card-hover'}`}
+                title={ru ? 'Категории' : isUz ? 'Kategoriyalar' : 'Categories'}>
+                <Tags size={13} />
+              </button>
+              {catsOpen && (
+                <div className="absolute right-0 z-30 mt-2 w-[200px] max-h-[280px] overflow-y-auto bg-card border border-border rounded-xl shadow-xl p-2">
+                  <div className="flex items-center justify-between px-1.5 pt-0.5 pb-1.5">
+                    <p className="text-[10px] text-muted">{ru ? 'Показывать категории' : isUz ? "Kategoriyalarni ko'rsatish" : 'Show categories'}</p>
+                    {hiddenCats.size > 0 && (
+                      <button onClick={() => setHiddenCats(new Set())} className="text-[9.5px] text-primary hover:text-primary-hover">
+                        {ru ? 'Сброс' : isUz ? 'Bekor' : 'Reset'}
+                      </button>
+                    )}
+                  </div>
+                  {categories.filter(c => c !== 'all').map(cat => (
+                    <label key={cat} className="flex items-center gap-2 px-1.5 py-1.5 rounded-lg hover:bg-card-hover cursor-pointer">
+                      <input type="checkbox" checked={!hiddenCats.has(cat)} onChange={() => toggleCat(cat)} className="accent-primary" />
+                      <span className="text-[11.5px] text-text truncate">{cat}</span>
                     </label>
                   ))}
                 </div>

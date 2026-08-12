@@ -4,7 +4,7 @@ import { Card } from '../ui/Card';
 import { Language } from '../../types';
 import { checklistApi, getSubdomain } from '../../services/traceApi';
 import type {
-  ChecklistRole, ChecklistEmployee, ChecklistManager, Checklist, ChecklistItem, ChecklistStats,
+  ChecklistRole, ChecklistEmployee, ChecklistManager, Checklist, ChecklistItem, ChecklistItemType, ChecklistStats,
 } from '../../types';
 
 function tr(lang: Language, ru: string, en: string, uz: string) {
@@ -596,7 +596,7 @@ export function ChecklistsTab({ lang, roles, onShowToast }: {
   );
 }
 
-interface DraftItem { text: string; requiresPhoto: boolean }
+interface DraftItem { text: string; requiresPhoto: boolean; itemType: ChecklistItemType }
 
 export function ChecklistEditor({ lang, roles, checklistId, onDone, onShowToast, manager }: {
   lang: Language; roles: ChecklistRole[]; checklistId: string | null; onDone: () => void;
@@ -611,8 +611,17 @@ export function ChecklistEditor({ lang, roles, checklistId, onDone, onShowToast,
   const [roleId, setRoleId] = useState(roles[0]?.id ?? '');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [items, setItems] = useState<DraftItem[]>([{ text: '', requiresPhoto: false }]);
+  const [items, setItems] = useState<DraftItem[]>([{ text: '', requiresPhoto: false, itemType: 'checkbox' }]);
   const [busy, setBusy] = useState(false);
+
+  // `roles` often arrives async after this component's first render (e.g.
+  // clicking "New" right as the roles list is still loading) — the <select>
+  // below visually shows the first <option> either way, but without this the
+  // underlying roleId state stayed '' forever, so Save always failed with
+  // "enter a name and role" even though a role looked selected on screen.
+  useEffect(() => {
+    if (!roleId && roles[0]) setRoleId(roles[0].id);
+  }, [roles]);
   const [loaded, setLoaded] = useState(!checklistId);
 
   useEffect(() => {
@@ -622,7 +631,7 @@ export function ChecklistEditor({ lang, roles, checklistId, onDone, onShowToast,
       setRoleId(checklist.role_id);
       setName(checklist.name);
       setDescription(checklist.description);
-      setItems(existing.length ? existing.map(i => ({ text: i.text, requiresPhoto: i.requires_photo })) : [{ text: '', requiresPhoto: false }]);
+      setItems(existing.length ? existing.map(i => ({ text: i.text, requiresPhoto: i.requires_photo, itemType: i.item_type ?? 'checkbox' })) : [{ text: '', requiresPhoto: false, itemType: 'checkbox' }]);
       setLoaded(true);
     }).catch(() => {
       onShowToast(tr(lang, 'Не удалось загрузить чек-лист', 'Failed to load checklist', "Cheklistni yuklab bo'lmadi"), 'error');
@@ -631,12 +640,12 @@ export function ChecklistEditor({ lang, roles, checklistId, onDone, onShowToast,
   }, [checklistId]);
 
   const updateItem = (i: number, patch: Partial<DraftItem>) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, ...patch } : it));
-  const addItem = () => setItems(prev => [...prev, { text: '', requiresPhoto: false }]);
+  const addItem = () => setItems(prev => [...prev, { text: '', requiresPhoto: false, itemType: 'checkbox' }]);
   const removeItem = (i: number) => setItems(prev => prev.filter((_, idx) => idx !== i));
 
   const save = async () => {
     if (!roleId || !name.trim()) { onShowToast(tr(lang, 'Укажите название и роль', 'Enter a name and role', 'Nomi va rolni kiriting'), 'error'); return; }
-    const cleanItems = items.filter(i => i.text.trim()).map(i => ({ text: i.text.trim(), requiresPhoto: i.requiresPhoto }));
+    const cleanItems = items.filter(i => i.text.trim()).map(i => ({ text: i.text.trim(), requiresPhoto: i.requiresPhoto, itemType: i.itemType }));
     setBusy(true);
     try {
       const data = { roleId, name: name.trim(), description, items: cleanItems };
@@ -698,6 +707,15 @@ export function ChecklistEditor({ lang, roles, checklistId, onDone, onShowToast,
                   placeholder={tr(lang, 'Например: протереть столы', 'e.g. wipe down tables', 'masalan: stollarni artish')}
                   className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text"
                 />
+                <select
+                  value={it.itemType}
+                  onChange={e => updateItem(i, { itemType: e.target.value as ChecklistItemType })}
+                  title={tr(lang, 'Тип пункта', 'Item type', 'Band turi')}
+                  className="px-2 py-2 rounded-lg border border-border bg-background text-[12px] text-text"
+                >
+                  <option value="checkbox">{tr(lang, 'Чекбокс', 'Checkbox', 'Chekbоks')}</option>
+                  <option value="yesno">{tr(lang, 'Да / Нет', 'Yes / No', 'Ha / Yo\'q')}</option>
+                </select>
                 <button
                   onClick={() => updateItem(i, { requiresPhoto: !it.requiresPhoto })}
                   title={tr(lang, 'Требуется фото', 'Requires photo', 'Foto talab qilinadi')}

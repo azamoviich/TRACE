@@ -115,12 +115,15 @@ export interface ChecklistManager {
   role_ids: string[];
 }
 
+export type ChecklistItemType = 'checkbox' | 'yesno';
+
 export interface ChecklistItem {
   id: string;
   checklist_id: string;
   text: string;
   sort_order: number;
   requires_photo: boolean;
+  item_type: ChecklistItemType;
   active: boolean;
   // Present only when returned alongside completion state (employee "today" view)
   done?: boolean;

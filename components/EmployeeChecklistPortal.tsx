@@ -142,18 +142,15 @@ function TodayChecklist({ lang, tenantSubdomain, token, name, onLogout }: {
   };
   useEffect(() => { load(); }, []);
 
-  const toggle = async (item: ChecklistItem) => {
-    if (item.done) {
-      await checklistEmployeeApi.toggle(tenantSubdomain, token, item.id, false);
-      load();
-      return;
-    }
-    if (item.requires_photo) {
+  // For checkbox items, tapping the row toggles: value = !item.done.
+  // For yesno items, each button passes its own explicit value.
+  const answer = async (item: ChecklistItem, value: boolean) => {
+    if (value && item.requires_photo) {
       pendingItemId.current = item.id;
       fileInputRef.current?.click();
       return;
     }
-    await checklistEmployeeApi.toggle(tenantSubdomain, token, item.id, true);
+    await checklistEmployeeApi.toggle(tenantSubdomain, token, item.id, value);
     load();
   };
 
@@ -201,22 +198,45 @@ function TodayChecklist({ lang, tenantSubdomain, token, name, onLogout }: {
                 <h2 className="text-[14px] font-semibold text-text mb-2">{c.name}</h2>
                 <div className="space-y-2">
                   {c.items.map(item => (
-                    <button
-                      key={item.id}
-                      onClick={() => toggle(item)}
-                      disabled={uploadingItemId === item.id}
-                      className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left transition-colors ${item.done ? 'bg-green-500/10 border-green-500/30' : 'bg-card border-border'}`}
-                    >
-                      <span className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${item.done ? 'bg-green-500 text-white' : 'border border-border'}`}>
-                        {item.done && <Check size={14} />}
-                      </span>
-                      <span className={`flex-1 text-[14px] ${item.done ? 'text-muted line-through' : 'text-text'}`}>{item.text}</span>
-                      {item.requires_photo && (
-                        uploadingItemId === item.id
-                          ? <span className="text-[11px] text-muted">{tr(lang, 'Загрузка...', 'Uploading...', 'Yuklanmoqda...')}</span>
-                          : <Camera size={16} className="text-muted shrink-0" />
-                      )}
-                    </button>
+                    item.item_type === 'yesno' ? (
+                      <div key={item.id} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-border bg-card">
+                        <span className="flex-1 text-[14px] text-text">{item.text}</span>
+                        {item.requires_photo && uploadingItemId === item.id && (
+                          <span className="text-[11px] text-muted">{tr(lang, 'Загрузка...', 'Uploading...', 'Yuklanmoqda...')}</span>
+                        )}
+                        <button
+                          onClick={() => answer(item, true)}
+                          disabled={uploadingItemId === item.id}
+                          className={`px-3 py-1.5 rounded-lg text-[13px] font-semibold ${item.done === true ? 'bg-green-500 text-white' : 'bg-background border border-border text-muted'}`}
+                        >
+                          {tr(lang, 'Да', 'Yes', 'Ha')}
+                        </button>
+                        <button
+                          onClick={() => answer(item, false)}
+                          disabled={uploadingItemId === item.id}
+                          className={`px-3 py-1.5 rounded-lg text-[13px] font-semibold ${item.done === false && item.completed_at ? 'bg-red-500 text-white' : 'bg-background border border-border text-muted'}`}
+                        >
+                          {tr(lang, 'Нет', 'No', "Yo'q")}
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        key={item.id}
+                        onClick={() => answer(item, !item.done)}
+                        disabled={uploadingItemId === item.id}
+                        className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left transition-colors ${item.done ? 'bg-green-500/10 border-green-500/30' : 'bg-card border-border'}`}
+                      >
+                        <span className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${item.done ? 'bg-green-500 text-white' : 'border border-border'}`}>
+                          {item.done && <Check size={14} />}
+                        </span>
+                        <span className={`flex-1 text-[14px] ${item.done ? 'text-muted line-through' : 'text-text'}`}>{item.text}</span>
+                        {item.requires_photo && (
+                          uploadingItemId === item.id
+                            ? <span className="text-[11px] text-muted">{tr(lang, 'Загрузка...', 'Uploading...', 'Yuklanmoqda...')}</span>
+                            : <Camera size={16} className="text-muted shrink-0" />
+                        )}
+                      </button>
+                    )
                   ))}
                 </div>
               </div>

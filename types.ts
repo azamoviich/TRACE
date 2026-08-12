@@ -54,7 +54,8 @@ export type ViewState =
   | 'loyalty'
   | 'reports'
   | 'settings'
-  | 'compare';
+  | 'compare'
+  | 'checklists';
 
 export type TimeRange = 'today' | '7days' | '30days' | 'month' | 'custom';
 
@@ -85,6 +86,74 @@ export interface ShiftReport {
   created_at: string;
   tables_total: number | null;
   tables_covered: number | null;
+}
+
+export interface ChecklistRole {
+  id: string;
+  tenant_id: string;
+  slug: string;
+  name: string;
+  active: boolean;
+  created_at: string;
+}
+
+export interface ChecklistEmployee {
+  id: string;
+  tenant_id: string;
+  role_id: string;
+  name: string;
+  active: boolean;
+  created_at: string;
+}
+
+export interface ChecklistManager {
+  id: string;
+  name: string;
+  email: string;
+  portal_subdomain: string;
+  active: boolean;
+  created_at: string;
+  role_ids: string[];
+}
+
+export interface ChecklistItem {
+  id: string;
+  checklist_id: string;
+  text: string;
+  sort_order: number;
+  requires_photo: boolean;
+  active: boolean;
+  // Present only when returned alongside completion state (employee "today" view)
+  done?: boolean;
+  photo_url?: string | null;
+  completed_at?: string | null;
+}
+
+export interface Checklist {
+  id: string;
+  tenant_id: string;
+  role_id: string;
+  name: string;
+  description: string;
+  created_by: string;
+  active: boolean;
+  created_at: string;
+}
+
+export interface ChecklistWithItems {
+  checklist: Checklist;
+  items: ChecklistItem[];
+}
+
+export interface ChecklistTodayItem extends Checklist {
+  items: ChecklistItem[];
+}
+
+export interface ChecklistStats {
+  done: number;
+  total: number;
+  leaderboard: { employee_id: string; name: string; done: number; total: number }[];
+  recentPhotos: { photo_url: string; completed_at: string; employee_name: string; item_text: string }[];
 }
 
 export type Language = 'ru' | 'en' | 'uz';

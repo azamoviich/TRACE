@@ -2308,6 +2308,165 @@ export async function uploadPhoto(subdomain: string, file: File): Promise<string
   return url as string;
 }
 
+// ── Checklists ────────────────────────────────────────────────────────────
+// Three tiers, three auth shapes:
+//   owner    — normal apiFetch (implicit tenant via Origin/Host, matches every
+//              other traceApi.* namespace), no bearer token.
+//   manager  — hosted on an owner-chosen arbitrary subdomain (portal_subdomain),
+//              so the REAL tenant subdomain must be sent explicitly as X-Tenant
+//              on every call, alongside the manager's bearer token.
+//   employee — hosted on role-tenant.trace-os.uz; tenant subdomain is parsed
+//              from the hostname (see parseEmployeeChecklistHost below) and
+//              sent the same explicit way, alongside the employee's bearer token.
+import {
+  ChecklistRole, ChecklistEmployee, ChecklistManager, ChecklistWithItems,
+  ChecklistTodayItem, ChecklistStats,
+} from '../types';
+
+async function scopedFetch<T>(
+  path: string,
+  tenantSubdomain: string,
+  token: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Tenant': tenantSubdomain,
+      Authorization: `Bearer ${token}`,
+      ...(init.headers ?? {}),
+    },
+  });
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
+
+export const checklistAuthApi = {
+  managerLogin: (portalSubdomain: string, email: string, password: string) =>
+    post<{ token: string; name: string; email: string; tenantSubdomain: string }>(
+      '/checklist/manager-login',
+      { portalSubdomain, email, password },
+    ),
+  employeeRoster: (tenantSubdomain: string, role: string) =>
+    fetch(`${BASE}/checklist/auth/employee/roster?role=${encodeURIComponent(role)}`, {
+      headers: { 'X-Tenant': tenantSubdomain },
+    }).then(r => {
+      if (!r.ok) throw new Error(`${r.status}`);
+      return r.json() as Promise<{ roleName: string; employees: { id: string; name: string }[] }>;
+    }),
+  employeeLogin: (tenantSubdomain: string, employeeId: string, pin: string) =>
+    fetch(`${BASE}/checklist/auth/employee/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Tenant': tenantSubdomain },
+      body: JSON.stringify({ employeeId, pin }),
+    }).then(r => {
+      if (!r.ok) throw new Error(`${r.status}`);
+      return r.json() as Promise<{ token: string; name: string }>;
+    }),
+};
+
+// Owner surface — plain apiFetch (implicit tenant), used from the normal
+// TRACE dashboard's Checklists tab. Owner routes trust tenantMiddleware alone.
+export const checklistApi = {
+  roles: {
+    list: () => apiFetch('/checklist/roles').then(r => r.json()) as Promise<ChecklistRole[]>,
+    create: (name: string) => post<ChecklistRole>('/checklist/roles', { name }),
+    update: (id: string, patchBody: { name?: string; active?: boolean }) =>
+      apiFetch(`/checklist/roles/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patchBody) }).then(r => r.json()) as Promise<ChecklistRole>,
+    remove: (id: string) => apiFetch(`/checklist/roles/${id}`, { method: 'DELETE' }).then(() => undefined),
+  },
+  employees: {
+    list: (roleId?: string) =>
+      apiFetch(`/checklist/employees${roleId ? `?roleId=${roleId}` : ''}`).then(r => r.json()) as Promise<ChecklistEmployee[]>,
+    create: (name: string, roleId: string, pin: string) =>
+      post<ChecklistEmployee>('/checklist/employees', { name, roleId, pin }),
+    update: (id: string, patchBody: { name?: string; active?: boolean; pin?: string }) =>
+      apiFetch(`/checklist/employees/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patchBody) }).then(r => r.json()) as Promise<ChecklistEmployee>,
+    remove: (id: string) => apiFetch(`/checklist/employees/${id}`, { method: 'DELETE' }).then(() => undefined),
+  },
+  managers: {
+    list: () => apiFetch('/checklist/managers').then(r => r.json()) as Promise<ChecklistManager[]>,
+    create: (data: { name: string; email: string; password: string; portalSubdomain: string; roleIds: string[] }) =>
+      post<ChecklistManager>('/checklist/managers', data),
+    update: (id: string, data: Partial<{ name: string; email: string; password: string; portalSubdomain: string; active: boolean; roleIds: string[] }>) =>
+      apiFetch(`/checklist/managers/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.json()) as Promise<ChecklistManager>,
+    remove: (id: string) => apiFetch(`/checklist/managers/${id}`, { method: 'DELETE' }).then(() => undefined),
+  },
+  checklists: {
+    list: (roleId?: string) =>
+      apiFetch(`/checklist/checklists${roleId ? `?roleId=${roleId}` : ''}`).then(r => r.json()) as Promise<import('../types').Checklist[]>,
+    items: (id: string) => apiFetch(`/checklist/checklists/${id}/items`).then(r => r.json()) as Promise<ChecklistWithItems>,
+    create: (data: { roleId: string; name: string; description?: string; items: { text: string; requiresPhoto?: boolean }[] }) =>
+      post<ChecklistWithItems>('/checklist/checklists', data),
+    update: (id: string, data: Partial<{ name: string; description: string; active: boolean; items: { text: string; requiresPhoto?: boolean }[] }>) =>
+      apiFetch(`/checklist/checklists/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.json()) as Promise<ChecklistWithItems>,
+    remove: (id: string) => apiFetch(`/checklist/checklists/${id}`, { method: 'DELETE' }).then(() => undefined),
+  },
+  stats: (params: { roleId?: string; from?: string; to?: string } = {}) => {
+    const q = new URLSearchParams(params as Record<string, string>).toString();
+    return apiFetch(`/checklist/stats${q ? `?${q}` : ''}`).then(r => r.json()) as Promise<ChecklistStats>;
+  },
+};
+
+// Manager portal surface — same shape as checklistApi.checklists/stats, but
+// explicit tenant+token since the manager isn't on the tenant's real subdomain.
+export const checklistManagerApi = {
+  checklists: {
+    list: (tenantSubdomain: string, token: string, roleId?: string) =>
+      scopedFetch<import('../types').Checklist[]>(`/checklist-manager/checklists${roleId ? `?roleId=${roleId}` : ''}`, tenantSubdomain, token),
+    items: (tenantSubdomain: string, token: string, id: string) =>
+      scopedFetch<ChecklistWithItems>(`/checklist-manager/checklists/${id}/items`, tenantSubdomain, token),
+    create: (tenantSubdomain: string, token: string, data: { roleId: string; name: string; description?: string; items: { text: string; requiresPhoto?: boolean }[] }) =>
+      scopedFetch<ChecklistWithItems>('/checklist-manager/checklists', tenantSubdomain, token, { method: 'POST', body: JSON.stringify(data) }),
+    update: (tenantSubdomain: string, token: string, id: string, data: Partial<{ name: string; description: string; active: boolean; items: { text: string; requiresPhoto?: boolean }[] }>) =>
+      scopedFetch<ChecklistWithItems>(`/checklist-manager/checklists/${id}`, tenantSubdomain, token, { method: 'PATCH', body: JSON.stringify(data) }),
+    remove: (tenantSubdomain: string, token: string, id: string) =>
+      scopedFetch<void>(`/checklist-manager/checklists/${id}`, tenantSubdomain, token, { method: 'DELETE' }),
+  },
+  roles: (tenantSubdomain: string, token: string) =>
+    scopedFetch<ChecklistRole[]>('/checklist/roles', tenantSubdomain, token), // read-only list; role CRUD stays owner-only
+  stats: (tenantSubdomain: string, token: string, params: { roleId?: string; from?: string; to?: string } = {}) => {
+    const q = new URLSearchParams(params as Record<string, string>).toString();
+    return scopedFetch<ChecklistStats>(`/checklist-manager/stats${q ? `?${q}` : ''}`, tenantSubdomain, token);
+  },
+};
+
+// Employee portal surface.
+export const checklistEmployeeApi = {
+  today: (tenantSubdomain: string, token: string) =>
+    scopedFetch<{ date: string; checklists: ChecklistTodayItem[] }>('/checklist/completions/today', tenantSubdomain, token),
+  toggle: (tenantSubdomain: string, token: string, itemId: string, done: boolean, photoUrl?: string) =>
+    scopedFetch(`/checklist/completions/${itemId}`, tenantSubdomain, token, { method: 'PATCH', body: JSON.stringify({ done, photoUrl }) }),
+};
+
+// Manager builder portal convention: owner sets portal_subdomain to
+// "manager-<anything>" (see the Managers tab placeholder) and that whole
+// first label is sent back to the login endpoint verbatim — checked before
+// parseEmployeeChecklistHost below, since "manager-benedict" would otherwise
+// also match the generic role-tenant split-on-first-hyphen pattern.
+export function isChecklistManagerHost(): boolean {
+  return window.location.hostname.split('.')[0].startsWith('manager-');
+}
+
+export function getChecklistManagerPortalSubdomain(): string {
+  return window.location.hostname.split('.')[0];
+}
+
+// role-tenant.trace-os.uz → { roleSlug, tenantSubdomain }. Splits on the
+// FIRST hyphen — correct as long as role slugs stay single-word (owner
+// controls role naming, so this is an accepted v1 constraint, not a bug).
+export function parseEmployeeChecklistHost(): { roleSlug: string; tenantSubdomain: string } | null {
+  const host = window.location.hostname;
+  const parts = host.split('.');
+  if (parts.length < 3) return null;
+  const sub = parts[0];
+  const dashIdx = sub.indexOf('-');
+  if (dashIdx <= 0) return null;
+  return { roleSlug: sub.slice(0, dashIdx), tenantSubdomain: sub.slice(dashIdx + 1) };
+}
+
 export async function managerShiftReportCreate(
   subdomain: string,
   data: Omit<import('../types').ShiftReport, 'id' | 'tenant_id' | 'created_at'>

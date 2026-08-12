@@ -163,6 +163,32 @@ export interface ChecklistStats {
   recentPhotos: { photo_url: string; completed_at: string; employee_name: string; item_text: string }[];
 }
 
+export interface ChecklistHistoryRow {
+  role_id: string;
+  role_name: string;
+  checklist_id: string;
+  checklist_name: string;
+  employee_id: string;
+  employee_name: string;
+  item_id: string;
+  item_text: string;
+  sort_order: number;
+  done: boolean;
+  photo_url: string | null;
+  answer_value: ChecklistAnswerValue | null;
+  completed_at: string | null;
+}
+
+export interface ChecklistAuditLogEntry {
+  id: string;
+  actor_type: 'owner' | 'manager';
+  actor_name: string;
+  action: 'create' | 'update' | 'delete';
+  entity_type: 'checklist' | 'role' | 'employee' | 'manager';
+  entity_name: string;
+  created_at: string;
+}
+
 export type Language = 'ru' | 'en' | 'uz';
 
 export type ComparisonPeriod = 'yesterday' | 'last_week' | 'last_month' | 'last_year';

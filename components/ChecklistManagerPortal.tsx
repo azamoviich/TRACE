@@ -7,7 +7,7 @@ import type { Checklist, ChecklistRole } from '../types';
 import {
   checklistAuthApi, checklistManagerApi, getChecklistManagerPortalSubdomain,
 } from '../services/traceApi';
-import { ChecklistEditor, EmployeesTab, DashboardTab, EmployeesApi } from './views/Checklists';
+import { ChecklistEditor, EmployeesTab, DashboardTab, HistoryTab, EmployeesApi } from './views/Checklists';
 
 function tr(lang: Language, ru: string, en: string, uz: string) {
   return lang === 'ru' ? ru : lang === 'uz' ? uz : en;
@@ -117,7 +117,7 @@ function LoginScreen({ lang, onLoggedIn }: { lang: Language; onLoggedIn: (s: Ses
   );
 }
 
-type Tab = 'dashboard' | 'checklists' | 'employees';
+type Tab = 'dashboard' | 'checklists' | 'employees' | 'history';
 
 function Builder({ lang, session, onSwitchBranch, onLogout }: {
   lang: Language; session: Session; onSwitchBranch: (subdomain: string) => void; onLogout: () => void;
@@ -153,6 +153,7 @@ function Builder({ lang, session, onSwitchBranch, onLogout }: {
     { id: 'dashboard', label: tr(lang, 'Дашборд', 'Dashboard', 'Boshqaruv') },
     { id: 'checklists', label: tr(lang, 'Чек-листы', 'Checklists', 'Cheklistlar') },
     { id: 'employees', label: tr(lang, 'Сотрудники', 'Employees', 'Xodimlar') },
+    { id: 'history', label: tr(lang, 'История', 'History', 'Tarix') },
   ];
 
   const currentBranchLabel = session.branches.find(b => b.subdomain === branch)?.name ?? branch;
@@ -215,6 +216,14 @@ function Builder({ lang, session, onSwitchBranch, onLogout }: {
             )}
             {tab === 'employees' && (
               <EmployeesTab lang={lang} roles={roles} onShowToast={showToast} api={employeesApi} />
+            )}
+            {tab === 'history' && (
+              <HistoryTab
+                key={branch}
+                lang={lang}
+                roles={roles}
+                historyApi={(date, roleId) => checklistManagerApi.history(branch, session.token, date, roleId)}
+              />
             )}
           </>
         )}

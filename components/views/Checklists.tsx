@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, Camera, ChevronRight, ArrowLeft, X, Download, Pencil } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Plus, Trash2, Camera, ChevronRight, ArrowLeft, X, Download, Pencil, Calendar as CalendarIcon, History as HistoryIcon } from 'lucide-react';
 import { Card } from '../ui/Card';
+import { DateRangePicker } from '../ui/DateRangePicker';
 import { Language } from '../../types';
 import { checklistApi, getSubdomain } from '../../services/traceApi';
 import type {
   ChecklistRole, ChecklistEmployee, ChecklistManager, Checklist, ChecklistItem, ChecklistItemType, ChecklistStats,
+  ChecklistHistoryRow, ChecklistAuditLogEntry,
 } from '../../types';
 
 function tr(lang: Language, ru: string, en: string, uz: string) {
@@ -20,7 +22,7 @@ function confirmDelete(lang: Language, what: string): boolean {
   return window.confirm(tr(lang, `Удалить «${what}»? Это нельзя отменить.`, `Delete "${what}"? This can't be undone.`, `"${what}" o'chirilsinmi? Buni bekor qilib bo'lmaydi.`));
 }
 
-type Tab = 'dashboard' | 'roles' | 'employees' | 'managers' | 'checklists';
+type Tab = 'dashboard' | 'roles' | 'employees' | 'managers' | 'checklists' | 'history';
 
 interface Props {
   lang: Language;
@@ -41,6 +43,7 @@ export function Checklists({ lang, onShowToast }: Props) {
     { id: 'roles', label: tr(lang, 'Должности', 'Roles', 'Lavozimlar') },
     { id: 'employees', label: tr(lang, 'Сотрудники', 'Employees', 'Xodimlar') },
     { id: 'managers', label: tr(lang, 'Менеджеры', 'Managers', 'Menejerlar') },
+    { id: 'history', label: tr(lang, 'История', 'History', 'Tarix') },
   ];
 
   return (
@@ -62,6 +65,14 @@ export function Checklists({ lang, onShowToast }: Props) {
       {tab === 'employees' && <EmployeesTab lang={lang} roles={roles} onShowToast={onShowToast} />}
       {tab === 'managers' && <ManagersTab lang={lang} roles={roles} onShowToast={onShowToast} />}
       {tab === 'checklists' && <ChecklistsTab lang={lang} roles={roles} onShowToast={onShowToast} />}
+      {tab === 'history' && (
+        <HistoryTab
+          lang={lang}
+          roles={roles}
+          historyApi={(date, roleId) => checklistApi.history(date, roleId)}
+          auditLogApi={(limit) => checklistApi.auditLog(limit)}
+        />
+      )}
     </div>
   );
 }
@@ -73,25 +84,50 @@ export function DashboardTab({ lang, roles, statsApi = checklistApi.stats }: { l
   const [roleId, setRoleId] = useState<string>('');
   const [stats, setStats] = useState<ChecklistStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [range, setRange] = useState<{ from: string; to: string } | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const dateBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     setLoading(true);
-    statsApi(roleId ? { roleId } : {}).then(setStats).catch(() => setStats(null)).finally(() => setLoading(false));
-  }, [roleId]);
+    const params = { ...(roleId ? { roleId } : {}), ...(range ? { from: range.from, to: range.to } : {}) };
+    statsApi(params).then(setStats).catch(() => setStats(null)).finally(() => setLoading(false));
+  }, [roleId, range]);
 
   const pct = stats && stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0;
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2 flex-wrap">
-        <button onClick={() => setRoleId('')} className={`px-3 py-1.5 rounded-lg text-[12px] font-medium ${!roleId ? 'bg-primary text-white' : 'bg-card text-muted'}`}>
-          {tr(lang, 'Все', 'All', 'Barchasi')}
-        </button>
-        {roles.map(r => (
-          <button key={r.id} onClick={() => setRoleId(r.id)} className={`px-3 py-1.5 rounded-lg text-[12px] font-medium ${roleId === r.id ? 'bg-primary text-white' : 'bg-card text-muted'}`}>
-            {r.name}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={() => setRoleId('')} className={`px-3 py-1.5 rounded-lg text-[12px] font-medium ${!roleId ? 'bg-primary text-white' : 'bg-card text-muted'}`}>
+            {tr(lang, 'Все', 'All', 'Barchasi')}
           </button>
-        ))}
+          {roles.map(r => (
+            <button key={r.id} onClick={() => setRoleId(r.id)} className={`px-3 py-1.5 rounded-lg text-[12px] font-medium ${roleId === r.id ? 'bg-primary text-white' : 'bg-card text-muted'}`}>
+              {r.name}
+            </button>
+          ))}
+        </div>
+        <div className="relative">
+          <button
+            ref={dateBtnRef}
+            onClick={() => setPickerOpen(v => !v)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card border border-border text-[12px] font-medium text-text"
+          >
+            <CalendarIcon size={13} />
+            {range ? `${range.from} — ${range.to}` : tr(lang, 'Сегодня', 'Today', 'Bugun')}
+          </button>
+          <DateRangePicker
+            lang={lang}
+            value={range}
+            isOpen={pickerOpen}
+            onClose={() => setPickerOpen(false)}
+            anchorRef={dateBtnRef}
+            onApply={r => { setRange(r); setPickerOpen(false); }}
+            onClear={() => { setRange(null); setPickerOpen(false); }}
+          />
+        </div>
       </div>
 
       {loading ? (
@@ -134,6 +170,165 @@ export function DashboardTab({ lang, roles, statsApi = checklistApi.stats }: { l
             )}
           </Card>
         </>
+      )}
+    </div>
+  );
+}
+
+// ── History ──────────────────────────────────────────────────────────────
+type HistoryApi = (date: string, roleId?: string) => Promise<ChecklistHistoryRow[]>;
+type AuditLogApi = (limit?: number) => Promise<ChecklistAuditLogEntry[]>;
+
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function answerText(lang: Language, row: ChecklistHistoryRow): string | null {
+  if (!row.answer_value) return null;
+  if ('text' in row.answer_value) return row.answer_value.text;
+  if ('number' in row.answer_value) return String(row.answer_value.number);
+  if ('rating' in row.answer_value) return `${row.answer_value.rating}/5`;
+  if ('choice' in row.answer_value) return row.answer_value.choice;
+  return null;
+}
+
+export function HistoryTab({ lang, roles, historyApi, auditLogApi }: {
+  lang: Language; roles: ChecklistRole[]; historyApi: HistoryApi; auditLogApi?: AuditLogApi;
+}) {
+  const [date, setDate] = useState(todayISO());
+  const [roleId, setRoleId] = useState('');
+  const [rows, setRows] = useState<ChecklistHistoryRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [auditLog, setAuditLog] = useState<ChecklistAuditLogEntry[] | null>(null);
+  const [showAudit, setShowAudit] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    historyApi(date, roleId || undefined).then(setRows).catch(() => setRows([])).finally(() => setLoading(false));
+  }, [date, roleId]);
+
+  const loadAuditLog = () => {
+    if (!auditLogApi) return;
+    auditLogApi(150).then(setAuditLog).catch(() => setAuditLog([]));
+  };
+
+  // role -> checklist -> employee -> items
+  const grouped: { roleName: string; checklists: { checklistName: string; employees: { employeeName: string; items: ChecklistHistoryRow[] }[] }[] }[] = [];
+  for (const row of rows) {
+    let roleGroup = grouped.find(g => g.roleName === row.role_name);
+    if (!roleGroup) { roleGroup = { roleName: row.role_name, checklists: [] }; grouped.push(roleGroup); }
+    let clGroup = roleGroup.checklists.find(c => c.checklistName === row.checklist_name);
+    if (!clGroup) { clGroup = { checklistName: row.checklist_name, employees: [] }; roleGroup.checklists.push(clGroup); }
+    let empGroup = clGroup.employees.find(e => e.employeeName === row.employee_name);
+    if (!empGroup) { empGroup = { employeeName: row.employee_name, items: [] }; clGroup.employees.push(empGroup); }
+    empGroup.items.push(row);
+  }
+
+  const actionLabel = (a: ChecklistAuditLogEntry['action']) =>
+    a === 'create' ? tr(lang, 'добавил(а)', 'created', "qo'shdi")
+      : a === 'update' ? tr(lang, 'изменил(а)', 'updated', "o'zgartirdi")
+      : tr(lang, 'удалил(а)', 'deleted', "o'chirdi");
+
+  const entityLabel = (e: ChecklistAuditLogEntry['entity_type']) =>
+    e === 'checklist' ? tr(lang, 'чек-лист', 'checklist', 'cheklist')
+      : e === 'role' ? tr(lang, 'роль', 'role', 'rol')
+      : e === 'employee' ? tr(lang, 'сотрудника', 'employee', 'xodim')
+      : tr(lang, 'менеджера', 'manager', 'menejer');
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        <input
+          type="date"
+          value={date}
+          max={todayISO()}
+          onChange={e => setDate(e.target.value)}
+          className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text"
+        />
+        <select value={roleId} onChange={e => setRoleId(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text">
+          <option value="">{tr(lang, 'Все роли', 'All roles', 'Barcha rollar')}</option>
+          {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </select>
+      </div>
+
+      {loading ? (
+        <p className="text-[13px] text-muted">{tr(lang, 'Загрузка...', 'Loading...', 'Yuklanmoqda...')}</p>
+      ) : grouped.length === 0 ? (
+        <p className="text-[13px] text-muted">{tr(lang, 'Ничего не пройдено в этот день', 'Nothing completed this day', "Bu kunda hech narsa bajarilmagan")}</p>
+      ) : (
+        <div className="space-y-4">
+          {grouped.map(roleGroup => (
+            <Card key={roleGroup.roleName} title={roleGroup.roleName}>
+              <div className="space-y-3">
+                {roleGroup.checklists.map(cl => (
+                  <div key={cl.checklistName}>
+                    <p className="text-[13px] font-medium text-text mb-1.5">{cl.checklistName}</p>
+                    <div className="space-y-2 pl-2 border-l-2 border-border">
+                      {cl.employees.map(emp => (
+                        <div key={emp.employeeName} className="pl-2">
+                          <p className="text-[12px] font-semibold text-text mb-1">{emp.employeeName}</p>
+                          <div className="space-y-1">
+                            {emp.items.map(item => {
+                              const text = answerText(lang, item);
+                              return (
+                                <div key={item.item_id} className="flex items-center gap-2 text-[12px]">
+                                  <span className={item.done ? 'text-green-600' : 'text-muted'}>{item.done ? '✓' : '—'}</span>
+                                  <span className="text-muted">{item.item_text}</span>
+                                  {text && <span className="text-text font-medium">({text})</span>}
+                                  {item.photo_url && (
+                                    <a href={item.photo_url} target="_blank" rel="noreferrer" className="text-primary underline">
+                                      {tr(lang, 'фото', 'photo', 'foto')}
+                                    </a>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {auditLogApi && (
+        <Card
+          title={tr(lang, 'Журнал изменений', 'Change log', "O'zgarishlar jurnali")}
+          subtitle={tr(lang, 'Кто и когда менял роли, сотрудников, менеджеров и чек-листы', 'Who changed roles, employees, managers, and checklists, and when', "Kim va qachon rol, xodim, menejer va cheklistlarni o'zgartirgani")}
+          action={
+            <button
+              onClick={() => { const next = !showAudit; setShowAudit(next); if (next && !auditLog) loadAuditLog(); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card border border-border text-[12px] font-semibold text-text"
+            >
+              <HistoryIcon size={13} /> {showAudit ? tr(lang, 'Скрыть', 'Hide', 'Yashirish') : tr(lang, 'Показать', 'Show', "Ko'rsatish")}
+            </button>
+          }
+        >
+          {showAudit && (
+            !auditLog ? (
+              <p className="text-[13px] text-muted">{tr(lang, 'Загрузка...', 'Loading...', 'Yuklanmoqda...')}</p>
+            ) : auditLog.length === 0 ? (
+              <p className="text-[13px] text-muted">{tr(lang, 'Пока нет изменений', 'No changes yet', "Hozircha o'zgarish yo'q")}</p>
+            ) : (
+              <div className="space-y-1.5 max-h-96 overflow-y-auto">
+                {auditLog.map(entry => (
+                  <div key={entry.id} className="flex items-center justify-between text-[12px] px-2 py-1.5 rounded-lg bg-background border border-border">
+                    <span className="text-text">
+                      <span className="font-semibold">{entry.actor_name}</span>
+                      {' '}{actionLabel(entry.action)}{' '}{entityLabel(entry.entity_type)}{' '}
+                      <span className="font-medium">«{entry.entity_name}»</span>
+                    </span>
+                    <span className="text-muted whitespace-nowrap ml-2">{new Date(entry.created_at).toLocaleString(lang === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+        </Card>
       )}
     </div>
   );
@@ -470,6 +665,11 @@ function ManagersTab({ lang, roles, onShowToast }: {
                 <div>
                   <span className="text-[13px] text-text">{m.name}</span>
                   <span className="text-[11px] text-muted ml-2">{m.portal_subdomain}.trace-os.uz</span>
+                  {!m.active && (
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-muted/10 text-muted ml-2">
+                      {tr(lang, 'Отключён', 'Disabled', "O'chirilgan")}
+                    </span>
+                  )}
                   <div className="text-[11px] text-muted mt-0.5">
                     {m.role_ids.map(id => roles.find(r => r.id === id)?.name).filter(Boolean).join(', ') || tr(lang, 'Нет ролей', 'No roles', 'Rol yoq')}
                   </div>
@@ -500,6 +700,7 @@ function ManagerEditRow({ lang, roles, manager, onShowToast, onDone }: {
   const [password, setPassword] = useState('');
   const [portalSubdomain, setPortalSubdomain] = useState(manager.portal_subdomain);
   const [roleIds, setRoleIds] = useState<string[]>(manager.role_ids);
+  const [active, setActive] = useState(manager.active);
   const [busy, setBusy] = useState(false);
 
   const toggleRole = (id: string) => setRoleIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -515,6 +716,7 @@ function ManagerEditRow({ lang, roles, manager, onShowToast, onDone }: {
         name: name.trim(),
         portalSubdomain: portalSubdomain.trim(),
         roleIds,
+        active,
         ...(password ? { password } : {}),
       });
       onDone();
@@ -541,6 +743,12 @@ function ManagerEditRow({ lang, roles, manager, onShowToast, onDone }: {
         ))}
       </div>
       <div className="flex items-center gap-2">
+        <button
+          onClick={() => setActive(a => !a)}
+          className={`text-[11px] font-semibold px-2 py-1 rounded ${active ? 'bg-green-500/10 text-green-600' : 'bg-muted/10 text-muted'}`}
+        >
+          {active ? tr(lang, 'Активен', 'Active', 'Faol') : tr(lang, 'Отключён', 'Disabled', "O'chirilgan")}
+        </button>
         <button onClick={save} disabled={busy} className="px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold disabled:opacity-50">
           {tr(lang, 'Сохранить', 'Save', 'Saqlash')}
         </button>

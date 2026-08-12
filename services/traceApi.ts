@@ -2419,6 +2419,12 @@ export const checklistApi = {
     const q = new URLSearchParams(params as Record<string, string>).toString();
     return checkedFetch<ChecklistStats>(`/checklist/stats${q ? `?${q}` : ''}`);
   },
+  history: (date: string, roleId?: string) => {
+    const q = new URLSearchParams({ date, ...(roleId ? { roleId } : {}) }).toString();
+    return checkedFetch<import('../types').ChecklistHistoryRow[]>(`/checklist/history?${q}`);
+  },
+  auditLog: (limit?: number) =>
+    checkedFetch<import('../types').ChecklistAuditLogEntry[]>(`/checklist/audit-log${limit ? `?limit=${limit}` : ''}`),
 };
 
 // Manager portal surface — same shape as checklistApi.checklists/stats, but
@@ -2455,6 +2461,10 @@ export const checklistManagerApi = {
   stats: (tenantSubdomain: string, token: string, params: { roleId?: string; from?: string; to?: string } = {}) => {
     const q = new URLSearchParams(params as Record<string, string>).toString();
     return scopedFetch<ChecklistStats>(`/checklist-manager/stats${q ? `?${q}` : ''}`, tenantSubdomain, token);
+  },
+  history: (tenantSubdomain: string, token: string, date: string, roleId?: string) => {
+    const q = new URLSearchParams({ date, ...(roleId ? { roleId } : {}) }).toString();
+    return scopedFetch<import('../types').ChecklistHistoryRow[]>(`/checklist-manager/history?${q}`, tenantSubdomain, token);
   },
 };
 

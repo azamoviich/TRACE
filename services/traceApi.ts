@@ -2440,7 +2440,7 @@ export const checklistManagerApi = {
       scopedFetch<void>(`/checklist-manager/checklists/${id}`, tenantSubdomain, token, { method: 'DELETE' }),
   },
   roles: (tenantSubdomain: string, token: string) =>
-    scopedFetch<ChecklistRole[]>('/checklist/roles', tenantSubdomain, token), // read-only list; role CRUD stays owner-only
+    scopedFetch<ChecklistRole[]>('/checklist-manager/roles', tenantSubdomain, token), // scoped server-side to this manager's assigned roles; role CRUD stays owner-only
   stats: (tenantSubdomain: string, token: string, params: { roleId?: string; from?: string; to?: string } = {}) => {
     const q = new URLSearchParams(params as Record<string, string>).toString();
     return scopedFetch<ChecklistStats>(`/checklist-manager/stats${q ? `?${q}` : ''}`, tenantSubdomain, token);

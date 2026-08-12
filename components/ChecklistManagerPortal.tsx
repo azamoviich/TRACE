@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { LogOut, Plus, ChevronRight } from 'lucide-react';
+import { LogOut, Plus, ChevronRight, Building2 } from 'lucide-react';
 import { Card } from './ui/Card';
 import { ToastContainer, ToastMessage, ToastType } from './Toast';
 import { Language } from '../types';
@@ -14,37 +14,60 @@ function tr(lang: Language, ru: string, en: string, uz: string) {
 }
 
 const TOKEN_KEY = 'trace_checklist_manager_token';
-const TENANT_KEY = 'trace_checklist_manager_tenant';
 const NAME_KEY = 'trace_checklist_manager_name';
+const BRANCHES_KEY = 'trace_checklist_manager_branches';
+const CURRENT_BRANCH_KEY = 'trace_checklist_manager_current_branch';
 
-interface Session { token: string; tenantSubdomain: string; name: string }
+interface Branch { subdomain: string; name: string }
+// tenantSubdomain kept as the login-time home branch (used to re-derive the
+// portal_subdomain host on reload); currentBranch is whichever branch the
+// manager has switched to and drives every API call — full permission
+// across every branch of the org, not just the one they logged in on.
+interface Session { token: string; tenantSubdomain: string; name: string; branches: Branch[]; currentBranch: string }
 
 function loadSession(): Session | null {
   const token = localStorage.getItem(TOKEN_KEY);
-  const tenantSubdomain = localStorage.getItem(TENANT_KEY);
   const name = localStorage.getItem(NAME_KEY);
-  if (!token || !tenantSubdomain) return null;
-  return { token, tenantSubdomain, name: name ?? '' };
+  const branchesRaw = localStorage.getItem(BRANCHES_KEY);
+  const currentBranch = localStorage.getItem(CURRENT_BRANCH_KEY);
+  if (!token || !branchesRaw || !currentBranch) return null;
+  try {
+    const branches = JSON.parse(branchesRaw) as Branch[];
+    return { token, tenantSubdomain: currentBranch, name: name ?? '', branches, currentBranch };
+  } catch {
+    return null;
+  }
 }
 
 function saveSession(s: Session) {
   localStorage.setItem(TOKEN_KEY, s.token);
-  localStorage.setItem(TENANT_KEY, s.tenantSubdomain);
   localStorage.setItem(NAME_KEY, s.name);
+  localStorage.setItem(BRANCHES_KEY, JSON.stringify(s.branches));
+  localStorage.setItem(CURRENT_BRANCH_KEY, s.currentBranch);
 }
 
 function clearSession() {
   localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(TENANT_KEY);
   localStorage.removeItem(NAME_KEY);
+  localStorage.removeItem(BRANCHES_KEY);
+  localStorage.removeItem(CURRENT_BRANCH_KEY);
 }
 
 export function ChecklistManagerPortal() {
   const lang: Language = 'ru';
   const [session, setSession] = useState<Session | null>(loadSession);
 
+  const switchBranch = (subdomain: string) => {
+    setSession(prev => {
+      if (!prev) return prev;
+      const next = { ...prev, currentBranch: subdomain };
+      saveSession(next);
+      return next;
+    });
+  };
+
   if (!session) return <LoginScreen lang={lang} onLoggedIn={setSession} />;
-  return <Builder lang={lang} session={session} onLogout={() => { clearSession(); setSession(null); }} />;
+  return <Builder lang={lang} session={session} onSwitchBranch={switchBranch} onLogout={() => { clearSession(); setSession(null); }} />;
 }
 
 function LoginScreen({ lang, onLoggedIn }: { lang: Language; onLoggedIn: (s: Session) => void }) {
@@ -59,7 +82,10 @@ function LoginScreen({ lang, onLoggedIn }: { lang: Language; onLoggedIn: (s: Ses
     try {
       const portalSubdomain = getChecklistManagerPortalSubdomain();
       const res = await checklistAuthApi.managerLogin(portalSubdomain, password);
-      const session = { token: res.token, tenantSubdomain: res.tenantSubdomain, name: res.name };
+      const session: Session = {
+        token: res.token, tenantSubdomain: res.tenantSubdomain, name: res.name,
+        branches: res.branches, currentBranch: res.tenantSubdomain,
+      };
       saveSession(session);
       onLoggedIn(session);
     } catch {
@@ -93,17 +119,20 @@ function LoginScreen({ lang, onLoggedIn }: { lang: Language; onLoggedIn: (s: Ses
 
 type Tab = 'dashboard' | 'checklists' | 'employees';
 
-function Builder({ lang, session, onLogout }: { lang: Language; session: Session; onLogout: () => void }) {
+function Builder({ lang, session, onSwitchBranch, onLogout }: {
+  lang: Language; session: Session; onSwitchBranch: (subdomain: string) => void; onLogout: () => void;
+}) {
   const [tab, setTab] = useState<Tab>('dashboard');
   const [roles, setRoles] = useState<ChecklistRole[]>([]);
   const [rolesLoading, setRolesLoading] = useState(true);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const branch = session.currentBranch;
 
   const loadRoles = () => {
     setRolesLoading(true);
-    checklistManagerApi.roles(session.tenantSubdomain, session.token).then(setRoles).finally(() => setRolesLoading(false));
+    checklistManagerApi.roles(branch, session.token).then(setRoles).finally(() => setRolesLoading(false));
   };
-  useEffect(() => { loadRoles(); }, []);
+  useEffect(() => { loadRoles(); }, []); // roles are shared across branches — no need to reload on switch
 
   const showToast = (message: string, type: ToastType) => {
     const id = Date.now();
@@ -112,12 +141,12 @@ function Builder({ lang, session, onLogout }: { lang: Language; session: Session
   const removeToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
   const employeesApi: EmployeesApi = {
-    list: (roleId) => checklistManagerApi.employees.list(session.tenantSubdomain, session.token, roleId),
-    create: (name, roleId, pin) => checklistManagerApi.employees.create(session.tenantSubdomain, session.token, name, roleId, pin),
-    update: (id, patchBody) => checklistManagerApi.employees.update(session.tenantSubdomain, session.token, id, patchBody),
-    remove: (id) => checklistManagerApi.employees.remove(session.tenantSubdomain, session.token, id),
-    posPreview: () => checklistManagerApi.employees.posPreview(session.tenantSubdomain, session.token),
-    import: (roleId, names) => checklistManagerApi.employees.import(session.tenantSubdomain, session.token, roleId, names),
+    list: (roleId) => checklistManagerApi.employees.list(branch, session.token, roleId),
+    create: (name, roleId, pin) => checklistManagerApi.employees.create(branch, session.token, name, roleId, pin),
+    update: (id, patchBody) => checklistManagerApi.employees.update(branch, session.token, id, patchBody),
+    remove: (id) => checklistManagerApi.employees.remove(branch, session.token, id),
+    posPreview: () => checklistManagerApi.employees.posPreview(branch, session.token),
+    import: (roleId, names) => checklistManagerApi.employees.import(branch, session.token, roleId, names),
   };
 
   const tabs: { id: Tab; label: string }[] = [
@@ -125,6 +154,8 @@ function Builder({ lang, session, onLogout }: { lang: Language; session: Session
     { id: 'checklists', label: tr(lang, 'Чек-листы', 'Checklists', 'Cheklistlar') },
     { id: 'employees', label: tr(lang, 'Сотрудники', 'Employees', 'Xodimlar') },
   ];
+
+  const currentBranchLabel = session.branches.find(b => b.subdomain === branch)?.name ?? branch;
 
   return (
     <div className="min-h-screen bg-background px-4 py-6">
@@ -139,6 +170,21 @@ function Builder({ lang, session, onLogout }: { lang: Language; session: Session
             <LogOut size={18} />
           </button>
         </div>
+
+        {session.branches.length > 1 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Building2 size={14} className="text-muted shrink-0" />
+            {session.branches.map(b => (
+              <button
+                key={b.subdomain}
+                onClick={() => onSwitchBranch(b.subdomain)}
+                className={`px-2.5 py-1 rounded-lg text-[12px] font-medium ${b.subdomain === branch ? 'bg-primary text-white' : 'bg-card border border-border text-muted'}`}
+              >
+                {b.name || b.subdomain}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {tabs.map(t => (
@@ -158,13 +204,14 @@ function Builder({ lang, session, onLogout }: { lang: Language; session: Session
           <>
             {tab === 'dashboard' && (
               <DashboardTab
+                key={branch}
                 lang={lang}
                 roles={roles}
-                statsApi={(params) => checklistManagerApi.stats(session.tenantSubdomain, session.token, params)}
+                statsApi={(params) => checklistManagerApi.stats(branch, session.token, params)}
               />
             )}
             {tab === 'checklists' && (
-              <ChecklistsBuilderTab lang={lang} roles={roles} session={session} onShowToast={showToast} />
+              <ChecklistsBuilderTab key={branch} lang={lang} roles={roles} branch={branch} session={session} onShowToast={showToast} />
             )}
             {tab === 'employees' && (
               <EmployeesTab lang={lang} roles={roles} onShowToast={showToast} api={employeesApi} />
@@ -176,8 +223,8 @@ function Builder({ lang, session, onLogout }: { lang: Language; session: Session
   );
 }
 
-function ChecklistsBuilderTab({ lang, roles, session, onShowToast }: {
-  lang: Language; roles: ChecklistRole[]; session: Session;
+function ChecklistsBuilderTab({ lang, roles, branch, session, onShowToast }: {
+  lang: Language; roles: ChecklistRole[]; branch: string; session: Session;
   onShowToast: (m: string, t: ToastType) => void;
 }) {
   const [list, setList] = useState<Checklist[]>([]);
@@ -186,7 +233,7 @@ function ChecklistsBuilderTab({ lang, roles, session, onShowToast }: {
 
   const load = () => {
     setLoading(true);
-    checklistManagerApi.checklists.list(session.tenantSubdomain, session.token).then(setList).finally(() => setLoading(false));
+    checklistManagerApi.checklists.list(branch, session.token).then(setList).finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
 
@@ -201,14 +248,14 @@ function ChecklistsBuilderTab({ lang, roles, session, onShowToast }: {
         onDone={() => { setEditingId(null); load(); }}
         onShowToast={onShowToast}
         manager={{
-          tenantSubdomain: session.tenantSubdomain,
+          tenantSubdomain: branch,
           token: session.token,
-          onLoadItems: (id) => checklistManagerApi.checklists.items(session.tenantSubdomain, session.token, id),
+          onLoadItems: (id) => checklistManagerApi.checklists.items(branch, session.token, id),
           onSave: async (data, id) => {
-            if (id) await checklistManagerApi.checklists.update(session.tenantSubdomain, session.token, id, data);
-            else await checklistManagerApi.checklists.create(session.tenantSubdomain, session.token, data);
+            if (id) await checklistManagerApi.checklists.update(branch, session.token, id, data);
+            else await checklistManagerApi.checklists.create(branch, session.token, data);
           },
-          onDelete: async (id) => { await checklistManagerApi.checklists.remove(session.tenantSubdomain, session.token, id); },
+          onDelete: async (id) => { await checklistManagerApi.checklists.remove(branch, session.token, id); },
         }}
       />
     );

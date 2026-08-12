@@ -2356,7 +2356,7 @@ async function scopedFetch<T>(
 
 export const checklistAuthApi = {
   managerLogin: (portalSubdomain: string, password: string) =>
-    post<{ token: string; name: string; tenantSubdomain: string }>(
+    post<{ token: string; name: string; tenantSubdomain: string; branches: { subdomain: string; name: string }[] }>(
       '/checklist/manager-login',
       { portalSubdomain, password },
     ),

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, Camera, ChevronRight, ArrowLeft, X, Download } from 'lucide-react';
+import { Plus, Trash2, Camera, ChevronRight, ArrowLeft, X, Download, Pencil } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Language } from '../../types';
 import { checklistApi } from '../../services/traceApi';
@@ -365,6 +365,7 @@ function ManagersTab({ lang, roles, onShowToast }: {
   const [form, setForm] = useState({ name: '', password: '', portalSubdomain: '' });
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const load = () => checklistApi.managers.list().then(setManagers).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -418,22 +419,99 @@ function ManagersTab({ lang, roles, onShowToast }: {
       ) : (
         <div className="space-y-1.5">
           {managers.map(m => (
-            <div key={m.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-background border border-border">
-              <div>
-                <span className="text-[13px] text-text">{m.name}</span>
-                <span className="text-[11px] text-muted ml-2">{m.portal_subdomain}.trace-os.uz</span>
-                <div className="text-[11px] text-muted mt-0.5">
-                  {m.role_ids.map(id => roles.find(r => r.id === id)?.name).filter(Boolean).join(', ') || tr(lang, 'Нет ролей', 'No roles', 'Rol yoq')}
+            editingId === m.id ? (
+              <ManagerEditRow
+                key={m.id}
+                lang={lang}
+                roles={roles}
+                manager={m}
+                onShowToast={onShowToast}
+                onDone={() => { setEditingId(null); load(); }}
+              />
+            ) : (
+              <div key={m.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-background border border-border">
+                <div>
+                  <span className="text-[13px] text-text">{m.name}</span>
+                  <span className="text-[11px] text-muted ml-2">{m.portal_subdomain}.trace-os.uz</span>
+                  <div className="text-[11px] text-muted mt-0.5">
+                    {m.role_ids.map(id => roles.find(r => r.id === id)?.name).filter(Boolean).join(', ') || tr(lang, 'Нет ролей', 'No roles', 'Rol yoq')}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setEditingId(m.id)} className="text-muted hover:text-text">
+                    <Pencil size={15} />
+                  </button>
+                  <button onClick={async () => { await checklistApi.managers.remove(m.id); load(); }} className="text-red-500 hover:text-red-600">
+                    <Trash2 size={15} />
+                  </button>
                 </div>
               </div>
-              <button onClick={async () => { await checklistApi.managers.remove(m.id); load(); }} className="text-red-500 hover:text-red-600">
-                <Trash2 size={15} />
-              </button>
-            </div>
+            )
           ))}
         </div>
       )}
     </Card>
+  );
+}
+
+function ManagerEditRow({ lang, roles, manager, onShowToast, onDone }: {
+  lang: Language; roles: ChecklistRole[]; manager: ChecklistManager;
+  onShowToast: (m: string, t: 'success' | 'error' | 'info') => void;
+  onDone: () => void;
+}) {
+  const [name, setName] = useState(manager.name);
+  const [password, setPassword] = useState('');
+  const [portalSubdomain, setPortalSubdomain] = useState(manager.portal_subdomain);
+  const [roleIds, setRoleIds] = useState<string[]>(manager.role_ids);
+  const [busy, setBusy] = useState(false);
+
+  const toggleRole = (id: string) => setRoleIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  const save = async () => {
+    if (!name.trim() || !portalSubdomain.trim()) {
+      onShowToast(tr(lang, 'Укажите имя и поддомен', 'Enter a name and subdomain', 'Ism va subdomenni kiriting'), 'error');
+      return;
+    }
+    setBusy(true);
+    try {
+      await checklistApi.managers.update(manager.id, {
+        name: name.trim(),
+        portalSubdomain: portalSubdomain.trim(),
+        roleIds,
+        ...(password ? { password } : {}),
+      });
+      onDone();
+    } catch { onShowToast(tr(lang, 'Не удалось сохранить', 'Failed to save', "Saqlab bo'lmadi"), 'error'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="p-3 rounded-lg bg-background border border-primary/40 space-y-2.5">
+      <div className="grid sm:grid-cols-2 gap-2">
+        <input value={name} onChange={e => setName(e.target.value)} placeholder={tr(lang, 'Имя', 'Name', 'Ism')} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
+        <input value={password} onChange={e => setPassword(e.target.value)} type="password" placeholder={tr(lang, 'Новый пароль (необязательно)', 'New password (optional)', "Yangi parol (ixtiyoriy)")} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
+        <input value={portalSubdomain} onChange={e => setPortalSubdomain(e.target.value)} placeholder={tr(lang, 'Поддомен', 'Subdomain', 'Subdomen')} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text sm:col-span-2" />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {roles.map(r => (
+          <button
+            key={r.id}
+            onClick={() => toggleRole(r.id)}
+            className={`px-2.5 py-1 rounded-lg text-[12px] font-medium ${roleIds.includes(r.id) ? 'bg-primary text-white' : 'bg-card border border-border text-muted'}`}
+          >
+            {r.name}
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <button onClick={save} disabled={busy} className="px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold disabled:opacity-50">
+          {tr(lang, 'Сохранить', 'Save', 'Saqlash')}
+        </button>
+        <button onClick={onDone} className="px-3.5 py-2 rounded-lg bg-card border border-border text-muted text-[13px] font-medium">
+          {tr(lang, 'Отмена', 'Cancel', 'Bekor qilish')}
+        </button>
+      </div>
+    </div>
   );
 }
 

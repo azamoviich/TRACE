@@ -2360,8 +2360,10 @@ export const checklistAuthApi = {
       '/checklist/manager-login',
       { portalSubdomain, password },
     ),
-  // PINs are unique across every active employee in the tenant — the PIN
-  // alone identifies who's logging in, no name-picker step needed first.
+  // PINs are unique across every active employee in the tenant's
+  // organization — the PIN alone identifies who's logging in, no name-picker
+  // step. The token is scope-bound, not branch-bound; `branches` lists every
+  // branch sharing that scope so the frontend can ask which one to open.
   employeeLogin: (tenantSubdomain: string, pin: string) =>
     fetch(`${BASE}/checklist/auth/employee/login`, {
       method: 'POST',
@@ -2369,7 +2371,7 @@ export const checklistAuthApi = {
       body: JSON.stringify({ pin }),
     }).then(r => {
       if (!r.ok) throw new Error(`${r.status}`);
-      return r.json() as Promise<{ token: string; name: string; roleName: string }>;
+      return r.json() as Promise<{ token: string; name: string; roleName: string; branches: { subdomain: string; name: string }[] }>;
     }),
 };
 

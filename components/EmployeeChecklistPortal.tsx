@@ -15,47 +15,77 @@ interface Props {
 
 const TOKEN_KEY = 'trace_checklist_employee_token';
 const NAME_KEY = 'trace_checklist_employee_name';
+const BRANCH_KEY = 'trace_checklist_employee_branch';
+
+interface Session { token: string; name: string; branchSubdomain: string }
 
 export function EmployeeChecklistPortal({ roleSlug, tenantSubdomain }: Props) {
   const lang: Language = 'ru';
-  const [token, setToken] = useState<string | null>(() => sessionStorage.getItem(TOKEN_KEY));
-  const [name, setName] = useState<string | null>(() => sessionStorage.getItem(NAME_KEY));
+  const [session, setSession] = useState<Session | null>(() => {
+    const token = sessionStorage.getItem(TOKEN_KEY);
+    const name = sessionStorage.getItem(NAME_KEY);
+    const branchSubdomain = sessionStorage.getItem(BRANCH_KEY);
+    return token && branchSubdomain ? { token, name: name ?? '', branchSubdomain } : null;
+  });
 
-  const onLoggedIn = (t: string, n: string) => {
-    sessionStorage.setItem(TOKEN_KEY, t);
-    sessionStorage.setItem(NAME_KEY, n);
-    setToken(t);
-    setName(n);
+  const onLoggedIn = (s: Session) => {
+    sessionStorage.setItem(TOKEN_KEY, s.token);
+    sessionStorage.setItem(NAME_KEY, s.name);
+    sessionStorage.setItem(BRANCH_KEY, s.branchSubdomain);
+    setSession(s);
   };
   const logout = () => {
     sessionStorage.removeItem(TOKEN_KEY);
     sessionStorage.removeItem(NAME_KEY);
-    setToken(null);
-    setName(null);
+    sessionStorage.removeItem(BRANCH_KEY);
+    setSession(null);
   };
 
-  if (!token) {
-    return <PinLogin lang={lang} tenantSubdomain={tenantSubdomain} onLoggedIn={onLoggedIn} />;
+  if (!session) {
+    return <LoginFlow lang={lang} loginTenantSubdomain={tenantSubdomain} onLoggedIn={onLoggedIn} />;
   }
-  return <TodayChecklist lang={lang} tenantSubdomain={tenantSubdomain} token={token} name={name ?? ''} onLogout={logout} />;
+  return <TodayChecklist lang={lang} tenantSubdomain={session.branchSubdomain} token={session.token} name={session.name} onLogout={logout} />;
 }
 
-// PINs are unique across every active employee in the tenant, so the PIN
-// alone identifies who's logging in (and their role) — no name-picker step.
-function PinLogin({ lang, tenantSubdomain, onLoggedIn }: {
-  lang: Language; tenantSubdomain: string; onLoggedIn: (token: string, name: string) => void;
+// Login is one PIN pad (tap digits, not the device keyboard — faster and
+// works with gloves/wet hands behind a bar). PINs are unique across every
+// active employee in the organization, so the PIN alone identifies who's
+// logging in — no name-picker. If the employee's organization has more than
+// one branch, a picker + confirm step follows: the token itself isn't tied
+// to a branch (see backend), only which X-Tenant header gets sent from here
+// on is — so switching branches later never needs a new login.
+type LoginStep = 'pin' | 'branch' | 'confirm';
+
+function LoginFlow({ lang, loginTenantSubdomain, onLoggedIn }: {
+  lang: Language; loginTenantSubdomain: string; onLoggedIn: (s: Session) => void;
 }) {
+  const [step, setStep] = useState<LoginStep>('pin');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [name, setName] = useState('');
+  const [token, setToken] = useState('');
+  const [branches, setBranches] = useState<{ subdomain: string; name: string }[]>([]);
+  const [chosenBranch, setChosenBranch] = useState<{ subdomain: string; name: string } | null>(null);
+
+  const tapDigit = (d: string) => setPin(prev => (prev.length < 6 ? prev + d : prev));
+  const backspace = () => setPin(prev => prev.slice(0, -1));
 
   const submitPin = async () => {
-    if (pin.length < 4) return;
+    if (pin.length < 4 || busy) return;
     setBusy(true);
     setError('');
     try {
-      const res = await checklistAuthApi.employeeLogin(tenantSubdomain, pin);
-      onLoggedIn(res.token, res.name);
+      const res = await checklistAuthApi.employeeLogin(loginTenantSubdomain, pin);
+      setName(res.name);
+      setToken(res.token);
+      setBranches(res.branches);
+      if (res.branches.length <= 1) {
+        const branch = res.branches[0] ?? { subdomain: loginTenantSubdomain, name: '' };
+        onLoggedIn({ token: res.token, name: res.name, branchSubdomain: branch.subdomain });
+      } else {
+        setStep('branch');
+      }
     } catch {
       setError(tr(lang, 'Неверный PIN', 'Wrong PIN', "PIN noto'g'ri"));
       setPin('');
@@ -64,22 +94,92 @@ function PinLogin({ lang, tenantSubdomain, onLoggedIn }: {
     }
   };
 
+  useEffect(() => {
+    if (pin.length >= 4 && step === 'pin') {
+      // Small delay so the last digit's dot is visible before it submits.
+      const t = setTimeout(submitPin, 150);
+      return () => clearTimeout(t);
+    }
+  }, [pin]);
+
+  if (step === 'branch') {
+    return (
+      <div className="min-h-screen bg-background px-4 py-8">
+        <div className="max-w-sm mx-auto">
+          <h1 className="text-[19px] font-bold text-text text-center mb-1">{name}</h1>
+          <p className="text-[13px] text-muted text-center mb-6">{tr(lang, 'В каком вы филиале?', 'Which branch are you at?', 'Qaysi filialdasiz?')}</p>
+          <div className="space-y-2">
+            {branches.map(b => (
+              <button
+                key={b.subdomain}
+                onClick={() => { setChosenBranch(b); setStep('confirm'); }}
+                className="w-full py-3.5 rounded-xl bg-card border border-border text-[15px] font-medium text-text hover:border-primary/40"
+              >
+                {b.name || b.subdomain}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === 'confirm' && chosenBranch) {
+    return (
+      <div className="min-h-screen bg-background px-4 py-8 flex flex-col items-center justify-center text-center">
+        <p className="text-[13px] text-muted mb-1">{name}</p>
+        <h1 className="text-[20px] font-bold text-text mb-8">{chosenBranch.name || chosenBranch.subdomain}</h1>
+        <div className="flex gap-2 w-full max-w-xs">
+          <button onClick={() => setStep('branch')} className="flex-1 py-2.5 rounded-lg bg-card text-muted text-[14px] font-medium">
+            {tr(lang, 'Назад', 'Back', 'Orqaga')}
+          </button>
+          <button
+            onClick={() => onLoggedIn({ token, name, branchSubdomain: chosenBranch.subdomain })}
+            className="flex-1 py-2.5 rounded-lg bg-primary text-white text-[14px] font-semibold"
+          >
+            {tr(lang, 'Подтвердить', 'Confirm', 'Tasdiqlash')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background px-4 py-8 flex flex-col items-center justify-center">
       <p className="text-[13px] text-muted mb-6">PIN</p>
-      <input
-        autoFocus
-        value={pin}
-        onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-        onKeyDown={e => e.key === 'Enter' && submitPin()}
-        type="password"
-        inputMode="numeric"
-        className="w-40 text-center text-[28px] tracking-[0.3em] py-3 rounded-xl border border-border bg-card text-text"
-      />
-      {error && <p className="text-[13px] text-red-500 mt-3">{error}</p>}
-      <button onClick={submitPin} disabled={busy || pin.length < 4} className="mt-6 w-full max-w-xs py-2.5 rounded-lg bg-primary text-white text-[14px] font-semibold disabled:opacity-50">
-        {tr(lang, 'Войти', 'Log in', 'Kirish')}
-      </button>
+      <div className="flex gap-3 mb-2">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <span key={i} className={`w-3.5 h-3.5 rounded-full ${i < pin.length ? 'bg-primary' : 'bg-card border border-border'}`} />
+        ))}
+      </div>
+      {error && <p className="text-[13px] text-red-500 mt-2">{error}</p>}
+      <div className="grid grid-cols-3 gap-3 mt-6 w-full max-w-[280px]">
+        {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(d => (
+          <button
+            key={d}
+            onClick={() => tapDigit(d)}
+            disabled={busy}
+            className="py-4 rounded-xl bg-card border border-border text-[22px] font-semibold text-text active:bg-primary/20 disabled:opacity-50"
+          >
+            {d}
+          </button>
+        ))}
+        <div />
+        <button
+          onClick={() => tapDigit('0')}
+          disabled={busy}
+          className="py-4 rounded-xl bg-card border border-border text-[22px] font-semibold text-text active:bg-primary/20 disabled:opacity-50"
+        >
+          0
+        </button>
+        <button
+          onClick={backspace}
+          disabled={busy || pin.length === 0}
+          className="py-4 rounded-xl bg-card border border-border text-[15px] font-semibold text-muted active:bg-primary/20 disabled:opacity-30"
+        >
+          ←
+        </button>
+      </div>
     </div>
   );
 }

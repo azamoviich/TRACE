@@ -298,7 +298,7 @@ export default function App() {
       case 'financial':   return <Financial key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} />;
       case 'reviews':     return <Reviews key={branchKey} lang={lang} onContextReady={setAiContext} />;
       case 'loyalty':     return <Loyalty key={branchKey} lang={lang} />;
-      case 'checklists':  return <Checklists lang={lang} onShowToast={showToast} />;
+      case 'checklists':  return <Checklists key={branchKey} lang={lang} onShowToast={showToast} />;
       case 'reports':     return <Reports lang={lang} onShowToast={showToast} onNavigate={setCurrentView} />;
       case 'settings':    return (
         <Settings

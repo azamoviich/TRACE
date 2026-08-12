@@ -11,6 +11,15 @@ function tr(lang: Language, ru: string, en: string, uz: string) {
   return lang === 'ru' ? ru : lang === 'uz' ? uz : en;
 }
 
+// Every delete action in this feature is irreversible (roles/employees are
+// now shared across every branch in the organization — deleting one removes
+// it everywhere at once) — a plain click was one accidental tap away from
+// wiping something. Native confirm() is blunt but reliable and needs no
+// extra UI plumbing to wire into five different delete buttons.
+function confirmDelete(lang: Language, what: string): boolean {
+  return window.confirm(tr(lang, `Удалить «${what}»? Это нельзя отменить.`, `Delete "${what}"? This can't be undone.`, `"${what}" o'chirilsinmi? Buni bekor qilib bo'lmaydi.`));
+}
+
 type Tab = 'dashboard' | 'roles' | 'employees' | 'managers' | 'checklists';
 
 interface Props {
@@ -192,7 +201,7 @@ function RolesTab({ lang, roles, loading, onChange, onShowToast }: {
                 >
                   {r.active ? tr(lang, 'Активна', 'Active', 'Faol') : tr(lang, 'Скрыта', 'Hidden', 'Yashirilgan')}
                 </button>
-                <button onClick={async () => { await checklistApi.roles.remove(r.id); onChange(); }} className="text-red-500 hover:text-red-600">
+                <button onClick={async () => { if (!confirmDelete(lang, r.name)) return; await checklistApi.roles.remove(r.id); onChange(); }} className="text-red-500 hover:text-red-600">
                   <Trash2 size={15} />
                 </button>
               </div>
@@ -372,7 +381,7 @@ export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.empl
                 >
                   {e.active ? tr(lang, 'Активен', 'Active', 'Faol') : tr(lang, 'Скрыт', 'Hidden', 'Yashirilgan')}
                 </button>
-                <button onClick={async () => { await api.remove(e.id); load(); }} className="text-red-500 hover:text-red-600">
+                <button onClick={async () => { if (!confirmDelete(lang, e.name)) return; await api.remove(e.id); load(); }} className="text-red-500 hover:text-red-600">
                   <Trash2 size={15} />
                 </button>
               </div>
@@ -469,7 +478,7 @@ function ManagersTab({ lang, roles, onShowToast }: {
                   <button onClick={() => setEditingId(m.id)} className="text-muted hover:text-text">
                     <Pencil size={15} />
                   </button>
-                  <button onClick={async () => { await checklistApi.managers.remove(m.id); load(); }} className="text-red-500 hover:text-red-600">
+                  <button onClick={async () => { if (!confirmDelete(lang, m.name)) return; await checklistApi.managers.remove(m.id); load(); }} className="text-red-500 hover:text-red-600">
                     <Trash2 size={15} />
                   </button>
                 </div>
@@ -668,6 +677,7 @@ export function ChecklistEditor({ lang, roles, checklistId, onDone, onShowToast,
 
   const remove = async () => {
     if (!checklistId) return;
+    if (!confirmDelete(lang, name)) return;
     setBusy(true);
     try {
       if (manager) await manager.onDelete(checklistId);

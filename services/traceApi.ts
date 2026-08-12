@@ -623,10 +623,11 @@ function demoAbc(): AbcRow[] {
     const grossProfit = revenue - cost;
     const marginPct = Math.round(((revenue - cost) / revenue) * 1000) / 10;
     const costPerUnit = Math.round(d.price * costRatio);
+    const foodCostPct = Math.round(costRatio * 1000) / 10;
     return {
       name: d.name, cat: d.category, revenue, qty,
       avgPrice: d.price, velocity: Math.round(qty / 7 * 10) / 10, share,
-      cost, grossProfit, marginPct, costPerUnit,
+      cost, grossProfit, marginPct, costPerUnit, foodCostPct,
       abc: grade, abcRevenue: grade,
       abcQty: i < 3 ? 'A' : i < 6 ? 'B' : 'C',
       abcProfit: marginPct >= 65 ? 'A' : marginPct >= 60 ? 'B' : 'C',
@@ -1348,7 +1349,14 @@ export const traceApi = {
     abc: (range: 'today' | '7days' | '30days' | 'custom', customFrom?: string, customTo?: string): Promise<AbcRow[]> => {
       if (isDemoTenant()) return Promise.resolve(demoAbc());
       const q = customFrom && customTo ? `from=${customFrom}&to=${customTo}` : `range=${range}`;
-      return apiFetch(`/sales/abc?${q}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []);
+      return apiFetch(`/sales/abc?${q}`).then(r => r.json()).then(d => Array.isArray(d) ? d : [])
+        // Backend sends cost + marginPct but not foodCostPct yet — derive it
+        // here so the column works today regardless of backend rollout order.
+        .then((rows: AbcRow[]) => rows.map(r => ({
+          ...r,
+          foodCostPct: r.foodCostPct ?? (r.marginPct != null ? Math.round((100 - r.marginPct) * 10) / 10
+            : (r.cost != null && r.revenue > 0 ? Math.round((r.cost / r.revenue) * 1000) / 10 : null)),
+        })));
     },
     abcHistory: (dishName: string, lang: Language = 'ru'): Promise<AbcHistoryItem[]> =>
       isDemoTenant() ? Promise.resolve(demoAbcHistory(dishName, lang)) : apiFetch(`/sales/abc/history?dishName=${encodeURIComponent(dishName)}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
@@ -1952,6 +1960,9 @@ export interface AbcRow {
   grossProfit?: number;
   marginPct?: number | null;
   costPerUnit?: number | null;
+  // (cost ÷ revenue) × 100 — the inverse of marginPct, kept as its own field
+  // since "food cost %" is the term kitchens actually think in (lower = better).
+  foodCostPct?: number | null;
   abc: AbcGrade;        // = abcRevenue (backward compat)
   abcRevenue: AbcGrade;
   abcQty: AbcGrade;

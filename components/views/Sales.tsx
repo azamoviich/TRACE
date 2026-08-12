@@ -17,7 +17,7 @@ import { traceApi, getTenantPlan, RevenueRow, HourlyRow, DishRow, CategoryPerfRo
 import { ComingSoon } from '../ui/ComingSoon';
 
 type AbcFilter = 'all' | 'A' | 'B' | 'C';
-type AbcSort = 'revenue' | 'qty' | 'avgPrice' | 'velocity' | 'share' | 'cost' | 'costPerUnit' | 'marginPct';
+type AbcSort = 'revenue' | 'qty' | 'avgPrice' | 'velocity' | 'share' | 'cost' | 'costPerUnit' | 'marginPct' | 'foodCostPct';
 type AbcMetric = 'abcRevenue' | 'abcQty' | 'abcProfit';
 
 function abcBadgeCls(grade: string) {
@@ -98,8 +98,8 @@ const DishDetailModal: React.FC<{
       : (ru ? 'Аутсайдер' : isUz ? 'Avtsayder' : 'Dog');
 
     const costCtx = ru
-      ? (item.costPerUnit != null ? ` Себестоимость: ${item.costPerUnit.toLocaleString('ru-RU')} UZS/шт. Маржа: ${item.marginPct}%.` : '')
-      : (item.costPerUnit != null ? ` Cost price: ${item.costPerUnit.toLocaleString()} UZS/unit. Margin: ${item.marginPct}%.` : '');
+      ? (item.costPerUnit != null ? ` Себестоимость: ${item.costPerUnit.toLocaleString('ru-RU')} UZS/шт. Фудкост: ${item.foodCostPct}%. Маржа: ${item.marginPct}%.` : '')
+      : (item.costPerUnit != null ? ` Cost price: ${item.costPerUnit.toLocaleString()} UZS/unit. Food cost: ${item.foodCostPct}%. Margin: ${item.marginPct}%.` : '');
     const ctx = ru
       ? `Блюдо: "${item.name}", категория: ${item.cat}. Выручка: ${item.revenue.toLocaleString('ru-RU')} UZS (${item.share}% от общей). Продано: ${item.qty} шт. Ср. цена: ${item.avgPrice.toLocaleString('ru-RU')} UZS. Скорость: ${item.velocity}/день.${costCtx} ABC выручки: ${item.abcRevenue}. ABC количества: ${item.abcQty}. ABC маржи: ${item.abcProfit}. Позиция на BCG-матрице: ${quadrant}.`
       : `Dish: "${item.name}", category: ${item.cat}. Revenue: ${item.revenue.toLocaleString()} UZS (${item.share}% of total). Qty sold: ${item.qty}. Avg price: ${item.avgPrice.toLocaleString()} UZS. Velocity: ${item.velocity}/day.${costCtx} Revenue ABC: ${item.abcRevenue}. Qty ABC: ${item.abcQty}. Margin ABC: ${item.abcProfit}. Matrix position: ${quadrant}.`;
@@ -463,13 +463,14 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
   const [detailItem, setDetailItem] = useState<AbcRow | null>(null);
 
   // Optional columns — toggleable, persisted so the choice sticks across visits
-  type OptCol = 'cat' | 'avgPrice' | 'cost' | 'costPerUnit' | 'marginPct' | 'velocity';
+  type OptCol = 'cat' | 'avgPrice' | 'cost' | 'costPerUnit' | 'foodCostPct' | 'marginPct' | 'velocity';
+  const OPT_COL_DEFAULTS: Record<OptCol, boolean> = { cat: true, avgPrice: true, cost: true, costPerUnit: true, foodCostPct: true, marginPct: true, velocity: true };
   const [visibleCols, setVisibleCols] = useState<Record<OptCol, boolean>>(() => {
     try {
       const saved = localStorage.getItem('trace_abc_cols');
-      if (saved) return { cat: true, avgPrice: true, cost: true, costPerUnit: true, marginPct: true, velocity: true, ...JSON.parse(saved) };
+      if (saved) return { ...OPT_COL_DEFAULTS, ...JSON.parse(saved) };
     } catch {}
-    return { cat: true, avgPrice: true, cost: true, costPerUnit: true, marginPct: true, velocity: true };
+    return OPT_COL_DEFAULTS;
   });
   const [colsOpen, setColsOpen] = useState(false);
   const colsBtnRef = useRef<HTMLDivElement>(null);
@@ -582,7 +583,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
     const catLines = [...byCat.entries()].sort((a, b) => b[1] - a[1])
       .map(([cat, rev]) => `  ${cat}: ${fmt(rev)} UZS`).join('\n');
     const itemLines = [...filtered].sort((a, b) => b.revenue - a.revenue).slice(0, 40)
-      .map(it => `  "${it.name}" [категория: ${it.cat}] — выручка ${fmt(it.revenue)} UZS, ${it.qty} шт., ${it.velocity}/день, маржа ${it.marginPct != null ? it.marginPct + '%' : 'н/д'}, ABC (кол-во/выручка/маржа): ${it.abcQty}${it.abcRevenue}${it.abcProfit}`)
+      .map(it => `  "${it.name}" [категория: ${it.cat}] — выручка ${fmt(it.revenue)} UZS, ${it.qty} шт., ${it.velocity}/день, фудкост ${it.foodCostPct != null ? it.foodCostPct + '%' : 'н/д'}, маржа ${it.marginPct != null ? it.marginPct + '%' : 'н/д'}, ABC (кол-во/выручка/маржа): ${it.abcQty}${it.abcRevenue}${it.abcProfit}`)
       .join('\n');
     const ctx = ru
       ? `Ты аналитик меню ресторана. Ниже список позиций меню с их категорией (модификаторы, сервисный сбор и чаевые уже исключены из этого списка — считай всё ниже реальными продаваемыми позициями, будь то блюдо, напиток или предмет типа "кальян"/"попкорн" — определяй тип по названию и категории). Всего позиций: ${filtered.length}, из них ${aCount} формируют 70% выручки.\n\nВыручка по категориям:\n${catLines}\n\nТоп-40 позиций по выручке:\n${itemLines}`
@@ -720,7 +721,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
     const { rangeLabel, generated } = abcMeta();
     const ws = wb.addWorksheet(sheetName.slice(0, 31), { views: [{ state: 'frozen', ySplit: 0 }] });
 
-    const COLS = 13;
+    const COLS = 14;
     ws.mergeCells(1, 1, 1, COLS);
     const titleCell = ws.getCell(1, 1);
     titleCell.value = title;
@@ -756,6 +757,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
       ru ? 'Выручка' : isUz ? 'Tushum' : 'Revenue', '%',
       ru ? 'Кол-во' : isUz ? 'Soni' : 'Qty', ru ? 'Ср. цена' : isUz ? "O'rt. narx" : 'Avg price',
       ru ? 'Себест.' : isUz ? 'Tannarx' : 'Cost', ru ? 'Себест/шт' : isUz ? 'Tannarx/dona' : 'Cost/unit',
+      ru ? 'Фудкост %' : 'Food cost %',
       ru ? 'В день' : isUz ? 'Kuniga' : '/day',
       ru ? 'ABC Кол-во' : isUz ? 'ABC Soni' : 'ABC Qty',
       ru ? 'ABC Выручка' : isUz ? 'ABC Tushum' : 'ABC Revenue',
@@ -778,6 +780,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
         item.qty, item.avgPrice,
         (item.cost ?? 0) > 0 ? (item.cost ?? 0) : null,
         item.costPerUnit ?? null,
+        item.foodCostPct != null ? item.foodCostPct / 100 : null,
         item.velocity,
         item.abcQty, item.abcRevenue, item.abcProfit,
       ];
@@ -786,14 +789,15 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
       row.getCell(7).numFmt = '#,##0';
       row.getCell(8).numFmt = '#,##0';
       row.getCell(9).numFmt = '#,##0';
-      row.getCell(10).numFmt = '0.00';
+      row.getCell(10).numFmt = '0.0%';
+      row.getCell(11).numFmt = '0.00';
       row.eachCell((c: ExcelJS.Cell) => { c.alignment = { ...c.alignment, vertical: 'middle' }; });
       if (i % 2 === 1) {
         for (let col = 1; col <= COLS; col++) {
           row.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF7F7F7' } };
         }
       }
-      for (const col of [11, 12, 13] as const) {
+      for (const col of [12, 13, 14] as const) {
         const grade = row.getCell(col).value as 'A' | 'B' | 'C';
         const cell = row.getCell(col);
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${GRADE_HEX[grade]}` } };
@@ -804,7 +808,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
 
     ws.columns = [
       { width: 4 }, { width: 30 }, { width: 16 }, { width: 13 }, { width: 8 }, { width: 8 }, { width: 12 },
-      { width: 12 }, { width: 12 }, { width: 8 }, { width: 11 }, { width: 12 }, { width: 11 },
+      { width: 12 }, { width: 12 }, { width: 10 }, { width: 8 }, { width: 11 }, { width: 12 }, { width: 11 },
     ];
     ws.autoFilter = { from: { row: headerRowIdx, column: 1 }, to: { row: headerRowIdx, column: COLS } };
     ws.views = [{ state: 'frozen', xSplit: 0, ySplit: headerRowIdx }];
@@ -887,6 +891,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
         ru ? 'Выручка' : isUz ? 'Tushum' : 'Revenue', '%',
         ru ? 'Кол-во' : isUz ? 'Soni' : 'Qty', ru ? 'Ср. цена' : isUz ? "O'rt. narx" : 'Avg price',
         ru ? 'Себест.' : isUz ? 'Tannarx' : 'Cost', ru ? 'Себест/шт' : isUz ? 'Tannarx/dona' : 'Cost/unit',
+        ru ? 'Фудкост %' : 'Food cost %',
         ru ? 'В день' : isUz ? 'Kuniga' : '/day',
         ru ? 'К' : isUz ? 'S' : 'Q', ru ? 'В' : isUz ? 'T' : 'R', ru ? 'М' : isUz ? 'M' : 'M',
       ]],
@@ -896,6 +901,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
         item.qty, item.avgPrice.toLocaleString('ru-RU'),
         (item.cost ?? 0) > 0 ? (item.cost ?? 0).toLocaleString('ru-RU') : '—',
         item.costPerUnit != null ? item.costPerUnit.toLocaleString('ru-RU') : '—',
+        item.foodCostPct != null ? `${item.foodCostPct}%` : '—',
         item.velocity,
         item.abcQty, item.abcRevenue, item.abcProfit,
       ]),
@@ -904,11 +910,11 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
       alternateRowStyles: { fillColor: [247, 247, 247] },
       columnStyles: {
         3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' },
-        6: { halign: 'right' }, 7: { halign: 'right' }, 8: { halign: 'right' }, 9: { halign: 'right' },
-        10: { halign: 'center' }, 11: { halign: 'center' }, 12: { halign: 'center' },
+        6: { halign: 'right' }, 7: { halign: 'right' }, 8: { halign: 'right' }, 9: { halign: 'right' }, 10: { halign: 'right' },
+        11: { halign: 'center' }, 12: { halign: 'center' }, 13: { halign: 'center' },
       },
       didParseCell: (data) => {
-        if (data.section === 'body' && [10, 11, 12].includes(data.column.index)) {
+        if (data.section === 'body' && [11, 12, 13].includes(data.column.index)) {
           const grade = String(data.cell.raw) as 'A' | 'B' | 'C';
           if (GRADE_RGB[grade]) {
             data.cell.styles.fillColor = GRADE_RGB[grade];
@@ -995,6 +1001,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
                     { id: 'avgPrice' as const, ru: 'Ср. цена', en: 'Avg price', uz: "O'rt. narx" },
                     { id: 'cost' as const, ru: 'Себест.', en: 'Cost', uz: 'Tannarx' },
                     { id: 'costPerUnit' as const, ru: 'Себест/шт', en: 'Cost/unit', uz: 'Tannarx/dona' },
+                    { id: 'foodCostPct' as const, ru: 'Фудкост %', en: 'Food cost %', uz: 'Food cost %' },
                     { id: 'marginPct' as const, ru: 'Маржа', en: 'Margin', uz: 'Marja' },
                     { id: 'velocity' as const, ru: 'В день', en: '/day', uz: 'Kuniga' },
                   ]).map(c => (
@@ -1170,6 +1177,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
                 {visibleCols.avgPrice && <th className="pb-2.5 pr-4"><SortBtn col="avgPrice" label={ru ? 'Ср. цена' : isUz ? "O'rt. narx" : 'Avg price'} /></th>}
                 {visibleCols.cost && <th className="pb-2.5 pr-4"><SortBtn col="cost" label={ru ? 'Себест.' : isUz ? 'Tannarx' : 'Cost'} /></th>}
                 {visibleCols.costPerUnit && <th className="pb-2.5 pr-4"><SortBtn col="costPerUnit" label={ru ? 'Себест/шт' : isUz ? 'Tannarx/dona' : 'Cost/unit'} /></th>}
+                {visibleCols.foodCostPct && <th className="pb-2.5 pr-4"><SortBtn col="foodCostPct" label={ru ? 'Фудкост %' : 'Food cost %'} /></th>}
                 {visibleCols.marginPct && <th className="pb-2.5 pr-4"><SortBtn col="marginPct" label={ru ? 'Маржа' : isUz ? 'Marja' : 'Margin'} /></th>}
                 {visibleCols.velocity && <th className="pb-2.5 pr-4"><SortBtn col="velocity" label={ru ? 'В день' : isUz ? 'Kuniga' : '/day'} /></th>}
                 <th className="pb-2.5 pr-4 text-[10px] uppercase tracking-[0.12em] text-muted font-medium" title={ru ? 'Кол-во / Выручка / Маржа' : isUz ? 'Soni / Tushum / Marja' : 'Qty / Revenue / Margin'}>
@@ -1201,6 +1209,13 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
                     {visibleCols.avgPrice && <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{item.avgPrice.toLocaleString('ru-RU')}</td>}
                     {visibleCols.cost && <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{(item.cost ?? 0) > 0 ? (item.cost ?? 0).toLocaleString('ru-RU') : '—'}</td>}
                     {visibleCols.costPerUnit && <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{item.costPerUnit != null ? item.costPerUnit.toLocaleString('ru-RU') : '—'}</td>}
+                    {visibleCols.foodCostPct && (
+                      <td className={`py-2.5 pr-4 text-[12px] font-semibold metric-number ${
+                        item.foodCostPct == null ? 'text-muted' : item.foodCostPct <= 30 ? 'text-success' : item.foodCostPct <= 40 ? 'text-text' : 'text-danger'
+                      }`}>
+                        {item.foodCostPct != null ? item.foodCostPct + '%' : '—'}
+                      </td>
+                    )}
                     {visibleCols.marginPct && <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{item.marginPct != null ? item.marginPct + '%' : '—'}</td>}
                     {visibleCols.velocity && <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{item.velocity}</td>}
                     {/* 3 ABC badges */}
@@ -1621,6 +1636,7 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
             : '';
           const fmtCostRow = (i: any) => {
             const parts: string[] = [];
+            if (i.foodCostPct != null) parts.push(`фудкост ${i.foodCostPct}%`);
             if (i.marginPct != null) parts.push(`маржа ${i.marginPct}%`);
             if (i.costPerUnit != null) parts.push(`себест. ${fmt(i.costPerUnit)} UZS/шт`);
             return parts.length ? ` [${parts.join(', ')}]` : '';

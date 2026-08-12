@@ -55,7 +55,7 @@ export type ViewState =
   | 'reports'
   | 'settings'
   | 'compare'
-  | 'service_inspector';
+  | 'checklist_view';
 
 export type TimeRange = 'today' | '7days' | '30days' | 'month' | 'custom';
 

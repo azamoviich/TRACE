@@ -50,8 +50,8 @@ export const TopNav: React.FC<TopNavProps> = ({
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const showBranches = branches.length > 1;
-  // ServiceInspector isn't part of the sales demo — real tenants only.
-  const baseNav = (isDemoTenant() ? NAV.filter(n => n.id !== 'service_inspector') : NAV)
+  // Checklist isn't part of the sales demo — real tenants only.
+  const baseNav = (isDemoTenant() ? NAV.filter(n => n.id !== 'checklist_view') : NAV)
     .filter(n => !hiddenPages.includes(n.id));
   const navItems = showBranches ? [...baseNav, COMPARE_NAV] : baseNav;
 

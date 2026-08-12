@@ -42,7 +42,7 @@ export function branchHeaders(branchIdOverride?: string): Record<string, string>
   return { 'X-Branch-Id': id };
 }
 
-// ServiceInspector staff (delegated manager) session — parallel to the
+// Checklist staff (delegated manager) session — parallel to the
 // owner's trace_token, but scoped server-side to whatever checklist
 // departments the owner assigned this account. Sent as a bearer token on
 // every tenant-scoped request; routes that don't check for staff (almost
@@ -1611,373 +1611,8 @@ export const traceApi = {
     remove: (id: string): Promise<void> =>
       apiFetch(`/shift-reports/${id}`, { method: 'DELETE' }).then(() => undefined),
   },
-  // ServiceInspector — Owner/GM management, tenant-scoped like everything
-  // else above (normal Origin-based tenant resolution, no separate auth).
-  checklist: {
-    departments: (): Promise<ChecklistDepartment[]> =>
-      isDemoTenant() ? Promise.resolve([]) : apiFetch(`/checklist/departments`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
-    createDepartment: (slug: string, name: string): Promise<ChecklistDepartment> =>
-      apiFetch(`/checklist/departments`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug, name }),
-      }).then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
-    updateDepartment: (id: string, data: { name?: string; active?: boolean; sort_order?: number; description?: string; position_ids?: string[] }): Promise<ChecklistDepartment> =>
-      apiFetch(`/checklist/departments/${id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      }).then(r => r.json()),
-    deleteDepartment: (id: string): Promise<void> =>
-      apiFetch(`/checklist/departments/${id}`, { method: 'DELETE' }).then(() => undefined),
-    addItem: (departmentId: string, text: string, extra?: { question_type?: ChecklistQuestionType; options?: string[] }): Promise<ChecklistItem> =>
-      apiFetch(`/checklist/departments/${departmentId}/items`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, ...extra }),
-      }).then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
-    updateItem: (id: string, data: { text?: string; active?: boolean; sort_order?: number; photo_required?: boolean; due_period?: ChecklistDuePeriod; question_type?: ChecklistQuestionType; options?: string[] }): Promise<ChecklistItem> =>
-      apiFetch(`/checklist/items/${id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      }).then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
-    deleteItem: (id: string): Promise<void> =>
-      apiFetch(`/checklist/items/${id}`, { method: 'DELETE' }).then(() => undefined),
-    results: (range: 'today' | '7days' | '30days'): Promise<ChecklistResultRow[]> =>
-      isDemoTenant() ? Promise.resolve([]) : apiFetch(`/checklist/results?range=${range}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
-    violations: (status: 'open' | 'resolved' | 'dismissed' | 'all' = 'open'): Promise<ChecklistViolation[]> =>
-      isDemoTenant() ? Promise.resolve([]) : apiFetch(`/checklist/violations?status=${status}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
-    updateViolationStatus: (id: string, status: 'open' | 'resolved' | 'dismissed'): Promise<ChecklistViolation> =>
-      apiFetch(`/checklist/violations/${id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
-      }).then(r => r.json()),
-    streaks: (): Promise<ChecklistStreak[]> =>
-      isDemoTenant() ? Promise.resolve([]) : apiFetch(`/checklist/streaks`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
-    leaderboard: (range: 'today' | '7days' | '30days'): Promise<ChecklistLeaderboardRow[]> =>
-      isDemoTenant() ? Promise.resolve([]) : apiFetch(`/checklist/leaderboard?range=${range}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
-    day: (departmentId: string, date: string): Promise<ChecklistDayDetail> =>
-      apiFetch(`/checklist/day?department_id=${departmentId}&date=${date}`).then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
-    pendingSubmissions: (): Promise<ChecklistPendingSubmission[]> =>
-      isDemoTenant() ? Promise.resolve([]) : apiFetch(`/checklist/pending-submissions`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
-    month: (month: string, departmentId?: string): Promise<ChecklistMonthDay[]> =>
-      isDemoTenant() ? Promise.resolve([]) : apiFetch(`/checklist/month?month=${month}${departmentId ? `&department_id=${departmentId}` : ''}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
-    importFromPos: (): Promise<{ newEmployees: number; updatedEmployees: number; newPositions: number; departmentNamesSeen: string[] }> =>
-      apiFetch('/checklist/import-from-pos', { method: 'POST' })
-        .then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
-    copyItemsFrom: (departmentId: string, sourceDepartmentId: string): Promise<{ copied: number }> =>
-      apiFetch(`/checklist/departments/${departmentId}/copy-from/${sourceDepartmentId}`, { method: 'POST' })
-        .then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
-  },
 };
 
-export type ChecklistDuePeriod = 'any' | 'opening' | 'midshift' | 'closing';
-export type ChecklistQuestionType = 'boolean' | 'text' | 'single_choice' | 'multi_choice' | 'rating' | 'instruction';
-export type ChecklistAnswerValue = string | string[] | number | null;
-
-export interface ChecklistItem {
-  id: string;
-  text: string;
-  sort_order: number;
-  active: boolean;
-  photo_required: boolean;
-  due_period: ChecklistDuePeriod;
-  question_type: ChecklistQuestionType;
-  options: string[] | null;
-  completed?: boolean | null;
-  photo_url?: string | null;
-  answer_value?: ChecklistAnswerValue;
-}
-
-// ── Онлайн-опросы (surveys) ───────────────────────────────────────────────
-
-export type SurveyQuestionType = 'text' | 'single_choice' | 'multi_choice' | 'rating';
-
-export interface SurveyQuestion {
-  id: string;
-  text: string;
-  sort_order: number;
-  question_type: SurveyQuestionType;
-  options: string[] | null;
-}
-
-export interface Survey {
-  id: string;
-  slug: string;
-  name: string;
-  active: boolean;
-  created_at: string;
-  questions: SurveyQuestion[];
-  responseCount: number;
-}
-
-export interface SurveyResponse {
-  id: string;
-  answers: Record<string, string | string[] | number>;
-  created_at: string;
-}
-
-export interface SurveyResponsesResult {
-  survey: Survey;
-  responses: SurveyResponse[];
-  summary: Record<string, Record<string, number>>;
-}
-
-export const surveysApi = {
-  list: (): Promise<Survey[]> =>
-    apiFetch('/surveys').then(r => r.json()).then(d => Array.isArray(d) ? d : []),
-  create: (name: string): Promise<Survey> =>
-    apiFetch('/surveys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
-      .then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
-  update: (id: string, data: { name?: string; active?: boolean }): Promise<Survey> =>
-    apiFetch(`/surveys/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
-      .then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
-  remove: (id: string): Promise<void> =>
-    apiFetch(`/surveys/${id}`, { method: 'DELETE' }).then(() => undefined),
-  addQuestion: (surveyId: string, text: string, data?: { question_type?: SurveyQuestionType; options?: string[] }): Promise<SurveyQuestion> =>
-    apiFetch(`/surveys/${surveyId}/questions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, ...data }) })
-      .then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
-  deleteQuestion: (id: string): Promise<void> =>
-    apiFetch(`/surveys/questions/${id}`, { method: 'DELETE' }).then(() => undefined),
-  responses: (surveyId: string): Promise<SurveyResponsesResult> =>
-    apiFetch(`/surveys/${surveyId}/responses`).then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
-};
-
-// Public survey page — no login, reached at the tenant's own subdomain
-// (e.g. benedict.trace-os.uz/survey/:slug), unlike checklist-public which
-// needs a department-prefixed subdomain. Plain fetch, no staff/owner token.
-export interface SurveyPublicData {
-  id: string;
-  name: string;
-  tenantName: string;
-  questions: SurveyQuestion[];
-}
-
-export async function fetchSurveyPublic(slug: string): Promise<SurveyPublicData> {
-  const r = await fetch(`${BASE}/survey-public/${slug}`);
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`);
-  return r.json();
-}
-
-export async function submitSurveyPublic(slug: string, answers: Record<string, string | string[] | number>): Promise<void> {
-  const r = await fetch(`${BASE}/survey-public/${slug}/submit`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ answers }),
-  });
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`);
-}
-
-export interface ChecklistDepartment {
-  id: string;
-  slug: string;
-  name: string;
-  description: string | null;
-  position_ids: string[];
-  sort_order: number;
-  active: boolean;
-  subdomainPreview: string;
-  items: ChecklistItem[];
-  todayDone: number;
-  todayTotal: number;
-}
-
-export interface ChecklistResultRow {
-  department_id: string;
-  department_name: string;
-  date: string;
-  done: string;
-  total: string;
-  submitted_by: string | null;
-  submitted_at: string | null;
-}
-
-export interface ChecklistDayDetail {
-  department_name: string;
-  date: string;
-  submissions: { employee_name: string | null; created_at: string }[];
-  items: {
-    id: string; text: string; completed: boolean; photo_url: string | null; employee_name: string | null;
-    due_period: ChecklistDuePeriod;
-    question_type: ChecklistQuestionType; options: string[] | null; answer_value: ChecklistAnswerValue;
-  }[];
-}
-
-export interface ChecklistViolation {
-  id: string;
-  note: string | null;
-  photo_url: string;
-  status: 'open' | 'resolved' | 'dismissed';
-  created_at: string;
-  resolved_at: string | null;
-  employee_name: string | null;
-  item_text: string;
-  department_name: string;
-}
-
-export interface ChecklistStreak {
-  department_id: string;
-  department_name: string;
-  streak: number;
-}
-
-export interface ChecklistLeaderboardRow {
-  employee_name: string;
-  completed_count: string;
-}
-
-export interface ChecklistPendingSubmission {
-  department_id: string;
-  department_name: string;
-}
-
-export interface ChecklistMonthDay {
-  date: string;
-  done: string;
-  total: string;
-  submissions: string;
-}
-
-// ── ServiceInspector public (no-login) employee page ────────────────────────
-// Deliberately plain `fetch`, not `apiFetch` — this runs on a department-
-// prefixed subdomain (bar-benedict.trace-os.uz), has no session/branch
-// concept, and must not depend on any tenant-scoped state.
-export interface ChecklistPublicData {
-  tenantName: string;
-  department: { slug: string; name: string };
-  employee: { id: string; name: string } | null;
-  date: string;
-  isToday: boolean;
-  submitted: boolean;
-  items: {
-    id: string; text: string; completed: boolean; photoRequired: boolean; photoUrl: string | null; duePeriod: ChecklistDuePeriod;
-    questionType: ChecklistQuestionType; options: string[] | null; answerValue: ChecklistAnswerValue;
-  }[];
-}
-
-// Employee login token — one per browser/device, since a phone on the
-// department subdomain is one person's for the length of their shift. Keyed
-// by hostname so switching departments on the same device doesn't leak a
-// stale token into the wrong department's requests.
-const EMPLOYEE_TOKEN_KEY = `si_employee_token_${typeof window !== 'undefined' ? window.location.hostname : ''}`;
-
-export function getChecklistEmployeeToken(): string | null {
-  return typeof window !== 'undefined' ? localStorage.getItem(EMPLOYEE_TOKEN_KEY) : null;
-}
-
-export function clearChecklistEmployeeToken(): void {
-  if (typeof window !== 'undefined') localStorage.removeItem(EMPLOYEE_TOKEN_KEY);
-}
-
-function employeeAuthHeaders(): Record<string, string> {
-  const token = getChecklistEmployeeToken();
-  return token ? { 'X-Employee-Token': token } : {};
-}
-
-// Whether this department has any PIN-enabled employees at all — decides
-// "show the PIN pad" vs "skip straight to the shared checklist". Nothing
-// about who those employees are comes back here; that's resolved from the
-// PIN itself at login.
-export async function fetchChecklistHasRoster(): Promise<boolean> {
-  const r = await fetch(`${BASE}/checklist-public/roster`);
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`);
-  const data = await r.json();
-  return data.hasRoster === true;
-}
-
-export async function loginChecklistEmployee(pin: string): Promise<{ id: string; name: string }> {
-  const r = await fetch(`${BASE}/checklist-public/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pin }),
-  });
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`);
-  const data = await r.json();
-  if (typeof window !== 'undefined') localStorage.setItem(EMPLOYEE_TOKEN_KEY, data.token);
-  return data.employee;
-}
-
-export interface ChecklistTeamReport {
-  id: string;
-  name: string;
-  done: number;
-  total: number;
-}
-
-// For a PIN-only supervisor (e.g. a sous-chef watching cooks): their
-// direct reports plus each one's today tally on the shared department
-// checklist. Empty array if this employee supervises no one, or isn't
-// logged in — the public page treats that as "no team section to show".
-export async function fetchChecklistTeam(): Promise<ChecklistTeamReport[]> {
-  const r = await fetch(`${BASE}/checklist-public/team`, { headers: employeeAuthHeaders() });
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`);
-  const data = await r.json();
-  return Array.isArray(data.reports) ? data.reports : [];
-}
-
-export async function fetchChecklistPublicToday(date?: string): Promise<ChecklistPublicData> {
-  const params = new URLSearchParams();
-  if (date) params.set('date', date);
-  const qs = params.toString() ? `?${params.toString()}` : '';
-  const r = await fetch(`${BASE}/checklist-public/today${qs}`, { headers: employeeAuthHeaders() });
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`);
-  return r.json();
-}
-
-export async function toggleChecklistPublicItem(itemId: string, completed: boolean, photoUrl?: string, answerValue?: ChecklistAnswerValue): Promise<void> {
-  const r = await fetch(`${BASE}/checklist-public/toggle`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...employeeAuthHeaders() },
-    body: JSON.stringify({ itemId, completed, photoUrl, answerValue }),
-  });
-  if (!r.ok) {
-    const body = await r.json().catch(() => ({}));
-    if (r.status === 401) clearChecklistEmployeeToken();
-    throw new Error(body.error ?? `${r.status}`);
-  }
-}
-
-// Uploads a camera-captured photo (see the <input capture> on the public
-// page — that attribute is what stops a gallery pick, not this function)
-// and returns the storage URL to pass into toggleChecklistPublicItem.
-export async function uploadChecklistPhoto(file: File): Promise<string> {
-  const form = new FormData();
-  form.append('file', file);
-  const r = await fetch(`${BASE}/checklist-public/photo`, {
-    method: 'POST',
-    headers: employeeAuthHeaders(),
-    body: form,
-  });
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`);
-  const data = await r.json();
-  return data.url;
-}
-
-export async function reportChecklistViolation(itemId: string, photoUrl: string, note?: string): Promise<void> {
-  const r = await fetch(`${BASE}/checklist-public/violations`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...employeeAuthHeaders() },
-    body: JSON.stringify({ itemId, photoUrl, note }),
-  });
-  if (!r.ok) {
-    const body = await r.json().catch(() => ({}));
-    if (r.status === 401) clearChecklistEmployeeToken();
-    throw new Error(body.error ?? `${r.status}`);
-  }
-}
-
-// "Send checklist to manager" — the bottom button on the public page.
-// Doesn't require every item done; just records who sent it and when so
-// the manager's Результаты can show it as formally submitted (with
-// whatever photos were attached to individual items along the way).
-export async function submitChecklistPublic(): Promise<void> {
-  const r = await fetch(`${BASE}/checklist-public/submit`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...employeeAuthHeaders() },
-  });
-  if (!r.ok) {
-    const body = await r.json().catch(() => ({}));
-    if (r.status === 401) clearChecklistEmployeeToken();
-    throw new Error(body.error ?? `${r.status}`);
-  }
-}
 
 export interface CashShift {
   cashier: string | null;
@@ -2538,7 +2173,7 @@ export function getTenantPlan(): 'base' | 'pro' {
   return sessionStorage.getItem(TENANT_PLAN_KEY) === 'base' ? 'base' : 'pro';
 }
 
-// ── ServiceInspector: Должности + Сотрудники (flat, no hierarchy) ────────────
+// ── Checklist: Должности + Сотрудники (flat, no hierarchy) ────────────
 
 // Whichever bearer token this browser is currently signed in with — the
 // owner's tenant token, or a logged-in employee's token (see getStaffToken).
@@ -2601,51 +2236,44 @@ export interface EmployeePermissions {
   gallery_upload?: boolean;
 }
 
-// Сотрудники — the one unified employee list (replaces the old
-// staff_accounts/checklist_employees split). department_id is the "home"
-// department (PIN login context); department_ids is the real access scope
-// ("Место работы") — empty means "works everywhere".
+// Сотрудники — flat tenant-wide employee list. Being rebuilt from scratch:
+// no department scope, no PIN — just name/position/login for now.
 export interface StaffEmployee {
   id: string;
   name: string;
   active: boolean;
   created_at: string;
-  department_id: string;
-  department_ids: string[];
   position_id: string | null;
   position_name: string | null;
   username: string | null;
   telegram_id: string | null;
   max_id: string | null;
   permissions: EmployeePermissions;
-  supervisor_employee_id: string | null;
-  has_pin: boolean;
   has_login: boolean;
 }
 
 export interface StaffEmployeeInput {
   name?: string;
-  pin?: string;
   active?: boolean;
-  department_ids?: string[];
   position_id?: string | null;
   username?: string;
   password?: string;
   permissions?: EmployeePermissions;
   telegram_id?: string;
   max_id?: string;
-  supervisor_employee_id?: string | null;
 }
 
 export const employeesApi = {
   list: (): Promise<StaffEmployee[]> =>
-    authedGet<StaffEmployee[]>('/checklist/employees', staffAuthToken()),
-  create: (homeDepartmentId: string, data: StaffEmployeeInput): Promise<StaffEmployee> =>
-    post<StaffEmployee>(`/checklist/departments/${homeDepartmentId}/employees`, data, staffAuthToken()),
+    authedGet<StaffEmployee[]>('/employees', getTenantOwnerToken() ?? ''),
+  create: (data: StaffEmployeeInput): Promise<StaffEmployee> =>
+    post<StaffEmployee>('/employees', data, getTenantOwnerToken() ?? ''),
   update: (id: string, data: StaffEmployeeInput): Promise<StaffEmployee> =>
-    patch<StaffEmployee>(`/checklist/employees/${id}`, data, staffAuthToken()),
+    patch<StaffEmployee>(`/employees/${id}`, data, getTenantOwnerToken() ?? ''),
   remove: (id: string): Promise<void> =>
-    del(`/checklist/employees/${id}`, staffAuthToken()),
+    del(`/employees/${id}`, getTenantOwnerToken() ?? ''),
+  importFromPos: (): Promise<{ newEmployees: number; updatedEmployees: number; newPositions: number }> =>
+    post(`/employees/import-from-pos`, {}, getTenantOwnerToken() ?? ''),
 };
 
 export function getSubdomain(): string {
@@ -2663,35 +2291,6 @@ export function isAdminSubdomain(): boolean {
 export function isManagerPortal(): boolean {
   const h = window.location.hostname;
   return h === 'reportmirabad.trace-os.uz' || h === 'reportnukus.trace-os.uz';
-}
-
-// ServiceInspector: real tenant subdomains observed in prod contain no
-// hyphen (benedict, mirabad, nukus, ...) EXCEPT "benedict-nukus" — so a
-// department-prefixed subdomain ("bar-benedict") is detected by "contains a
-// hyphen", with known hyphenated tenant subdomains excluded here. Any
-// FUTURE tenant subdomain that itself contains a hyphen needs adding to
-// this list too (same pragmatic hardcode isManagerPortal already uses for
-// reportmirabad/reportnukus below).
-const SERVICE_INSPECTOR_EXCLUDE = ['benedict-nukus'];
-
-export function getServiceInspectorRawSlug(): string | null {
-  const host = window.location.hostname;
-  if (host === 'localhost') return null;
-  const parts = host.split('.');
-  if (parts.length < 3) return null;
-  const sub = parts[0];
-  if (sub === 'admin' || sub === 'www' || sub === 'reportmirabad' || sub === 'reportnukus') return null;
-  if (!sub.includes('-') || SERVICE_INSPECTOR_EXCLUDE.includes(sub)) return null;
-  return sub;
-}
-
-// Survey public link path — /survey/:slug on the tenant's own subdomain
-// (not department-prefixed like ServiceInspector, since a survey isn't
-// tied to a department). Path-based rather than subdomain-based since a
-// tenant can have many surveys and minting a subdomain per one doesn't fit.
-export function getSurveySlugFromPath(): string | null {
-  const match = window.location.pathname.match(/^\/survey\/([a-z0-9-]+)/i);
-  return match ? match[1] : null;
 }
 
 export function getManagerTenant(): string {

@@ -19,14 +19,14 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'reviews', icon: Star },
   { id: 'loyalty', icon: Heart },
   { id: 'reports', icon: FileText },
-  { id: 'service_inspector', icon: ClipboardCheck },
+  { id: 'checklist_view', icon: ClipboardCheck },
   { id: 'settings', icon: Settings2 },
 ];
 
 // Pages the user is allowed to hide from Settings. Dashboard and Settings
 // stay pinned so there's always a way in and a way back to this screen.
 export const HIDEABLE_PAGE_IDS: ViewState[] = [
-  'sales', 'operations', 'financial', 'reviews', 'loyalty', 'reports', 'service_inspector',
+  'sales', 'operations', 'financial', 'reviews', 'loyalty', 'reports', 'checklist_view',
 ];
 
 export const NAV_STYLE_KEY = 'trace_nav_style';

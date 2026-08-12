@@ -15,11 +15,9 @@ import { Admin } from './components/views/Admin';
 import { Compare } from './components/views/Compare';
 import { Globe, Sun, Moon } from 'lucide-react';
 import { TRANSLATIONS, nextLang, tr } from './constants';
-import { isAdminSubdomain, isDemoTenant, isManagerPortal, getServiceInspectorRawSlug, getSurveySlugFromPath, LIVE_MODE, tenantAuth, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, staffLogin, getStaffToken, clearStaffToken, StaffLoginResult } from './services/traceApi';
+import { isAdminSubdomain, isDemoTenant, isManagerPortal, LIVE_MODE, tenantAuth, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, staffLogin, getStaffToken, clearStaffToken, StaffLoginResult } from './services/traceApi';
 import { ManagerPortal } from './components/ManagerPortal';
-import { ServiceInspectorPublic } from './components/ServiceInspectorPublic';
-import { SurveyPublic } from './components/SurveyPublic';
-import { ServiceInspector } from './components/views/ServiceInspector';
+import { Checklist } from './components/views/Checklist';
 import { PWAInstallGuide } from './components/PWAInstallGuide';
 import { Sidebar } from './components/Sidebar';
 import {
@@ -173,9 +171,6 @@ const ThemePicker: React.FC<{ lang: Language; onChoose: (t: 'light' | 'dark') =>
 export default function App() {
   if (isAdminSubdomain()) return <Admin />;
   if (isManagerPortal()) return <ManagerPortal />;
-  if (getServiceInspectorRawSlug()) return <ServiceInspectorPublic />;
-  const surveySlug = getSurveySlugFromPath();
-  if (surveySlug) return <SurveyPublic slug={surveySlug} />;
 
   const [isLoggedIn, setIsLoggedIn] = useState(() => isDemoTenant());
   const [authChecking, setAuthChecking] = useState(() => !isDemoTenant() && localStorage.getItem('trace_remember') === '1');
@@ -185,7 +180,7 @@ export default function App() {
   });
   const [currentView, setCurrentView] = useState<ViewState>(() => {
     const v = new URLSearchParams(window.location.search).get('view');
-    const valid: ViewState[] = ['dashboard', 'sales', 'operations', 'financial', 'reviews', 'loyalty', 'reports', 'settings', 'compare', 'service_inspector'];
+    const valid: ViewState[] = ['dashboard', 'sales', 'operations', 'financial', 'reviews', 'loyalty', 'reports', 'settings', 'compare', 'checklist_view'];
     return valid.includes(v as ViewState) ? (v as ViewState) : loadDefaultPage();
   });
   const [lang, setLangState] = useState<Language>(() => {
@@ -332,7 +327,7 @@ export default function App() {
           </button>
         </div>
         <main className="px-4 md:px-10 py-5 md:py-8 max-w-[1400px] mx-auto">
-          <ServiceInspector lang={lang} onShowToast={showToast} />
+          <Checklist lang={lang} onShowToast={showToast} />
         </main>
       </div>
     );
@@ -373,7 +368,7 @@ export default function App() {
         />
       );
       case 'compare':     return <Compare lang={lang} branches={branches} />;
-      case 'service_inspector': return isDemoTenant() ? <Dashboard key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} /> : <ServiceInspector lang={lang} onShowToast={showToast} />;
+      case 'checklist_view': return isDemoTenant() ? <Dashboard key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} /> : <Checklist lang={lang} onShowToast={showToast} />;
       default:            return <Dashboard lang={lang} onShowToast={showToast} branch={selectedBranch} />;
     }
   };

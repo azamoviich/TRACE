@@ -58,14 +58,16 @@ export function Checklists({ lang, onShowToast }: Props) {
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────
-function DashboardTab({ lang, roles }: { lang: Language; roles: ChecklistRole[] }) {
+type StatsApi = (params: { roleId?: string; from?: string; to?: string }) => Promise<ChecklistStats>;
+
+export function DashboardTab({ lang, roles, statsApi = checklistApi.stats }: { lang: Language; roles: ChecklistRole[]; statsApi?: StatsApi }) {
   const [roleId, setRoleId] = useState<string>('');
   const [stats, setStats] = useState<ChecklistStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    checklistApi.stats(roleId ? { roleId } : {}).then(setStats).catch(() => setStats(null)).finally(() => setLoading(false));
+    statsApi(roleId ? { roleId } : {}).then(setStats).catch(() => setStats(null)).finally(() => setLoading(false));
   }, [roleId]);
 
   const pct = stats && stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0;
@@ -203,11 +205,24 @@ function RolesTab({ lang, roles, loading, onChange, onShowToast }: {
 }
 
 // ── Employees ────────────────────────────────────────────────────────────
+// Shape shared by checklistApi.employees (owner) and a manager-bound
+// equivalent (see ChecklistManagerPortal.tsx) — lets EmployeesTab/
+// PosImportPanel work unmodified for both, just fed a different api prop.
+export interface EmployeesApi {
+  list: (roleId?: string) => Promise<ChecklistEmployee[]>;
+  create: (name: string, roleId: string, pin: string) => Promise<ChecklistEmployee>;
+  update: (id: string, patchBody: { name?: string; active?: boolean; pin?: string }) => Promise<ChecklistEmployee>;
+  remove: (id: string) => Promise<void>;
+  posPreview: () => Promise<{ groups: { posRoleName: string; names: string[] }[] }>;
+  import: (roleId: string, names: string[]) => Promise<{ created: { name: string; pin: string }[] }>;
+}
+
 // ── POS import ───────────────────────────────────────────────────────────
-function PosImportPanel({ lang, roles, onShowToast, onImported }: {
+function PosImportPanel({ lang, roles, onShowToast, onImported, api }: {
   lang: Language; roles: ChecklistRole[];
   onShowToast: (m: string, t: 'success' | 'error' | 'info') => void;
   onImported: () => void;
+  api: EmployeesApi;
 }) {
   const [groups, setGroups] = useState<{ posRoleName: string; names: string[] }[] | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({}); // posRoleName -> checklist roleId
@@ -216,7 +231,7 @@ function PosImportPanel({ lang, roles, onShowToast, onImported }: {
   const [imported, setImported] = useState<Record<string, { name: string; pin: string }[]>>({});
 
   useEffect(() => {
-    checklistApi.employees.posPreview()
+    api.posPreview()
       .then(res => setGroups(res.groups))
       .catch(() => onShowToast(tr(lang, 'Не удалось получить данные из POS', 'Failed to fetch POS data', "POS'dan ma'lumot olib bo'lmadi"), 'error'))
       .finally(() => setLoading(false));
@@ -227,7 +242,7 @@ function PosImportPanel({ lang, roles, onShowToast, onImported }: {
     if (!roleId) { onShowToast(tr(lang, 'Выберите роль для этой группы', 'Pick a role for this group', 'Bu guruh uchun rol tanlang'), 'error'); return; }
     setImporting(posRoleName);
     try {
-      const res = await checklistApi.employees.import(roleId, names);
+      const res = await api.import(roleId, names);
       setImported(prev => ({ ...prev, [posRoleName]: res.created }));
       onImported();
     } catch { onShowToast(tr(lang, 'Не удалось импортировать', 'Import failed', "Import qilib bo'lmadi"), 'error'); }
@@ -283,9 +298,10 @@ function PosImportPanel({ lang, roles, onShowToast, onImported }: {
   );
 }
 
-function EmployeesTab({ lang, roles, onShowToast }: {
+export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.employees }: {
   lang: Language; roles: ChecklistRole[];
   onShowToast: (m: string, t: 'success' | 'error' | 'info') => void;
+  api?: EmployeesApi;
 }) {
   const [employees, setEmployees] = useState<ChecklistEmployee[]>([]);
   const [roleId, setRoleId] = useState('');
@@ -294,7 +310,7 @@ function EmployeesTab({ lang, roles, onShowToast }: {
   const [busy, setBusy] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
-  const load = () => checklistApi.employees.list().then(setEmployees).catch(() => {});
+  const load = () => api.list().then(setEmployees).catch(() => {});
   useEffect(() => { load(); }, []);
   useEffect(() => { if (!roleId && roles[0]) setRoleId(roles[0].id); }, [roles]);
 
@@ -305,7 +321,7 @@ function EmployeesTab({ lang, roles, onShowToast }: {
     }
     setBusy(true);
     try {
-      await checklistApi.employees.create(name.trim(), roleId, pin);
+      await api.create(name.trim(), roleId, pin);
       setName(''); setPin('');
       load();
     } catch { onShowToast(tr(lang, 'Не удалось добавить сотрудника', 'Failed to add employee', "Xodimni qo'shib bo'lmadi"), 'error'); }
@@ -325,7 +341,7 @@ function EmployeesTab({ lang, roles, onShowToast }: {
       }
     >
       {showImport && (
-        <PosImportPanel lang={lang} roles={roles} onShowToast={onShowToast} onImported={() => { setShowImport(false); load(); }} />
+        <PosImportPanel lang={lang} roles={roles} onShowToast={onShowToast} onImported={() => { setShowImport(false); load(); }} api={api} />
       )}
 
       <div className="flex flex-wrap gap-2 mb-4">
@@ -351,12 +367,12 @@ function EmployeesTab({ lang, roles, onShowToast }: {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={async () => { await checklistApi.employees.update(e.id, { active: !e.active }); load(); }}
+                  onClick={async () => { await api.update(e.id, { active: !e.active }); load(); }}
                   className={`text-[11px] font-semibold px-2 py-0.5 rounded ${e.active ? 'bg-green-500/10 text-green-600' : 'bg-muted/10 text-muted'}`}
                 >
                   {e.active ? tr(lang, 'Активен', 'Active', 'Faol') : tr(lang, 'Скрыт', 'Hidden', 'Yashirilgan')}
                 </button>
-                <button onClick={async () => { await checklistApi.employees.remove(e.id); load(); }} className="text-red-500 hover:text-red-600">
+                <button onClick={async () => { await api.remove(e.id); load(); }} className="text-red-500 hover:text-red-600">
                   <Trash2 size={15} />
                 </button>
               </div>

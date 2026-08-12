@@ -2441,6 +2441,20 @@ export const checklistManagerApi = {
   },
   roles: (tenantSubdomain: string, token: string) =>
     scopedFetch<ChecklistRole[]>('/checklist-manager/roles', tenantSubdomain, token), // scoped server-side to this manager's assigned roles; role CRUD stays owner-only
+  employees: {
+    list: (tenantSubdomain: string, token: string, roleId?: string) =>
+      scopedFetch<ChecklistEmployee[]>(`/checklist-manager/employees${roleId ? `?roleId=${roleId}` : ''}`, tenantSubdomain, token),
+    create: (tenantSubdomain: string, token: string, name: string, roleId: string, pin: string) =>
+      scopedFetch<ChecklistEmployee>('/checklist-manager/employees', tenantSubdomain, token, { method: 'POST', body: JSON.stringify({ name, roleId, pin }) }),
+    update: (tenantSubdomain: string, token: string, id: string, patchBody: { name?: string; active?: boolean; pin?: string }) =>
+      scopedFetch<ChecklistEmployee>(`/checklist-manager/employees/${id}`, tenantSubdomain, token, { method: 'PATCH', body: JSON.stringify(patchBody) }),
+    remove: (tenantSubdomain: string, token: string, id: string) =>
+      scopedFetch<void>(`/checklist-manager/employees/${id}`, tenantSubdomain, token, { method: 'DELETE' }),
+    posPreview: (tenantSubdomain: string, token: string) =>
+      scopedFetch<{ groups: { posRoleName: string; names: string[] }[] }>('/checklist-manager/employees/pos-preview', tenantSubdomain, token),
+    import: (tenantSubdomain: string, token: string, roleId: string, names: string[]) =>
+      scopedFetch<{ created: { name: string; pin: string }[] }>('/checklist-manager/employees/import', tenantSubdomain, token, { method: 'POST', body: JSON.stringify({ roleId, names }) }),
+  },
   stats: (tenantSubdomain: string, token: string, params: { roleId?: string; from?: string; to?: string } = {}) => {
     const q = new URLSearchParams(params as Record<string, string>).toString();
     return scopedFetch<ChecklistStats>(`/checklist-manager/stats${q ? `?${q}` : ''}`, tenantSubdomain, token);

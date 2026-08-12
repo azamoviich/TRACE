@@ -269,7 +269,7 @@ function ManagersTab({ lang, roles, onShowToast }: {
   onShowToast: (m: string, t: 'success' | 'error' | 'info') => void;
 }) {
   const [managers, setManagers] = useState<ChecklistManager[]>([]);
-  const [form, setForm] = useState({ name: '', email: '', password: '', portalSubdomain: '' });
+  const [form, setForm] = useState({ name: '', password: '', portalSubdomain: '' });
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -279,14 +279,14 @@ function ManagersTab({ lang, roles, onShowToast }: {
   const toggleRole = (id: string) => setSelectedRoleIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
   const add = async () => {
-    if (!form.name.trim() || !form.email.trim() || !form.password || !form.portalSubdomain.trim()) {
+    if (!form.name.trim() || !form.password || !form.portalSubdomain.trim()) {
       onShowToast(tr(lang, 'Заполните все поля', 'Fill in all fields', "Barcha maydonlarni to'ldiring"), 'error');
       return;
     }
     setBusy(true);
     try {
       await checklistApi.managers.create({ ...form, roleIds: selectedRoleIds });
-      setForm({ name: '', email: '', password: '', portalSubdomain: '' });
+      setForm({ name: '', password: '', portalSubdomain: '' });
       setSelectedRoleIds([]);
       load();
     } catch { onShowToast(tr(lang, 'Не удалось добавить менеджера', 'Failed to add manager', "Menejerni qo'shib bo'lmadi"), 'error'); }
@@ -300,9 +300,8 @@ function ManagersTab({ lang, roles, onShowToast }: {
     >
       <div className="grid sm:grid-cols-2 gap-2 mb-3">
         <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder={tr(lang, 'Имя', 'Name', 'Ism')} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text" />
-        <input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="Email" className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text" />
         <input value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} type="password" placeholder={tr(lang, 'Пароль', 'Password', 'Parol')} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text" />
-        <input value={form.portalSubdomain} onChange={e => setForm({ ...form, portalSubdomain: e.target.value })} placeholder={tr(lang, 'Поддомен (manager-benedict)', 'Subdomain (manager-benedict)', 'Subdomen (manager-benedict)')} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text" />
+        <input value={form.portalSubdomain} onChange={e => setForm({ ...form, portalSubdomain: e.target.value })} placeholder={tr(lang, 'Поддомен (manager-benedict)', 'Subdomain (manager-benedict)', 'Subdomen (manager-benedict)')} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text sm:col-span-2" />
       </div>
 
       <div className="flex flex-wrap gap-2 mb-3">
@@ -329,7 +328,7 @@ function ManagersTab({ lang, roles, onShowToast }: {
             <div key={m.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-background border border-border">
               <div>
                 <span className="text-[13px] text-text">{m.name}</span>
-                <span className="text-[11px] text-muted ml-2">{m.email} · {m.portal_subdomain}.trace-os.uz</span>
+                <span className="text-[11px] text-muted ml-2">{m.portal_subdomain}.trace-os.uz</span>
                 <div className="text-[11px] text-muted mt-0.5">
                   {m.role_ids.map(id => roles.find(r => r.id === id)?.name).filter(Boolean).join(', ') || tr(lang, 'Нет ролей', 'No roles', 'Rol yoq')}
                 </div>

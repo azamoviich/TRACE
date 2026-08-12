@@ -2355,10 +2355,10 @@ async function scopedFetch<T>(
 }
 
 export const checklistAuthApi = {
-  managerLogin: (portalSubdomain: string, email: string, password: string) =>
-    post<{ token: string; name: string; email: string; tenantSubdomain: string }>(
+  managerLogin: (portalSubdomain: string, password: string) =>
+    post<{ token: string; name: string; tenantSubdomain: string }>(
       '/checklist/manager-login',
-      { portalSubdomain, email, password },
+      { portalSubdomain, password },
     ),
   employeeRoster: (tenantSubdomain: string, role: string) =>
     fetch(`${BASE}/checklist/auth/employee/roster?role=${encodeURIComponent(role)}`, {
@@ -2399,9 +2399,9 @@ export const checklistApi = {
   },
   managers: {
     list: () => checkedFetch<ChecklistManager[]>('/checklist/managers'),
-    create: (data: { name: string; email: string; password: string; portalSubdomain: string; roleIds: string[] }) =>
+    create: (data: { name: string; password: string; portalSubdomain: string; roleIds: string[] }) =>
       post<ChecklistManager>('/checklist/managers', data),
-    update: (id: string, data: Partial<{ name: string; email: string; password: string; portalSubdomain: string; active: boolean; roleIds: string[] }>) =>
+    update: (id: string, data: Partial<{ name: string; password: string; portalSubdomain: string; active: boolean; roleIds: string[] }>) =>
       checkedFetch<ChecklistManager>(`/checklist/managers/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
     remove: (id: string) => checkedFetch<void>(`/checklist/managers/${id}`, { method: 'DELETE' }),
   },

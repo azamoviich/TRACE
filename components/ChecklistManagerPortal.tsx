@@ -47,23 +47,22 @@ export function ChecklistManagerPortal() {
 }
 
 function LoginScreen({ lang, onLoggedIn }: { lang: Language; onLoggedIn: (s: Session) => void }) {
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    if (!email || !password) return;
+    if (!password) return;
     setBusy(true);
     setError('');
     try {
       const portalSubdomain = getChecklistManagerPortalSubdomain();
-      const res = await checklistAuthApi.managerLogin(portalSubdomain, email, password);
+      const res = await checklistAuthApi.managerLogin(portalSubdomain, password);
       const session = { token: res.token, tenantSubdomain: res.tenantSubdomain, name: res.name };
       saveSession(session);
       onLoggedIn(session);
     } catch {
-      setError(tr(lang, 'Неверный email или пароль', 'Invalid email or password', "Email yoki parol noto'g'ri"));
+      setError(tr(lang, 'Неверный пароль', 'Invalid password', "Parol noto'g'ri"));
     } finally {
       setBusy(false);
     }
@@ -73,12 +72,6 @@ function LoginScreen({ lang, onLoggedIn }: { lang: Language; onLoggedIn: (s: Ses
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <Card className="w-full max-w-sm" title={tr(lang, 'Вход менеджера', 'Manager login', 'Menejer kirishi')}>
         <div className="space-y-3">
-          <input
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            placeholder="Email"
-            className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-[14px] text-text"
-          />
           <input
             value={password}
             onChange={e => setPassword(e.target.value)}

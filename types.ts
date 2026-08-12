@@ -109,7 +109,6 @@ export interface ChecklistEmployee {
 export interface ChecklistManager {
   id: string;
   name: string;
-  email: string;
   portal_subdomain: string;
   active: boolean;
   created_at: string;

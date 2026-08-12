@@ -115,7 +115,9 @@ export interface ChecklistManager {
   role_ids: string[];
 }
 
-export type ChecklistItemType = 'checkbox' | 'yesno';
+export type ChecklistItemType = 'checkbox' | 'yesno' | 'text' | 'number' | 'rating';
+
+export type ChecklistAnswerValue = { text: string } | { number: number } | { rating: number };
 
 export interface ChecklistItem {
   id: string;
@@ -128,6 +130,7 @@ export interface ChecklistItem {
   // Present only when returned alongside completion state (employee "today" view)
   done?: boolean;
   photo_url?: string | null;
+  answer_value?: ChecklistAnswerValue | null;
   completed_at?: string | null;
 }
 

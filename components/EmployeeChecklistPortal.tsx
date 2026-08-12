@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, Camera, LogOut } from 'lucide-react';
+import { Check, Camera, LogOut, Star } from 'lucide-react';
 import { Language } from '../types';
-import type { ChecklistTodayItem, ChecklistItem } from '../types';
+import type { ChecklistTodayItem, ChecklistItem, ChecklistAnswerValue } from '../types';
 import { checklistAuthApi, checklistEmployeeApi, uploadPhoto } from '../services/traceApi';
 
 function tr(lang: Language, ru: string, en: string, uz: string) {
@@ -142,31 +142,38 @@ function TodayChecklist({ lang, tenantSubdomain, token, name, onLogout }: {
   };
   useEffect(() => { load(); }, []);
 
+  const pendingAnswerValue = useRef<ChecklistAnswerValue | undefined>(undefined);
+
   // For checkbox items, tapping the row toggles: value = !item.done.
   // For yesno items, each button passes its own explicit value.
-  const answer = async (item: ChecklistItem, value: boolean) => {
+  // For text/number/rating, value is always true (an answer was given) and
+  // the actual content rides along in answerValue.
+  const answer = async (item: ChecklistItem, value: boolean, answerValue?: ChecklistAnswerValue) => {
     if (value && item.requires_photo) {
       pendingItemId.current = item.id;
+      pendingAnswerValue.current = answerValue;
       fileInputRef.current?.click();
       return;
     }
-    await checklistEmployeeApi.toggle(tenantSubdomain, token, item.id, value);
+    await checklistEmployeeApi.toggle(tenantSubdomain, token, item.id, value, undefined, answerValue);
     load();
   };
 
   const onFileChosen = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     const itemId = pendingItemId.current;
+    const answerValue = pendingAnswerValue.current;
     e.target.value = '';
     if (!file || !itemId) return;
     setUploadingItemId(itemId);
     try {
       const photoUrl = await uploadPhoto(tenantSubdomain, file);
-      await checklistEmployeeApi.toggle(tenantSubdomain, token, itemId, true, photoUrl);
+      await checklistEmployeeApi.toggle(tenantSubdomain, token, itemId, true, photoUrl, answerValue);
       load();
     } finally {
       setUploadingItemId(null);
       pendingItemId.current = null;
+      pendingAnswerValue.current = undefined;
     }
   };
 
@@ -197,33 +204,43 @@ function TodayChecklist({ lang, tenantSubdomain, token, name, onLogout }: {
               <div key={c.id}>
                 <h2 className="text-[14px] font-semibold text-text mb-2">{c.name}</h2>
                 <div className="space-y-2">
-                  {c.items.map(item => (
-                    item.item_type === 'yesno' ? (
-                      <div key={item.id} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-border bg-card">
-                        <span className="flex-1 text-[14px] text-text">{item.text}</span>
-                        {item.requires_photo && uploadingItemId === item.id && (
-                          <span className="text-[11px] text-muted">{tr(lang, 'Загрузка...', 'Uploading...', 'Yuklanmoqda...')}</span>
-                        )}
-                        <button
-                          onClick={() => answer(item, true)}
-                          disabled={uploadingItemId === item.id}
-                          className={`px-3 py-1.5 rounded-lg text-[13px] font-semibold ${item.done === true ? 'bg-green-500 text-white' : 'bg-background border border-border text-muted'}`}
-                        >
-                          {tr(lang, 'Да', 'Yes', 'Ha')}
-                        </button>
-                        <button
-                          onClick={() => answer(item, false)}
-                          disabled={uploadingItemId === item.id}
-                          className={`px-3 py-1.5 rounded-lg text-[13px] font-semibold ${item.done === false && item.completed_at ? 'bg-red-500 text-white' : 'bg-background border border-border text-muted'}`}
-                        >
-                          {tr(lang, 'Нет', 'No', "Yo'q")}
-                        </button>
-                      </div>
-                    ) : (
+                  {c.items.map(item => {
+                    const uploading = uploadingItemId === item.id;
+                    if (item.item_type === 'yesno') {
+                      return (
+                        <div key={item.id} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-border bg-card">
+                          <span className="flex-1 text-[14px] text-text">{item.text}</span>
+                          {item.requires_photo && uploading && (
+                            <span className="text-[11px] text-muted">{tr(lang, 'Загрузка...', 'Uploading...', 'Yuklanmoqda...')}</span>
+                          )}
+                          <button
+                            onClick={() => answer(item, true)}
+                            disabled={uploading}
+                            className={`px-3 py-1.5 rounded-lg text-[13px] font-semibold ${item.done === true ? 'bg-green-500 text-white' : 'bg-background border border-border text-muted'}`}
+                          >
+                            {tr(lang, 'Да', 'Yes', 'Ha')}
+                          </button>
+                          <button
+                            onClick={() => answer(item, false)}
+                            disabled={uploading}
+                            className={`px-3 py-1.5 rounded-lg text-[13px] font-semibold ${item.done === false && item.completed_at ? 'bg-red-500 text-white' : 'bg-background border border-border text-muted'}`}
+                          >
+                            {tr(lang, 'Нет', 'No', "Yo'q")}
+                          </button>
+                        </div>
+                      );
+                    }
+                    if (item.item_type === 'rating') {
+                      return <RatingRow key={item.id} lang={lang} item={item} uploading={uploading} onAnswer={answer} />;
+                    }
+                    if (item.item_type === 'text' || item.item_type === 'number') {
+                      return <TextOrNumberRow key={item.id} lang={lang} item={item} uploading={uploading} onAnswer={answer} />;
+                    }
+                    return (
                       <button
                         key={item.id}
                         onClick={() => answer(item, !item.done)}
-                        disabled={uploadingItemId === item.id}
+                        disabled={uploading}
                         className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left transition-colors ${item.done ? 'bg-green-500/10 border-green-500/30' : 'bg-card border-border'}`}
                       >
                         <span className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${item.done ? 'bg-green-500 text-white' : 'border border-border'}`}>
@@ -231,13 +248,13 @@ function TodayChecklist({ lang, tenantSubdomain, token, name, onLogout }: {
                         </span>
                         <span className={`flex-1 text-[14px] ${item.done ? 'text-muted line-through' : 'text-text'}`}>{item.text}</span>
                         {item.requires_photo && (
-                          uploadingItemId === item.id
+                          uploading
                             ? <span className="text-[11px] text-muted">{tr(lang, 'Загрузка...', 'Uploading...', 'Yuklanmoqda...')}</span>
                             : <Camera size={16} className="text-muted shrink-0" />
                         )}
                       </button>
-                    )
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             ))}
@@ -250,4 +267,85 @@ function TodayChecklist({ lang, tenantSubdomain, token, name, onLogout }: {
 
 function CenteredMessage({ children }: { children: React.ReactNode }) {
   return <div className="min-h-screen flex items-center justify-center text-[13px] text-muted">{children}</div>;
+}
+
+type AnswerFn = (item: ChecklistItem, value: boolean, answerValue?: ChecklistAnswerValue) => Promise<void>;
+
+function RatingRow({ lang, item, uploading, onAnswer }: {
+  lang: Language; item: ChecklistItem; uploading: boolean; onAnswer: AnswerFn;
+}) {
+  const current = item.answer_value && 'rating' in item.answer_value ? item.answer_value.rating : null;
+  return (
+    <div className="px-4 py-3.5 rounded-xl border border-border bg-card">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[14px] text-text">{item.text}</span>
+        {item.requires_photo && uploading && (
+          <span className="text-[11px] text-muted">{tr(lang, 'Загрузка...', 'Uploading...', 'Yuklanmoqda...')}</span>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        {[1, 2, 3, 4, 5].map(n => (
+          <button
+            key={n}
+            onClick={() => onAnswer(item, true, { rating: n })}
+            disabled={uploading}
+            className="p-1"
+          >
+            <Star size={24} className={current != null && n <= current ? 'fill-primary text-primary' : 'text-muted'} />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TextOrNumberRow({ lang, item, uploading, onAnswer }: {
+  lang: Language; item: ChecklistItem; uploading: boolean; onAnswer: AnswerFn;
+}) {
+  const initial = item.answer_value
+    ? ('text' in item.answer_value ? item.answer_value.text : 'number' in item.answer_value ? String(item.answer_value.number) : '')
+    : '';
+  const [value, setValue] = useState(initial);
+  const isNumber = item.item_type === 'number';
+
+  const submit = () => {
+    if (!value.trim()) return;
+    if (isNumber) {
+      const n = Number(value);
+      if (Number.isNaN(n)) return;
+      onAnswer(item, true, { number: n });
+    } else {
+      onAnswer(item, true, { text: value.trim() });
+    }
+  };
+
+  return (
+    <div className="px-4 py-3.5 rounded-xl border border-border bg-card">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[14px] text-text">{item.text}</span>
+        {item.done && <Check size={16} className="text-green-500 shrink-0" />}
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && submit()}
+          type={isNumber ? 'number' : 'text'}
+          inputMode={isNumber ? 'decimal' : undefined}
+          placeholder={isNumber ? tr(lang, 'Число', 'Number', 'Raqam') : tr(lang, 'Ответ', 'Answer', 'Javob')}
+          className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-[14px] text-text"
+        />
+        <button
+          onClick={submit}
+          disabled={uploading || !value.trim()}
+          className="px-3 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold disabled:opacity-50"
+        >
+          {uploading
+            ? tr(lang, 'Загрузка...', 'Uploading...', 'Yuklanmoqda...')
+            : tr(lang, 'Сохранить', 'Save', 'Saqlash')}
+        </button>
+        {item.requires_photo && !uploading && <Camera size={16} className="text-muted shrink-0" />}
+      </div>
+    </div>
+  );
 }

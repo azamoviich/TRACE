@@ -715,6 +715,9 @@ export function ChecklistEditor({ lang, roles, checklistId, onDone, onShowToast,
                 >
                   <option value="checkbox">{tr(lang, 'Чекбокс', 'Checkbox', 'Chekbоks')}</option>
                   <option value="yesno">{tr(lang, 'Да / Нет', 'Yes / No', 'Ha / Yo\'q')}</option>
+                  <option value="text">{tr(lang, 'Текст', 'Text', 'Matn')}</option>
+                  <option value="number">{tr(lang, 'Число', 'Number', 'Raqam')}</option>
+                  <option value="rating">{tr(lang, 'Оценка 1-5', 'Rating 1-5', 'Baho 1-5')}</option>
                 </select>
                 <button
                   onClick={() => updateItem(i, { requiresPhoto: !it.requiresPhoto })}

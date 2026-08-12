@@ -5,10 +5,11 @@ import { tr } from '../../constants';
 import {
   Plus, Trash2, Loader2, Check, X, UserPlus,
   Pencil, RotateCcw, Eye, EyeOff, RefreshCw, Briefcase, Download,
+  Gauge, ClipboardList, Camera, Trophy, History, ImageOff,
 } from 'lucide-react';
 import {
-  positionsApi, employeesApi, getStaffToken,
-  StaffPosition, StaffEmployee, EmployeePermissions,
+  positionsApi, employeesApi, checklistStatsApi, getStaffToken,
+  StaffPosition, StaffEmployee, EmployeePermissions, ChecklistStats,
 } from '../../services/traceApi';
 
 // Flat permission bag — no role templates, no hierarchy. Matches the
@@ -28,19 +29,42 @@ function employeePermissionLabel(key: keyof EmployeePermissions, lang: Language)
   }
 }
 
-type Tab = 'positions' | 'employees';
+type Tab = 'overview' | 'positions' | 'employees';
+
+function auditActionLabel(action: string, lang: Language): string {
+  switch (action) {
+    case 'checklist_created': return tr(lang, 'создал чек-лист', 'created checklist', "chek-list yaratdi");
+    case 'checklist_updated': return tr(lang, 'изменил чек-лист', 'updated checklist', "chek-listni o'zgartirdi");
+    case 'checklist_deleted': return tr(lang, 'удалил чек-лист', 'deleted checklist', "chek-listni o'chirdi");
+    case 'item_added': return tr(lang, 'добавил пункт в', 'added item to', "bandni qo'shdi");
+    case 'item_updated': return tr(lang, 'изменил пункт в', 'updated item in', "bandni o'zgartirdi");
+    case 'item_deleted': return tr(lang, 'удалил пункт из', 'deleted item from', "bandni o'chirdi");
+    default: return action;
+  }
+}
+
+function formatDateTime(iso: string, lang: Language): string {
+  return new Date(iso).toLocaleString(lang === 'ru' ? 'ru-RU' : lang === 'uz' ? 'uz-UZ' : 'en-US', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+  });
+}
 
 // Checklist is being rebuilt from scratch on a new access model
 // (checklists scoped by Должность, secondary admins granted a set of
-// Должности they can manage) — this is step one: just Должности +
-// Сотрудники, everything else (checklists, dashboard, surveys, results)
-// comes back once that model is built.
+// Должности they can manage). Должности + Сотрудники + a real Дашборд
+// are in; the checklist create/edit screen and employee fill-out flow are
+// a later phase — the dashboard just reads whatever's there, honestly
+// zero until that phase ships.
 export const Checklist: React.FC<{
   lang: Language;
   onShowToast?: (msg: string, type: 'success' | 'error' | 'info') => void;
 }> = ({ lang, onShowToast }) => {
   const isStaff = !!getStaffToken();
-  const [tab, setTab] = useState<Tab>('employees');
+  const [tab, setTab] = useState<Tab>('overview');
+
+  const [stats, setStats] = useState<ChecklistStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsRange, setStatsRange] = useState<'7days' | '30days'>('7days');
 
   const [positions, setPositions] = useState<StaffPosition[]>([]);
   const [positionsLoading, setPositionsLoading] = useState(true);
@@ -68,6 +92,12 @@ export const Checklist: React.FC<{
     try { await fn(); } catch (e: any) { onShowToast?.(e.message ?? tr(lang, 'Ошибка', 'Error', 'Xatolik'), 'error'); }
     finally { setBusyIds(p => { const n = new Set(p); n.delete(id); return n; }); }
   };
+
+  useEffect(() => {
+    if (isStaff) return;
+    setStatsLoading(true);
+    checklistStatsApi.get(statsRange).then(setStats).catch(() => {}).finally(() => setStatsLoading(false));
+  }, [statsRange, isStaff]);
 
   const loadPositions = useCallback(() => {
     setPositionsLoading(true);
@@ -179,7 +209,11 @@ export const Checklist: React.FC<{
     }
   };
 
-  const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
+  const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = isStaff ? [
+    { key: 'employees', label: tr(lang, 'Сотрудники', 'Employees', 'Xodimlar'), icon: <UserPlus size={13} /> },
+    { key: 'positions', label: tr(lang, 'Должности', 'Positions', 'Lavozimlar'), icon: <Briefcase size={13} /> },
+  ] : [
+    { key: 'overview', label: tr(lang, 'Дашборд', 'Dashboard', 'Boshqaruv paneli'), icon: <Gauge size={13} /> },
     { key: 'employees', label: tr(lang, 'Сотрудники', 'Employees', 'Xodimlar'), icon: <UserPlus size={13} /> },
     { key: 'positions', label: tr(lang, 'Должности', 'Positions', 'Lavozimlar'), icon: <Briefcase size={13} /> },
   ];
@@ -204,6 +238,148 @@ export const Checklist: React.FC<{
           </button>
         ))}
       </div>
+
+      {tab === 'overview' && (
+        <div className="space-y-4 animate-fade-in">
+          <div className="flex items-center gap-1 bg-background border border-border rounded-xl p-1 w-fit">
+            {(['7days', '30days'] as const).map(r => (
+              <button
+                key={r}
+                onClick={() => setStatsRange(r)}
+                className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-colors ${statsRange === r ? 'bg-card text-text shadow-sm' : 'text-muted hover:text-text'}`}
+              >
+                {r === '7days' ? tr(lang, '7 дней', '7 days', '7 kun') : tr(lang, '30 дней', '30 days', '30 kun')}
+              </button>
+            ))}
+          </div>
+
+          {statsLoading || !stats ? (
+            <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-muted" /></div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <Card className="p-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted mb-1">{tr(lang, 'Чек-листы', 'Checklists', 'Chek-listlar')}</p>
+                  <p className="text-[22px] font-bold text-text">{stats.overview.activeChecklists}<span className="text-[13px] text-muted font-medium"> / {stats.overview.totalChecklists}</span></p>
+                  <p className="text-[10px] text-muted mt-0.5">{tr(lang, 'активны из всех', 'active of total', 'faol / jami')}</p>
+                </Card>
+                <Card className="p-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted mb-1">{tr(lang, 'Сегодня выполнено', "Today's completion", 'Bugun bajarildi')}</p>
+                  <p className="text-[22px] font-bold text-text">{stats.today.done}<span className="text-[13px] text-muted font-medium"> / {stats.today.total}</span></p>
+                  <p className="text-[10px] text-muted mt-0.5">{stats.today.employeesActive} {tr(lang, 'сотрудников активны', 'employees active', 'xodim faol')}</p>
+                </Card>
+                <Card className="p-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted mb-1">{tr(lang, 'Охват сотрудников', 'Employee coverage', 'Xodimlar qamrovi')}</p>
+                  <p className="text-[22px] font-bold text-text">{stats.overview.employeesCovered}<span className="text-[13px] text-muted font-medium"> / {stats.overview.totalEmployees}</span></p>
+                  <p className="text-[10px] text-muted mt-0.5">{tr(lang, 'под чек-листами', 'covered by a checklist', "chek-list ostida")}</p>
+                </Card>
+                <Card className="p-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted mb-1">{tr(lang, 'Не пользуются', 'Never used', "Foydalanmaydi")}</p>
+                  <p className="text-[22px] font-bold text-text">{stats.neverUsedCount}</p>
+                  <p className="text-[10px] text-muted mt-0.5">{tr(lang, `сотрудников за ${stats.range} дней`, `employees in ${stats.range} days`, `${stats.range} kunda xodim`)}</p>
+                </Card>
+              </div>
+
+              {stats.trend.length > 0 && (
+                <Card title={tr(lang, 'Активность по дням', 'Daily activity', 'Kunlik faollik')}>
+                  <div className="flex items-end gap-1.5 h-28 pt-2">
+                    {(() => {
+                      const max = Math.max(1, ...stats.trend.map(t => t.done));
+                      return stats.trend.map(t => (
+                        <div key={t.date} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+                          <div className="w-full bg-primary/15 hover:bg-primary/25 rounded-t transition-colors relative" style={{ height: `${Math.max(4, (t.done / max) * 100)}%` }} title={`${t.date}: ${t.done}`} />
+                          <span className="text-[8px] text-muted truncate">{t.date.slice(5)}</span>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                </Card>
+              )}
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                <Card title={tr(lang, 'Лидеры по выполнению', 'Top performers', 'Yetakchilar')}>
+                  {stats.leaderboard.length === 0 ? (
+                    <p className="text-[12px] text-muted text-center py-6 flex flex-col items-center gap-2">
+                      <Trophy size={20} className="text-muted/50" />
+                      {tr(lang, 'Пока нет данных', 'No data yet', "Hozircha ma'lumot yo'q")}
+                    </p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {stats.leaderboard.map((row, i) => (
+                        <div key={row.employee_id} className="flex items-center gap-2.5 py-1.5">
+                          <span className="text-[11px] font-bold text-muted w-4 flex-shrink-0">{i + 1}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[12px] font-medium text-text truncate">{row.employee_name}</p>
+                            <p className="text-[10px] text-muted truncate">{row.position_name ?? tr(lang, 'Без должности', 'No position', 'Lavozimsiz')}</p>
+                          </div>
+                          <span className="text-[12px] font-semibold text-primary flex-shrink-0">{row.completed_count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+
+                <Card title={tr(lang, 'По должностям', 'By position', 'Lavozimlar bo\'yicha')}>
+                  {stats.byPosition.length === 0 ? (
+                    <p className="text-[12px] text-muted text-center py-6">{tr(lang, 'Пока нет данных', 'No data yet', "Hozircha ma'lumot yo'q")}</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {stats.byPosition.map(row => (
+                        <div key={row.position_name} className="flex items-center justify-between gap-2">
+                          <span className="text-[12px] text-text truncate">{row.position_name}</span>
+                          <span className="text-[11px] text-muted flex-shrink-0">{row.completed_count} · {row.employee_count} {tr(lang, 'чел.', 'ppl', 'kishi')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              </div>
+
+              <Card title={<span className="flex items-center gap-1.5"><Camera size={14} />{tr(lang, 'Фото-подтверждения', 'Photo proof', 'Foto tasdiq')}</span>}>
+                {stats.recentPhotos.length === 0 ? (
+                  <p className="text-[12px] text-muted text-center py-6 flex flex-col items-center gap-2">
+                    <ImageOff size={20} className="text-muted/50" />
+                    {tr(lang, 'Фото ещё не загружали', 'No photos submitted yet', "Hali foto yuklanmagan")}
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                    {stats.recentPhotos.map((p, i) => (
+                      <a key={i} href={p.photo_url} target="_blank" rel="noreferrer" className="group relative rounded-lg overflow-hidden border border-border aspect-square">
+                        <img src={p.photo_url} alt="" className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-1.5">
+                          <p className="text-[8px] text-white truncate">{p.employee_name}</p>
+                          <p className="text-[7px] text-white/70 truncate">{p.item_text}</p>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </Card>
+
+              <Card title={<span className="flex items-center gap-1.5"><History size={14} />{tr(lang, 'Активность менеджеров', 'Manager activity', 'Menejerlar faolligi')}</span>}>
+                {stats.managerActivity.length === 0 ? (
+                  <p className="text-[12px] text-muted text-center py-6">{tr(lang, 'Никто ещё не создавал и не менял чек-листы', 'No one has created or changed a checklist yet', "Hech kim hali chek-list yaratmagan yoki o'zgartirmagan")}</p>
+                ) : (
+                  <div className="space-y-2">
+                    {stats.managerActivity.map(a => (
+                      <div key={a.id} className="flex items-start gap-2 text-[12px]">
+                        <ClipboardList size={13} className="text-muted mt-0.5 flex-shrink-0" />
+                        <p className="text-text flex-1 min-w-0">
+                          <span className="font-semibold">{a.actor_name ?? tr(lang, 'Владелец', 'Owner', 'Egasi')}</span>{' '}
+                          {auditActionLabel(a.action, lang)}{' '}
+                          <span className="font-medium">«{a.checklist_name}»</span>
+                          {a.detail && <span className="text-muted"> — {a.detail}</span>}
+                        </p>
+                        <span className="text-[10px] text-muted flex-shrink-0">{formatDateTime(a.created_at, lang)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            </>
+          )}
+        </div>
+      )}
 
       {tab === 'positions' && (
         <div className="space-y-4 animate-fade-in">

@@ -2276,6 +2276,68 @@ export const employeesApi = {
     post(`/employees/import-from-pos`, {}, getTenantOwnerToken() ?? ''),
 };
 
+// ── Checklist dashboard stats ─────────────────────────────────────────────
+// No checklist create/edit UI exists yet (later phase) — this reads
+// whatever's in the checklist tables, which is genuinely empty until then.
+export interface ChecklistStatsOverview {
+  totalChecklists: number;
+  activeChecklists: number;
+  totalItems: number;
+  employeesCovered: number;
+  totalEmployees: number;
+}
+export interface ChecklistStatsToday {
+  done: number;
+  total: number;
+  employeesActive: number;
+}
+export interface ChecklistTrendPoint { date: string; done: number }
+export interface ChecklistLeaderboardEntry {
+  employee_id: string;
+  employee_name: string;
+  position_name: string | null;
+  completed_count: number;
+  last_active: string;
+}
+export interface ChecklistByPosition {
+  position_name: string;
+  completed_count: number;
+  employee_count: number;
+}
+export interface ChecklistAuditEntry {
+  id: string;
+  checklist_id: string | null;
+  checklist_name: string;
+  actor_employee_id: string | null;
+  actor_name: string | null;
+  action: 'checklist_created' | 'checklist_updated' | 'checklist_deleted' | 'item_added' | 'item_updated' | 'item_deleted';
+  detail: string | null;
+  created_at: string;
+}
+export interface ChecklistRecentPhoto {
+  photo_url: string;
+  created_at: string;
+  employee_name: string;
+  item_text: string;
+  checklist_name: string;
+}
+export interface ChecklistStats {
+  overview: ChecklistStatsOverview;
+  today: ChecklistStatsToday;
+  trend: ChecklistTrendPoint[];
+  leaderboard: ChecklistLeaderboardEntry[];
+  neverUsedCount: number;
+  byPosition: ChecklistByPosition[];
+  managerActivity: ChecklistAuditEntry[];
+  recentPhotos: ChecklistRecentPhoto[];
+  range: number;
+}
+
+export const checklistStatsApi = {
+  get: (range: '7days' | '30days' = '7days'): Promise<ChecklistStats> =>
+    authedGet<ChecklistStats>(`/checklist-stats?range=${range}`, getTenantOwnerToken() ?? ''),
+};
+
 export function getSubdomain(): string {
   const host = window.location.hostname;
   const parts = host.split('.');

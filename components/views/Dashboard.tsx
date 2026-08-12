@@ -866,7 +866,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ lang, onShowToast, branch,
               )}
             </div>
             )}
-            {!demo && (
+            {/* Real-guest section exclusion is purely TRACEPLUGIN-derived
+                (realtime_events) — always hasPluginData:false for Poster,
+                so the popover can only ever say "needs iikoFront plugin".
+                Hide the control instead of offering a permanent dead end. */}
+            {!demo && !integrationStatus.poster && (
               <button
                 onClick={() => setRgFilterOpen(o => !o)}
                 title={tr(lang, 'Фильтр реальных гостей', 'Real-guest filter', 'Haqiqiy mehmonlar filtri')}

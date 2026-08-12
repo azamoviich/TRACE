@@ -345,8 +345,9 @@ export const ServiceInspectorPublic: React.FC = () => {
 
 
   // phase === 'checklist'
-  const done = data!.items.filter(i => i.completed).length;
-  const total = data!.items.length;
+  const scoredItems = data!.items.filter(i => i.questionType !== 'instruction');
+  const done = scoredItems.filter(i => i.completed).length;
+  const total = scoredItems.length;
   const allDone = total > 0 && done === total;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
@@ -371,14 +372,24 @@ export const ServiceInspectorPublic: React.FC = () => {
     const flagged = violationSent.has(item.id);
     const readOnly = !data!.isToday;
     const isBoolean = item.questionType === 'boolean';
+    const isInstruction = item.questionType === 'instruction';
     const expanded = expandedItemId === item.id;
     const preview = answerPreview(item);
 
     const handleMainClick = () => {
-      if (readOnly) return;
+      if (readOnly || isInstruction) return;
       if (isBoolean) { needsPhoto ? openCamera(item.id) : toggle(item.id, !item.completed); return; }
       setExpandedItemId(id => id === item.id ? null : item.id);
     };
+
+    // Инструкция — display-only text, no checkmark/answer, never blocks.
+    if (isInstruction) {
+      return (
+        <div key={item.id} style={{ animationDelay: `${Math.min(i, 20) * 22}ms` }} className="stagger-item rounded-2xl glass px-4 py-3.5">
+          <span className="block text-[13px] leading-snug text-muted whitespace-pre-wrap">{item.text}</span>
+        </div>
+      );
+    }
 
     return (
       <div

@@ -30,14 +30,41 @@ function employeePermissionLabel(key: keyof EmployeePermissions, lang: Language)
   }
 }
 
-const QUESTION_TYPES: ChecklistQuestionType[] = ['boolean', 'text', 'single_choice', 'multi_choice', 'rating'];
+const QUESTION_TYPES: ChecklistQuestionType[] = ['boolean', 'text', 'single_choice', 'multi_choice', 'rating', 'instruction'];
 function questionTypeLabel(t: ChecklistQuestionType, lang: Language): string {
   if (t === 'text') return tr(lang, 'Текст', 'Text answer', 'Matn javob');
   if (t === 'single_choice') return tr(lang, 'Один вариант', 'Single choice', 'Bitta variant');
   if (t === 'multi_choice') return tr(lang, 'Несколько вариантов', 'Multiple choice', "Bir nechta variant");
   if (t === 'rating') return tr(lang, 'Оценка 1-5', 'Rating 1-5', 'Baho 1-5');
+  if (t === 'instruction') return tr(lang, 'Инструкция', 'Instruction', "Ko'rsatma");
   return tr(lang, 'Да/Нет', 'Checkbox', 'Ha/Yoq');
 }
+
+// "ВЫБЕРИТЕ ТИП ПУНКТА" — the item-type picker shown before adding a new
+// checklist item. "Строка для ввода" and "Текст" are presented as two
+// distinct cards (matching the reference product) but both map to the same
+// existing 'text' backend type — introducing short vs. long text as a real
+// schema distinction wasn't worth it for a UI-only difference.
+const ITEM_TYPE_CARDS: { key: string; type: ChecklistQuestionType; title: (lang: Language) => string; desc: (lang: Language) => string }[] = [
+  { key: 'boolean', type: 'boolean',
+    title: l => tr(l, 'Вопрос', 'Question', 'Savol'),
+    desc: l => tr(l, 'Вопрос, который требует ответа Да/Нет', 'A question that needs a Yes/No answer', "Ha/Yo'q javobini talab qiluvchi savol") },
+  { key: 'rating', type: 'rating',
+    title: l => tr(l, 'Слайдер (оценка)', 'Slider (rating)', "Slayder (baho)"),
+    desc: l => tr(l, 'Вопрос, который требует оценки в баллах', 'A question that needs a numeric rating', "Ball bilan baholashni talab qiluvchi savol") },
+  { key: 'short_text', type: 'text',
+    title: l => tr(l, 'Строка для ввода', 'Input line', 'Kiritish qatori'),
+    desc: l => tr(l, 'Одна строчка для ввода ответа', 'One line for the answer', "Javob uchun bitta qator") },
+  { key: 'long_text', type: 'text',
+    title: l => tr(l, 'Текст', 'Text', 'Matn'),
+    desc: l => tr(l, 'Несколько строк для ввода, развернутый ответ', 'Multiple lines, a detailed answer', "Bir necha qator, batafsil javob") },
+  { key: 'single_choice', type: 'single_choice',
+    title: l => tr(l, 'Варианты ответа', 'Answer options', 'Javob variantlari'),
+    desc: l => tr(l, 'Вопрос с настраиваемыми вариантами ответов', 'A question with custom answer options', "Sozlanadigan javob variantlari bilan savol") },
+  { key: 'instruction', type: 'instruction',
+    title: l => tr(l, 'Инструкция', 'Instruction', "Ko'rsatma"),
+    desc: l => tr(l, 'Описание способа достижения желаемого результата', 'A description of how to achieve the desired result', "Kerakli natijaga erishish usulining tavsifi") },
+];
 
 function formatChecklistDate(iso: string, lang: Language): string {
   const d = new Date(iso);
@@ -80,6 +107,8 @@ export const ServiceInspector: React.FC<{
   const [addingPosition, setAddingPosition] = useState(false);
   const [newPositionName, setNewPositionName] = useState('');
   const [editingPositionId, setEditingPositionId] = useState<string | null>(null);
+  const [selectedPositionIds, setSelectedPositionIds] = useState<Set<string>>(new Set());
+  const [bulkDeletingPositions, setBulkDeletingPositions] = useState(false);
 
   const [employees, setEmployees] = useState<StaffEmployee[]>([]);
   const [employeesLoading, setEmployeesLoading] = useState(true);
@@ -87,6 +116,8 @@ export const ServiceInspector: React.FC<{
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [editingEmployee, setEditingEmployee] = useState<{ isNew: boolean; employee?: StaffEmployee } | null>(null);
   const [importingFromPos, setImportingFromPos] = useState(false);
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<Set<string>>(new Set());
+  const [bulkDeletingEmployees, setBulkDeletingEmployees] = useState(false);
 
   const [surveys, setSurveys] = useState<Survey[]>([]);
   const [surveysLoading, setSurveysLoading] = useState(true);
@@ -101,7 +132,6 @@ export const ServiceInspector: React.FC<{
 
   const [departments, setDepartments] = useState<ChecklistDepartment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [newDeptSlug, setNewDeptSlug] = useState('');
   const [newDeptName, setNewDeptName] = useState('');
   const [creatingDept, setCreatingDept] = useState(false);
@@ -111,6 +141,18 @@ export const ServiceInspector: React.FC<{
   const [copyFromChoice, setCopyFromChoice] = useState<Record<string, string>>({});
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Чек-листы detail editor (modal) — opened from the table's edit pencil.
+  const [detailDeptId, setDetailDeptId] = useState<string | null>(null);
+  const [deptNameDraft, setDeptNameDraft] = useState('');
+  const [deptDescDraft, setDeptDescDraft] = useState('');
+  const [deptPositionIds, setDeptPositionIds] = useState<Set<string>>(new Set());
+  const [deptActiveDraft, setDeptActiveDraft] = useState(true);
+  const [savingDeptDetail, setSavingDeptDetail] = useState(false);
+  // "Добавить пункт" — show the type-picker before revealing the actual
+  // add-item input row for that department.
+  const [pickingTypeForDept, setPickingTypeForDept] = useState<string | null>(null);
+  const [addItemRowOpenFor, setAddItemRowOpenFor] = useState<Record<string, boolean>>({});
 
   const [range, setRange] = useState<Range>('7days');
   const [results, setResults] = useState<ChecklistResultRow[]>([]);
@@ -221,6 +263,24 @@ export const ServiceInspector: React.FC<{
     loadPositions();
   });
 
+  const handleBulkDeletePositions = async () => {
+    if (selectedPositionIds.size === 0) return;
+    if (!confirm(tr(lang,
+      `Удалить выбранные должности (${selectedPositionIds.size})?`,
+      `Delete ${selectedPositionIds.size} selected positions?`,
+      `Tanlangan lavozimlarni (${selectedPositionIds.size}) o'chirasizmi?`))) return;
+    setBulkDeletingPositions(true);
+    try {
+      await Promise.all(Array.from(selectedPositionIds).map(id => positionsApi.update(id, { deleted: true })));
+      setSelectedPositionIds(new Set());
+      loadPositions();
+    } catch (e: any) {
+      onShowToast?.(e.message ?? tr(lang, 'Ошибка', 'Error', 'Xatolik'), 'error');
+    } finally {
+      setBulkDeletingPositions(false);
+    }
+  };
+
   const loadEmployees = useCallback(() => {
     setEmployeesLoading(true);
     employeesApi.list().then(setEmployees).catch(() => {}).finally(() => setEmployeesLoading(false));
@@ -232,6 +292,24 @@ export const ServiceInspector: React.FC<{
     await employeesApi.update(e.id, { active: !e.active });
     loadEmployees();
   });
+
+  const handleBulkDeleteEmployees = async () => {
+    if (selectedEmployeeIds.size === 0) return;
+    if (!confirm(tr(lang,
+      `Удалить выбранных сотрудников (${selectedEmployeeIds.size})?`,
+      `Delete ${selectedEmployeeIds.size} selected employees?`,
+      `Tanlangan xodimlarni (${selectedEmployeeIds.size}) o'chirasizmi?`))) return;
+    setBulkDeletingEmployees(true);
+    try {
+      await Promise.all(Array.from(selectedEmployeeIds).map(id => employeesApi.remove(id)));
+      setSelectedEmployeeIds(new Set());
+      loadEmployees();
+    } catch (e: any) {
+      onShowToast?.(e.message ?? tr(lang, 'Ошибка', 'Error', 'Xatolik'), 'error');
+    } finally {
+      setBulkDeletingEmployees(false);
+    }
+  };
 
   const handleImportFromPos = async () => {
     setImportingFromPos(true);
@@ -362,6 +440,37 @@ export const ServiceInspector: React.FC<{
     refresh();
   });
 
+  const openDeptDetail = (dept: ChecklistDepartment) => {
+    setDetailDeptId(dept.id);
+    setDeptNameDraft(dept.name);
+    setDeptDescDraft(dept.description ?? '');
+    setDeptPositionIds(new Set(dept.position_ids ?? []));
+    setDeptActiveDraft(dept.active);
+    setPickingTypeForDept(null);
+    setAddItemRowOpenFor({});
+  };
+
+  const closeDeptDetail = () => setDetailDeptId(null);
+
+  const handleSaveDeptDetail = async () => {
+    if (!detailDeptId || !deptNameDraft.trim()) return;
+    setSavingDeptDetail(true);
+    try {
+      await traceApi.checklist.updateDepartment(detailDeptId, {
+        name: deptNameDraft.trim(),
+        description: deptDescDraft.trim(),
+        position_ids: Array.from(deptPositionIds),
+        active: deptActiveDraft,
+      });
+      refresh();
+      closeDeptDetail();
+    } catch (e: any) {
+      onShowToast?.(e.message ?? tr(lang, 'Ошибка', 'Error', 'Xatolik'), 'error');
+    } finally {
+      setSavingDeptDetail(false);
+    }
+  };
+
   const handleAddItem = (dept: ChecklistDepartment) => withBusy(`add-${dept.id}`, async () => {
     const text = (newItemText[dept.id] ?? '').trim();
     if (!text) return;
@@ -441,7 +550,7 @@ export const ServiceInspector: React.FC<{
   const TABS: { key: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
     { key: 'overview', label: tr(lang, 'Дашборд', 'Dashboard', 'Boshqaruv paneli'), icon: <Gauge size={13} />, badge: (violationFilter === 'open' ? openViolationsCount : 0) + pendingCount || undefined },
     { key: 'surveys', label: tr(lang, 'Онлайн-опросы', 'Surveys', "So'rovnomalar"), icon: <ClipboardList size={13} /> },
-    { key: 'departments', label: tr(lang, 'Отделы', 'Departments', "Bo'limlar"), icon: <Building2 size={13} /> },
+    { key: 'departments', label: tr(lang, 'Чек-листы', 'Checklists', "Chek-listlar"), icon: <Building2 size={13} /> },
     { key: 'results', label: tr(lang, 'Пройденные чек-листы', 'Completed checklists', "O'tilgan chek-listlar"), icon: <BarChart3 size={13} /> },
     { key: 'employees', label: tr(lang, 'Сотрудники', 'Employees', 'Xodimlar'), icon: <UserPlus size={13} /> },
     { key: 'positions', label: tr(lang, 'Должности', 'Positions', 'Lavozimlar'), icon: <Briefcase size={13} /> },
@@ -809,7 +918,7 @@ export const ServiceInspector: React.FC<{
       {tab === 'departments' && (
         <div className="space-y-4 animate-fade-in">
           {!isStaff && (
-          <Card title={tr(lang, 'Новое подразделение', 'New Department', "Yangi bo'lim")}>
+          <Card title={tr(lang, 'Новый чек-лист', 'New checklist', "Yangi chek-list")}>
             <p className="text-[11px] text-muted mb-3 leading-relaxed">
               {tr(lang,
                 'Например: bar, kitchen, manager, cleaner — станет ссылкой вида bar-название.trace-os.uz для сотрудников без входа в систему.',
@@ -844,203 +953,338 @@ export const ServiceInspector: React.FC<{
           {loading ? (
             <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-muted" /></div>
           ) : departments.length === 0 ? (
-            <Card><p className="text-[12px] text-muted text-center py-6">{tr(lang, 'Подразделений пока нет', 'No departments yet', "Hozircha bo'limlar yo'q")}</p></Card>
+            <Card><p className="text-[12px] text-muted text-center py-6">{tr(lang, 'Чек-листов пока нет', 'No checklists yet', "Hozircha chek-listlar yo'q")}</p></Card>
           ) : (
-            <div className="space-y-3">
-              {departments.map(dept => {
-                const isOpen = expanded.has(dept.id);
-                const busy = busyIds.has(dept.id);
-                const deptStreaks = streaks.filter(s => s.department_id === dept.id && s.streak > 0);
-                return (
-                  <Card key={dept.id} className={!dept.active ? 'opacity-70' : ''}>
-                    <button
-                      onClick={() => setExpanded(p => { const n = new Set(p); n.has(dept.id) ? n.delete(dept.id) : n.add(dept.id); return n; })}
-                      className="w-full flex items-center justify-between gap-3 text-left"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="text-[14px] font-semibold text-text truncate">{dept.name}</h3>
-                          {!dept.active && (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted/15 text-muted uppercase tracking-wide">
-                              {tr(lang, 'скрыт', 'hidden', 'yashirin')}
-                            </span>
+            <Card className="!p-0 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-[12px]">
+                  <thead>
+                    <tr className="border-b border-border text-left text-[10px] font-semibold uppercase tracking-wide text-muted">
+                      <th className="px-3 py-2.5">{tr(lang, 'Название', 'Name', 'Nomi')}</th>
+                      <th className="px-3 py-2.5">{tr(lang, 'Доступен для должности', 'Available for position', "Lavozim uchun mavjud")}</th>
+                      <th className="px-3 py-2.5 text-center">{tr(lang, 'Пунктов', 'Items', 'Bandlar')}</th>
+                      <th className="px-3 py-2.5 text-center">{tr(lang, 'Активность', 'Active', 'Faollik')}</th>
+                      <th className="px-3 py-2.5"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {departments.map(dept => {
+                      const posNames = (dept.position_ids ?? [])
+                        .map(id => positions.find(p => p.id === id)?.name)
+                        .filter(Boolean) as string[];
+                      return (
+                        <tr key={dept.id} className={`border-b border-border last:border-0 hover:bg-background/60 transition-colors ${!dept.active ? 'opacity-60' : ''}`}>
+                          <td className="px-3 py-2.5">
+                            <button onClick={() => openDeptDetail(dept)} className="font-semibold text-text hover:text-primary text-left">
+                              {dept.name}
+                            </button>
+                          </td>
+                          <td className="px-3 py-2.5 text-muted">
+                            {posNames.length > 0 ? posNames.join(', ') : '—'}
+                          </td>
+                          <td className="px-3 py-2.5 text-center text-text">{dept.items.length}</td>
+                          <td className="px-3 py-2.5 text-center">
+                            {dept.active ? <Check size={14} className="inline text-success" /> : <X size={14} className="inline text-muted" />}
+                          </td>
+                          <td className="px-3 py-2.5 text-right">
+                            <button
+                              onClick={() => openDeptDetail(dept)}
+                              title={tr(lang, 'Редактировать', 'Edit', 'Tahrirlash')}
+                              className="p-1.5 text-muted hover:text-primary rounded-lg transition-colors"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Чек-лист detail editor — modal opened from the table's edit pencil */}
+      {detailDeptId && (() => {
+        const dept = departments.find(d => d.id === detailDeptId);
+        if (!dept) return null;
+        const busy = busyIds.has(dept.id);
+        return (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-4" onClick={closeDeptDetail}>
+            <div className="glass rounded-3xl p-5 max-w-[640px] w-full max-h-[90vh] overflow-y-auto animate-fade-in" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-[15px] font-semibold text-text">{tr(lang, 'Чек-лист', 'Checklist', 'Chek-list')}</h3>
+                <button onClick={closeDeptDetail} className="text-muted hover:text-text flex-shrink-0"><X size={18} /></button>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[10px] font-semibold uppercase tracking-wide text-muted mb-1">
+                    {tr(lang, 'Название', 'Name', 'Nomi')}
+                  </label>
+                  <input
+                    value={deptNameDraft}
+                    onChange={e => setDeptNameDraft(e.target.value)}
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-semibold uppercase tracking-wide text-muted mb-1">
+                    {tr(lang, 'Описание', 'Description', 'Tavsif')}
+                  </label>
+                  <textarea
+                    value={deptDescDraft}
+                    onChange={e => setDeptDescDraft(e.target.value)}
+                    rows={2}
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-semibold uppercase tracking-wide text-muted mb-1">
+                    {tr(lang, 'Доступен для должности', 'Available for position', "Lavozim uchun mavjud")}
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {positions.filter(p => p.active).map(p => {
+                      const checked = deptPositionIds.has(p.id);
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setDeptPositionIds(prev => { const n = new Set(prev); checked ? n.delete(p.id) : n.add(p.id); return n; })}
+                          className={`text-[11px] font-medium px-2.5 py-1.5 rounded-full border transition-colors ${
+                            checked ? 'bg-primary text-white border-primary' : 'bg-background border-border text-text hover:border-primary/50'
+                          }`}
+                        >
+                          {p.name}
+                        </button>
+                      );
+                    })}
+                    {positions.length === 0 && <span className="text-[11px] text-muted">{tr(lang, 'Должностей пока нет', 'No positions yet', "Hozircha lavozimlar yo'q")}</span>}
+                  </div>
+                  <p className="text-[10px] text-muted mt-1.5 leading-relaxed">
+                    {tr(lang,
+                      'Если не выбрано ни одной роли, то чек-лист будет доступен для всех ролей',
+                      'If no role is selected, the checklist will be available to all roles',
+                      "Agar birorta rol tanlanmasa, chek-list barcha rollar uchun mavjud bo'ladi")}
+                  </p>
+                </div>
+
+                <label className="flex items-center gap-2 text-[12px] font-medium text-text">
+                  <input type="checkbox" checked={deptActiveDraft} onChange={e => setDeptActiveDraft(e.target.checked)} className="rounded border-border" />
+                  {tr(lang, 'Активность', 'Active', 'Faollik')}
+                </label>
+
+                <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg bg-background border border-border">
+                  <code className="text-[10px] text-muted truncate flex-1">{dept.subdomainPreview}</code>
+                  <span
+                    role="button"
+                    onClick={() => copySubdomain(dept)}
+                    className="text-muted hover:text-primary flex-shrink-0"
+                  >
+                    {copiedId === dept.id ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                  </span>
+                </div>
+
+                <div className="pt-2 border-t border-border">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-muted mb-2">
+                    {tr(lang, 'Пункты чек-листа', 'Checklist items', "Chek-list bandlari")}
+                  </div>
+                  <div className="space-y-2">
+                    {dept.items.map(item => (
+                      <div key={item.id} className="rounded-xl bg-background border border-border p-2.5 space-y-2">
+                        <div className="flex items-center gap-2">
+                          {item.photo_url && (
+                            <a href={item.photo_url} target="_blank" rel="noreferrer" className="flex-shrink-0">
+                              <img src={item.photo_url} alt="" className="w-8 h-8 rounded-lg object-cover border border-border" />
+                            </a>
                           )}
-                          {deptStreaks.map(s => (
-                            <span key={s.department_id} className="flex items-center gap-0.5 text-[10px] font-semibold text-orange-500 flex-shrink-0">
-                              <Flame size={11} /> {s.streak}
-                            </span>
-                          ))}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <code className="text-[10px] text-muted truncate">{dept.subdomainPreview}</code>
-                          <span
-                            role="button"
-                            onClick={e => { e.stopPropagation(); copySubdomain(dept); }}
-                            className="text-muted hover:text-primary flex-shrink-0"
+                          <input
+                            defaultValue={item.text}
+                            onBlur={e => { if (e.target.value.trim() && e.target.value !== item.text) handleEditItem(item.id, e.target.value.trim()); }}
+                            className="flex-1 bg-card border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-text focus:outline-none focus:border-primary"
+                          />
+                          {item.question_type !== 'instruction' && (
+                            <button
+                              onClick={() => handleTogglePhotoRequired(item.id, !item.photo_required)}
+                              disabled={busyIds.has(`photo-${item.id}`)}
+                              title={tr(lang, 'Требовать фото', 'Require photo', 'Foto talab qilish')}
+                              className={`p-1.5 rounded-lg flex-shrink-0 transition-colors ${item.photo_required ? 'bg-primary/10 text-primary' : 'text-muted hover:text-text'}`}
+                            >
+                              <Camera size={13} />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDeleteItem(item.id)}
+                            disabled={busyIds.has(item.id)}
+                            className="p-1.5 text-muted hover:text-danger flex-shrink-0"
                           >
-                            {copiedId === dept.id ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {item.question_type !== 'instruction' && (
+                            <button
+                              onClick={() => handleCycleDuePeriod(item.id, item.due_period)}
+                              disabled={busyIds.has(`period-${item.id}`)}
+                              title={tr(lang, 'Когда выполнять', 'When to do it', 'Qachon bajarish')}
+                              className={`text-[9px] px-2 py-1 rounded-full font-medium transition-colors ${item.due_period !== 'any' ? 'bg-primary/10 text-primary' : 'bg-card text-muted hover:text-text border border-border'}`}
+                            >
+                              {periodLabel(item.due_period, lang)}
+                            </button>
+                          )}
+                          <span className="text-[9px] px-2 py-1 rounded-full font-medium bg-card text-muted border border-border">
+                            {questionTypeLabel(item.question_type, lang)}
                           </span>
                         </div>
+                        {(item.question_type === 'single_choice' || item.question_type === 'multi_choice') && (
+                          <input
+                            key={item.id + (item.options?.join(',') ?? '')}
+                            defaultValue={item.options?.join(', ') ?? ''}
+                            onBlur={e => { if (e.target.value.trim()) handleEditOptions(item.id, e.target.value); }}
+                            placeholder={tr(lang, 'Варианты через запятую', 'Options, comma-separated', 'Variantlar, vergul bilan')}
+                            className="w-full bg-card border border-border rounded-lg px-2.5 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary"
+                          />
+                        )}
                       </div>
-                      <span className="p-1.5 text-muted flex-shrink-0">
-                        {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                      </span>
-                    </button>
-
-                    {isOpen && (
-                      <div className="mt-4 pt-4 border-t border-border space-y-4">
-                        <div>
-                          <div className="text-[10px] font-semibold uppercase tracking-wide text-muted mb-2">
-                            {tr(lang, 'Пункты чек-листа', 'Checklist items', "Chek-list bandlari")}
-                          </div>
-                          <div className="space-y-2">
-                            {dept.items.map(item => (
-                              <div key={item.id} className="rounded-xl bg-background border border-border p-2.5 space-y-2">
-                                <div className="flex items-center gap-2">
-                                  {item.photo_url && (
-                                    <a href={item.photo_url} target="_blank" rel="noreferrer" className="flex-shrink-0">
-                                      <img src={item.photo_url} alt="" className="w-8 h-8 rounded-lg object-cover border border-border" />
-                                    </a>
-                                  )}
-                                  <input
-                                    defaultValue={item.text}
-                                    onBlur={e => { if (e.target.value.trim() && e.target.value !== item.text) handleEditItem(item.id, e.target.value.trim()); }}
-                                    className="flex-1 bg-card border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-text focus:outline-none focus:border-primary"
-                                  />
-                                  <button
-                                    onClick={() => handleTogglePhotoRequired(item.id, !item.photo_required)}
-                                    disabled={busyIds.has(`photo-${item.id}`)}
-                                    title={tr(lang, 'Требовать фото', 'Require photo', 'Foto talab qilish')}
-                                    className={`p-1.5 rounded-lg flex-shrink-0 transition-colors ${item.photo_required ? 'bg-primary/10 text-primary' : 'text-muted hover:text-text'}`}
-                                  >
-                                    <Camera size={13} />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteItem(item.id)}
-                                    disabled={busyIds.has(item.id)}
-                                    className="p-1.5 text-muted hover:text-danger flex-shrink-0"
-                                  >
-                                    <Trash2 size={13} />
-                                  </button>
-                                </div>
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <button
-                                    onClick={() => handleCycleDuePeriod(item.id, item.due_period)}
-                                    disabled={busyIds.has(`period-${item.id}`)}
-                                    title={tr(lang, 'Когда выполнять', 'When to do it', 'Qachon bajarish')}
-                                    className={`text-[9px] px-2 py-1 rounded-full font-medium transition-colors ${item.due_period !== 'any' ? 'bg-primary/10 text-primary' : 'bg-card text-muted hover:text-text border border-border'}`}
-                                  >
-                                    {periodLabel(item.due_period, lang)}
-                                  </button>
-                                  <select
-                                    value={item.question_type}
-                                    onChange={e => handleChangeQuestionType(item.id, e.target.value as ChecklistQuestionType)}
-                                    disabled={busyIds.has(`qtype-${item.id}`)}
-                                    className="text-[9px] px-2 py-1 rounded-full font-medium bg-card text-muted hover:text-text border border-border focus:outline-none focus:border-primary"
-                                  >
-                                    {QUESTION_TYPES.map(qt => (
-                                      <option key={qt} value={qt}>{questionTypeLabel(qt, lang)}</option>
-                                    ))}
-                                  </select>
-                                </div>
-                                {(item.question_type === 'single_choice' || item.question_type === 'multi_choice') && (
-                                  <input
-                                    key={item.id + (item.options?.join(',') ?? '')}
-                                    defaultValue={item.options?.join(', ') ?? ''}
-                                    onBlur={e => { if (e.target.value.trim()) handleEditOptions(item.id, e.target.value); }}
-                                    placeholder={tr(lang, 'Варианты через запятую', 'Options, comma-separated', 'Variantlar, vergul bilan')}
-                                    className="w-full bg-card border border-border rounded-lg px-2.5 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary"
-                                  />
-                                )}
-                              </div>
-                            ))}
-                            {dept.items.length === 0 && (
-                              <p className="text-[11px] text-muted py-1">{tr(lang, 'Пунктов пока нет', 'No items yet', "Hozircha bandlar yo'q")}</p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 mt-2">
-                            <input
-                              value={newItemText[dept.id] ?? ''}
-                              onChange={e => setNewItemText(p => ({ ...p, [dept.id]: e.target.value }))}
-                              onKeyDown={e => { if (e.key === 'Enter' && (newItemType[dept.id] ?? 'boolean') === 'boolean') handleAddItem(dept); }}
-                              placeholder={tr(lang, 'Новый пункт...', 'New item...', 'Yangi band...')}
-                              className="flex-1 bg-background border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-text focus:outline-none focus:border-primary"
-                            />
-                            <select
-                              value={newItemType[dept.id] ?? 'boolean'}
-                              onChange={e => setNewItemType(p => ({ ...p, [dept.id]: e.target.value as ChecklistQuestionType }))}
-                              className="bg-background border border-border rounded-lg px-2 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary flex-shrink-0"
-                            >
-                              {QUESTION_TYPES.map(qt => (
-                                <option key={qt} value={qt}>{questionTypeLabel(qt, lang)}</option>
-                              ))}
-                            </select>
-                            <button
-                              onClick={() => handleAddItem(dept)}
-                              disabled={busyIds.has(`add-${dept.id}`) || !(newItemText[dept.id] ?? '').trim()}
-                              className="p-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-lg flex-shrink-0 transition-colors disabled:opacity-40"
-                            >
-                              <Plus size={13} />
-                            </button>
-                          </div>
-                          {(newItemType[dept.id] === 'single_choice' || newItemType[dept.id] === 'multi_choice') && (
-                            <input
-                              value={newItemOptionsRaw[dept.id] ?? ''}
-                              onChange={e => setNewItemOptionsRaw(p => ({ ...p, [dept.id]: e.target.value }))}
-                              placeholder={tr(lang, 'Варианты через запятую', 'Options, comma-separated', 'Variantlar, vergul bilan')}
-                              className="w-full mt-2 bg-background border border-border rounded-lg px-2.5 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary"
-                            />
-                          )}
-                          {departments.length > 1 && (
-                            <div className="flex items-center gap-2 mt-2">
-                              <select
-                                value={copyFromChoice[dept.id] ?? ''}
-                                onChange={e => setCopyFromChoice(p => ({ ...p, [dept.id]: e.target.value }))}
-                                className="flex-1 bg-background border border-border rounded-lg px-2 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary"
-                              >
-                                <option value="">{tr(lang, 'Скопировать пункты из...', 'Copy items from...', 'Bandlarni nusxalash...')}</option>
-                                {departments.filter(d => d.id !== dept.id).map(d => (
-                                  <option key={d.id} value={d.id}>{d.name}</option>
-                                ))}
-                              </select>
-                              <button
-                                onClick={() => handleCopyItemsFrom(dept)}
-                                disabled={busyIds.has(`copy-${dept.id}`) || !copyFromChoice[dept.id]}
-                                className="px-3 py-1.5 bg-background border border-border text-text text-[11px] font-semibold rounded-lg hover:border-primary/40 transition-colors disabled:opacity-40 flex items-center gap-1.5 whitespace-nowrap"
-                              >
-                                {busyIds.has(`copy-${dept.id}`) ? <Loader2 size={12} className="animate-spin" /> : <Copy size={12} />}
-                                {tr(lang, 'Копировать', 'Copy', 'Nusxalash')}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex items-center justify-between pt-3 border-t border-border">
-                          <button
-                            onClick={() => handleToggleActive(dept)}
-                            disabled={busy}
-                            className="text-[11px] font-medium text-muted hover:text-text"
-                          >
-                            {dept.active ? tr(lang, 'Скрыть подразделение', 'Hide department', "Bo'limni yashirish") : tr(lang, 'Показать подразделение', 'Show department', "Bo'limni ko'rsatish")}
-                          </button>
-                          {!isStaff && (
-                          <button
-                            onClick={() => handleDeleteDept(dept)}
-                            disabled={busy}
-                            className="text-[11px] font-semibold text-danger hover:bg-danger/8 px-2 py-1 rounded-lg flex items-center gap-1.5"
-                          >
-                            {busy ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
-                            {tr(lang, 'Удалить', 'Delete', "O'chirish")}
-                          </button>
-                          )}
-                        </div>
-                      </div>
+                    ))}
+                    {dept.items.length === 0 && (
+                      <p className="text-[11px] text-muted py-1">{tr(lang, 'Пунктов пока нет', 'No items yet', "Hozircha bandlar yo'q")}</p>
                     )}
-                  </Card>
-                );
-              })}
+                  </div>
+
+                  {addItemRowOpenFor[dept.id] ? (
+                    <div className="mt-2">
+                      <div className="flex items-center gap-2">
+                        <input
+                          autoFocus
+                          value={newItemText[dept.id] ?? ''}
+                          onChange={e => setNewItemText(p => ({ ...p, [dept.id]: e.target.value }))}
+                          onKeyDown={e => { if (e.key === 'Enter') handleAddItem(dept); }}
+                          placeholder={tr(lang, 'Текст пункта...', 'Item text...', 'Band matni...')}
+                          className="flex-1 bg-background border border-border rounded-lg px-2.5 py-1.5 text-[12px] text-text focus:outline-none focus:border-primary"
+                        />
+                        <span className="text-[9px] px-2 py-1 rounded-full font-medium bg-card text-muted border border-border flex-shrink-0">
+                          {questionTypeLabel(newItemType[dept.id] ?? 'boolean', lang)}
+                        </span>
+                        <button
+                          onClick={() => { handleAddItem(dept); setAddItemRowOpenFor(p => ({ ...p, [dept.id]: false })); }}
+                          disabled={busyIds.has(`add-${dept.id}`) || !(newItemText[dept.id] ?? '').trim()}
+                          className="p-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-lg flex-shrink-0 transition-colors disabled:opacity-40"
+                        >
+                          <Plus size={13} />
+                        </button>
+                        <button
+                          onClick={() => setAddItemRowOpenFor(p => ({ ...p, [dept.id]: false }))}
+                          className="p-1.5 text-muted hover:text-text flex-shrink-0"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                      {(newItemType[dept.id] === 'single_choice' || newItemType[dept.id] === 'multi_choice') && (
+                        <input
+                          value={newItemOptionsRaw[dept.id] ?? ''}
+                          onChange={e => setNewItemOptionsRaw(p => ({ ...p, [dept.id]: e.target.value }))}
+                          placeholder={tr(lang, 'Варианты через запятую', 'Options, comma-separated', 'Variantlar, vergul bilan')}
+                          className="w-full mt-2 bg-background border border-border rounded-lg px-2.5 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary"
+                        />
+                      )}
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setPickingTypeForDept(dept.id)}
+                      className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-primary hover:bg-primary/8 px-2.5 py-1.5 rounded-lg transition-colors"
+                    >
+                      <Plus size={13} /> {tr(lang, 'Добавить пункт', 'Add item', 'Band qo\'shish')}
+                    </button>
+                  )}
+
+                  {departments.length > 1 && (
+                    <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border">
+                      <select
+                        value={copyFromChoice[dept.id] ?? ''}
+                        onChange={e => setCopyFromChoice(p => ({ ...p, [dept.id]: e.target.value }))}
+                        className="flex-1 bg-background border border-border rounded-lg px-2 py-1.5 text-[11px] text-text focus:outline-none focus:border-primary"
+                      >
+                        <option value="">{tr(lang, 'Скопировать пункты из...', 'Copy items from...', 'Bandlarni nusxalash...')}</option>
+                        {departments.filter(d => d.id !== dept.id).map(d => (
+                          <option key={d.id} value={d.id}>{d.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => handleCopyItemsFrom(dept)}
+                        disabled={busyIds.has(`copy-${dept.id}`) || !copyFromChoice[dept.id]}
+                        className="px-3 py-1.5 bg-background border border-border text-text text-[11px] font-semibold rounded-lg hover:border-primary/40 transition-colors disabled:opacity-40 flex items-center gap-1.5 whitespace-nowrap"
+                      >
+                        {busyIds.has(`copy-${dept.id}`) ? <Loader2 size={12} className="animate-spin" /> : <Copy size={12} />}
+                        {tr(lang, 'Копировать', 'Copy', 'Nusxalash')}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between pt-3 border-t border-border">
+                  <div className="flex items-center gap-2">
+                    <button onClick={closeDeptDetail} className="text-[12px] font-medium text-muted hover:text-text px-2 py-1.5">
+                      {tr(lang, 'Назад', 'Back', 'Orqaga')}
+                    </button>
+                    {!isStaff && (
+                      <button
+                        onClick={() => handleDeleteDept(dept)}
+                        disabled={busy}
+                        className="text-[11px] font-semibold text-danger hover:bg-danger/8 px-2 py-1 rounded-lg flex items-center gap-1.5"
+                      >
+                        {busy ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
+                        {tr(lang, 'Удалить', 'Delete', "O'chirish")}
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleSaveDeptDetail}
+                    disabled={savingDeptDetail || !deptNameDraft.trim()}
+                    className="px-4 py-2 bg-primary text-white text-[12px] font-semibold rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 whitespace-nowrap"
+                  >
+                    {savingDeptDetail ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                    {tr(lang, 'Сохранить', 'Save', 'Saqlash')}
+                  </button>
+                </div>
+              </div>
             </div>
-          )}
+          </div>
+        );
+      })()}
+
+      {/* "ВЫБЕРИТЕ ТИП ПУНКТА" — item type picker shown before "Добавить пункт" */}
+      {pickingTypeForDept && (
+        <div className="fixed inset-0 z-[60] bg-black/50 flex items-end sm:items-center justify-center p-4" onClick={() => setPickingTypeForDept(null)}>
+          <div className="glass rounded-3xl p-5 max-w-[480px] w-full max-h-[85vh] overflow-y-auto animate-fade-in" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[12px] font-bold uppercase tracking-wide text-text">
+                {tr(lang, 'Выберите тип пункта', 'Choose item type', 'Band turini tanlang')}
+              </h3>
+              <button onClick={() => setPickingTypeForDept(null)} className="text-muted hover:text-text flex-shrink-0"><X size={18} /></button>
+            </div>
+            <div className="space-y-2">
+              {ITEM_TYPE_CARDS.map(card => (
+                <button
+                  key={card.key}
+                  onClick={() => {
+                    const deptId = pickingTypeForDept;
+                    setNewItemType(p => ({ ...p, [deptId]: card.type }));
+                    setPickingTypeForDept(null);
+                    setAddItemRowOpenFor(p => ({ ...p, [deptId]: true }));
+                  }}
+                  className="w-full text-left rounded-xl bg-background border border-border hover:border-primary/50 p-3 transition-colors"
+                >
+                  <div className="text-[13px] font-semibold text-text">{card.title(lang)}</div>
+                  <div className="text-[11px] text-muted mt-0.5">{card.desc(lang)}</div>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -1228,9 +1472,37 @@ export const ServiceInspector: React.FC<{
               <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-muted" /></div>
             ) : (
               <div className="overflow-x-auto">
+                {selectedPositionIds.size > 0 && (
+                  <div className="flex items-center justify-between gap-2 mb-2 px-2.5 py-2 rounded-lg bg-danger/8 border border-danger/20">
+                    <span className="text-[11px] font-medium text-text">
+                      {tr(lang, `Выбрано: ${selectedPositionIds.size}`, `${selectedPositionIds.size} selected`, `Tanlandi: ${selectedPositionIds.size}`)}
+                    </span>
+                    <button
+                      onClick={handleBulkDeletePositions}
+                      disabled={bulkDeletingPositions}
+                      className="flex items-center gap-1.5 px-2.5 py-1 bg-danger/10 text-danger hover:bg-danger hover:text-white text-[11px] font-semibold rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {bulkDeletingPositions ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                      {tr(lang, 'Удалить выбранные', 'Delete selected', "Tanlanganlarni o'chirish")}
+                    </button>
+                  </div>
+                )}
                 <table className="w-full text-[12px]">
                   <thead>
                     <tr className="text-left text-muted border-b border-border">
+                      <th className="pb-2 font-medium w-8">
+                        {(() => {
+                          const visible = positions.filter(p => p.name.toLowerCase().includes(positionSearch.toLowerCase()));
+                          const allSelected = visible.length > 0 && visible.every(p => selectedPositionIds.has(p.id));
+                          return (
+                            <input
+                              type="checkbox"
+                              checked={allSelected}
+                              onChange={e => setSelectedPositionIds(e.target.checked ? new Set(visible.map(p => p.id)) : new Set())}
+                            />
+                          );
+                        })()}
+                      </th>
                       <th className="pb-2 font-medium">{tr(lang, 'Название', 'Name', 'Nomi')}</th>
                       <th className="pb-2 font-medium text-center">{tr(lang, 'Активность', 'Active', 'Faollik')}</th>
                       <th className="pb-2 font-medium text-right"></th>
@@ -1241,6 +1513,13 @@ export const ServiceInspector: React.FC<{
                       .filter(p => p.name.toLowerCase().includes(positionSearch.toLowerCase()))
                       .map(p => (
                         <tr key={p.id} className={`border-b border-border/50 ${p.deleted_at ? 'opacity-50' : ''}`}>
+                          <td className="py-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedPositionIds.has(p.id)}
+                              onChange={e => setSelectedPositionIds(prev => { const n = new Set(prev); e.target.checked ? n.add(p.id) : n.delete(p.id); return n; })}
+                            />
+                          </td>
                           <td className="py-2 text-text">
                             {editingPositionId === p.id ? (
                               <input
@@ -1322,9 +1601,37 @@ export const ServiceInspector: React.FC<{
               <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-muted" /></div>
             ) : (
               <div className="overflow-x-auto">
+                {selectedEmployeeIds.size > 0 && (
+                  <div className="flex items-center justify-between gap-2 mb-2 px-2.5 py-2 rounded-lg bg-danger/8 border border-danger/20">
+                    <span className="text-[11px] font-medium text-text">
+                      {tr(lang, `Выбрано: ${selectedEmployeeIds.size}`, `${selectedEmployeeIds.size} selected`, `Tanlandi: ${selectedEmployeeIds.size}`)}
+                    </span>
+                    <button
+                      onClick={handleBulkDeleteEmployees}
+                      disabled={bulkDeletingEmployees}
+                      className="flex items-center gap-1.5 px-2.5 py-1 bg-danger/10 text-danger hover:bg-danger hover:text-white text-[11px] font-semibold rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {bulkDeletingEmployees ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                      {tr(lang, 'Удалить выбранных', 'Delete selected', "Tanlanganlarni o'chirish")}
+                    </button>
+                  </div>
+                )}
                 <table className="w-full text-[12px]">
                   <thead>
                     <tr className="text-left text-muted border-b border-border">
+                      <th className="pb-2 font-medium w-8">
+                        {(() => {
+                          const visible = employees.filter(e => showInactiveEmployees || e.active).filter(e => e.name.toLowerCase().includes(employeeSearch.toLowerCase()));
+                          const allSelected = visible.length > 0 && visible.every(e => selectedEmployeeIds.has(e.id));
+                          return (
+                            <input
+                              type="checkbox"
+                              checked={allSelected}
+                              onChange={e => setSelectedEmployeeIds(e.target.checked ? new Set(visible.map(v => v.id)) : new Set())}
+                            />
+                          );
+                        })()}
+                      </th>
                       <th className="pb-2 font-medium">{tr(lang, 'Имя', 'Name', 'Ism')}</th>
                       <th className="pb-2 font-medium">{tr(lang, 'Место работы', 'Departments', "Ish joyi")}</th>
                       <th className="pb-2 font-medium">{tr(lang, 'Должность', 'Position', 'Lavozim')}</th>
@@ -1339,6 +1646,13 @@ export const ServiceInspector: React.FC<{
                       .filter(e => e.name.toLowerCase().includes(employeeSearch.toLowerCase()))
                       .map(e => (
                         <tr key={e.id} className={`border-b border-border/50 ${!e.active ? 'opacity-50' : ''}`}>
+                          <td className="py-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedEmployeeIds.has(e.id)}
+                              onChange={ev => setSelectedEmployeeIds(prev => { const n = new Set(prev); ev.target.checked ? n.add(e.id) : n.delete(e.id); return n; })}
+                            />
+                          </td>
                           <td className="py-2 text-text font-medium">{e.name}</td>
                           <td className="py-2 text-muted">
                             {e.department_ids.length === 0

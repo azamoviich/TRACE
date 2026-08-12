@@ -1621,7 +1621,7 @@ export const traceApi = {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ slug, name }),
       }).then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `${r.status}`); return r.json(); }),
-    updateDepartment: (id: string, data: { name?: string; active?: boolean; sort_order?: number }): Promise<ChecklistDepartment> =>
+    updateDepartment: (id: string, data: { name?: string; active?: boolean; sort_order?: number; description?: string; position_ids?: string[] }): Promise<ChecklistDepartment> =>
       apiFetch(`/checklist/departments/${id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -1669,7 +1669,7 @@ export const traceApi = {
 };
 
 export type ChecklistDuePeriod = 'any' | 'opening' | 'midshift' | 'closing';
-export type ChecklistQuestionType = 'boolean' | 'text' | 'single_choice' | 'multi_choice' | 'rating';
+export type ChecklistQuestionType = 'boolean' | 'text' | 'single_choice' | 'multi_choice' | 'rating' | 'instruction';
 export type ChecklistAnswerValue = string | string[] | number | null;
 
 export interface ChecklistItem {
@@ -1769,6 +1769,8 @@ export interface ChecklistDepartment {
   id: string;
   slug: string;
   name: string;
+  description: string | null;
+  position_ids: string[];
   sort_order: number;
   active: boolean;
   subdomainPreview: string;

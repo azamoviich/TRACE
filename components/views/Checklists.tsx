@@ -532,6 +532,7 @@ export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.empl
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
 
   const load = () => api.list().then(setEmployees).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -546,6 +547,7 @@ export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.empl
     try {
       await api.create(name.trim(), roleId, pin);
       setName(''); setPin('');
+      setShowAdd(false);
       load();
     } catch { onShowToast(tr(lang, 'Не удалось добавить сотрудника', 'Failed to add employee', "Xodimni qo'shib bo'lmadi"), 'error'); }
     finally { setBusy(false); }
@@ -554,29 +556,49 @@ export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.empl
   const roleName = (id: string) => roles.find(r => r.id === id)?.name ?? '—';
 
   return (
-    <Card
-      title={tr(lang, 'Сотрудники', 'Employees', 'Xodimlar')}
-      subtitle={tr(lang, 'Имя и PIN для входа на своей странице', 'Name and PIN to log into their own page', "O'z sahifasiga kirish uchun ism va PIN")}
-      action={
-        <button onClick={() => setShowImport(v => !v)} className="px-3 py-1.5 rounded-lg bg-card border border-border text-[12px] font-semibold flex items-center gap-1.5 text-text">
-          <Download size={14} /> {tr(lang, 'Загрузить из POS', 'Load from POS', "POS'dan yuklash")}
-        </button>
-      }
-    >
+    <Card>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+        <h3 className="text-[15px] font-semibold text-text tracking-tight">{tr(lang, 'Сотрудники', 'Employees', 'Xodimlar')}</h3>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setShowImport(v => !v); setShowAdd(false); }}
+            className="px-3 py-1.5 rounded-lg bg-card border border-border text-[12px] font-semibold flex items-center gap-1.5 text-text"
+          >
+            <Download size={14} /> <span className="hidden sm:inline">{tr(lang, 'Загрузить из POS', 'Load from POS', "POS'dan yuklash")}</span>
+          </button>
+          <button
+            onClick={() => { setShowAdd(v => !v); setShowImport(false); }}
+            className="px-3 py-1.5 rounded-lg bg-primary text-white text-[12px] font-semibold flex items-center gap-1.5"
+          >
+            <Plus size={14} /> {tr(lang, 'Добавить', 'Add', "Qo'shish")}
+          </button>
+        </div>
+      </div>
+      <p className="text-[13px] text-muted mb-4">{tr(lang, 'Имя и PIN для входа на своей странице', 'Name and PIN to log into their own page', "O'z sahifasiga kirish uchun ism va PIN")}</p>
+
       {showImport && (
         <PosImportPanel lang={lang} roles={roles} onShowToast={onShowToast} onImported={() => { setShowImport(false); load(); }} api={api} />
       )}
 
-      <div className="flex flex-wrap gap-2 mb-4">
-        <select value={roleId} onChange={e => setRoleId(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text">
-          {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-        </select>
-        <input value={name} onChange={e => setName(e.target.value)} placeholder={tr(lang, 'Имя', 'Name', 'Ism')} className="flex-1 min-w-[140px] px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text" />
-        <input value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="PIN" className="w-24 px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text" />
-        <button onClick={add} disabled={busy} className="px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold flex items-center gap-1.5 disabled:opacity-50">
-          <Plus size={15} /> {tr(lang, 'Добавить', 'Add', "Qo'shish")}
-        </button>
-      </div>
+      {showAdd && (
+        <div className="mb-4 p-3.5 rounded-xl border border-border bg-background space-y-2">
+          <div className="grid sm:grid-cols-2 gap-2">
+            <select value={roleId} onChange={e => setRoleId(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text">
+              {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder={tr(lang, 'Имя', 'Name', 'Ism')} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
+          </div>
+          <input value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="PIN" className="w-full px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
+          <div className="flex items-center gap-2 pt-1">
+            <button onClick={add} disabled={busy} className="px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold disabled:opacity-50">
+              {tr(lang, 'Добавить', 'Add', "Qo'shish")}
+            </button>
+            <button onClick={() => setShowAdd(false)} className="px-3.5 py-2 rounded-lg bg-card border border-border text-muted text-[13px] font-medium">
+              {tr(lang, 'Отмена', 'Cancel', 'Bekor qilish')}
+            </button>
+          </div>
+        </div>
+      )}
 
       {employees.length === 0 ? (
         <p className="text-[13px] text-muted">{tr(lang, 'Сотрудников пока нет', 'No employees yet', "Hozircha xodim yo'q")}</p>

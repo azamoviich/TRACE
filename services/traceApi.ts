@@ -2454,17 +2454,23 @@ export function getChecklistManagerPortalSubdomain(): string {
   return window.location.hostname.split('.')[0];
 }
 
-// role-tenant.trace-os.uz → { roleSlug, tenantSubdomain }. Splits on the
-// FIRST hyphen — correct as long as role slugs stay single-word (owner
-// controls role naming, so this is an accepted v1 constraint, not a bug).
+// checklist-role-tenant.trace-os.uz → { roleSlug, tenantSubdomain }.
+// MUST carry the reserved "checklist-" prefix — a bare "role-tenant" pattern
+// (e.g. splitting on the first hyphen) is unsafe: real tenant subdomains can
+// contain hyphens themselves (e.g. "benedict-nukus"), which would otherwise
+// get misrouted into this portal and break the owner dashboard for that
+// tenant. The prefix guarantees no real tenant subdomain ever matches, the
+// same way "manager-" does for isChecklistManagerHost above.
 export function parseEmployeeChecklistHost(): { roleSlug: string; tenantSubdomain: string } | null {
   const host = window.location.hostname;
   const parts = host.split('.');
   if (parts.length < 3) return null;
   const sub = parts[0];
-  const dashIdx = sub.indexOf('-');
+  if (!sub.startsWith('checklist-')) return null;
+  const rest = sub.slice('checklist-'.length);
+  const dashIdx = rest.indexOf('-');
   if (dashIdx <= 0) return null;
-  return { roleSlug: sub.slice(0, dashIdx), tenantSubdomain: sub.slice(dashIdx + 1) };
+  return { roleSlug: rest.slice(0, dashIdx), tenantSubdomain: rest.slice(dashIdx + 1) };
 }
 
 export async function managerShiftReportCreate(

@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, Trash2, Camera, ChevronRight, ArrowLeft, X, Download, Pencil, Calendar as CalendarIcon, History as HistoryIcon } from 'lucide-react';
+import { Plus, Trash2, Camera, ChevronRight, ArrowLeft, X, Download, Pencil, Calendar as CalendarIcon, History as HistoryIcon, Building2 as Building2Icon, Copy } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { DateRangePicker } from '../ui/DateRangePicker';
 import { Language } from '../../types';
-import { checklistApi, getSubdomain } from '../../services/traceApi';
+import { checklistApi, getSubdomain, traceApi, BranchSummary } from '../../services/traceApi';
 import type {
   ChecklistRole, ChecklistEmployee, ChecklistManager, Checklist, ChecklistItem, ChecklistItemType, ChecklistStats,
-  ChecklistHistoryRow, ChecklistAuditLogEntry,
+  ChecklistHistoryRow, ChecklistAuditLogEntry, ChecklistWithItems,
 } from '../../types';
 
 function tr(lang: Language, ru: string, en: string, uz: string) {
@@ -33,9 +33,13 @@ export function Checklists({ lang, onShowToast }: Props) {
   const [tab, setTab] = useState<Tab>('dashboard');
   const [roles, setRoles] = useState<ChecklistRole[]>([]);
   const [loadingRoles, setLoadingRoles] = useState(true);
+  const [branches, setBranches] = useState<BranchSummary[]>([]);
 
   const loadRoles = () => checklistApi.roles.list().then(setRoles).catch(() => onShowToast(tr(lang, 'Не удалось загрузить роли', 'Failed to load roles', "Rollarni yuklab bo'lmadi"), 'error')).finally(() => setLoadingRoles(false));
   useEffect(() => { loadRoles(); }, []);
+  useEffect(() => { traceApi.org.branches().then(setBranches).catch(() => {}); }, []);
+
+  const currentBranch = branches.find(b => b.subdomain === getSubdomain());
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'dashboard', label: tr(lang, 'Дашборд', 'Dashboard', 'Boshqaruv') },
@@ -48,6 +52,14 @@ export function Checklists({ lang, onShowToast }: Props) {
 
   return (
     <div className="space-y-4">
+      {branches.length > 1 && (
+        <div className="flex items-center gap-1.5 text-[12px] text-muted">
+          <Building2Icon size={13} />
+          {tr(lang, 'Вы редактируете чек-листы филиала:', 'Editing checklists for branch:', 'Filial cheklistlarini tahrirlamoqdasiz:')}
+          <span className="font-semibold text-text">{currentBranch?.name ?? getSubdomain()}</span>
+        </div>
+      )}
+
       <div className="flex gap-1.5 overflow-x-auto pb-1">
         {tabs.map(t => (
           <button
@@ -64,7 +76,7 @@ export function Checklists({ lang, onShowToast }: Props) {
       {tab === 'roles' && <RolesTab lang={lang} roles={roles} loading={loadingRoles} onChange={loadRoles} onShowToast={onShowToast} />}
       {tab === 'employees' && <EmployeesTab lang={lang} roles={roles} onShowToast={onShowToast} />}
       {tab === 'managers' && <ManagersTab lang={lang} roles={roles} onShowToast={onShowToast} />}
-      {tab === 'checklists' && <ChecklistsTab lang={lang} roles={roles} onShowToast={onShowToast} />}
+      {tab === 'checklists' && <ChecklistsTab lang={lang} roles={roles} onShowToast={onShowToast} branches={branches} currentBranch={currentBranch} />}
       {tab === 'history' && (
         <HistoryTab
           lang={lang}
@@ -761,17 +773,20 @@ function ManagerEditRow({ lang, roles, manager, onShowToast, onDone }: {
 }
 
 // ── Checklists builder ──────────────────────────────────────────────────
-export function ChecklistsTab({ lang, roles, onShowToast }: {
+export function ChecklistsTab({ lang, roles, onShowToast, branches = [], currentBranch }: {
   lang: Language; roles: ChecklistRole[];
   onShowToast: (m: string, t: 'success' | 'error' | 'info') => void;
+  branches?: BranchSummary[]; currentBranch?: BranchSummary;
 }) {
   const [list, setList] = useState<Checklist[]>([]);
   const [editingId, setEditingId] = useState<string | 'new' | null>(null);
+  const [showCopyPanel, setShowCopyPanel] = useState(false);
 
   const load = () => checklistApi.checklists.list().then(setList).catch(() => {});
   useEffect(() => { load(); }, []);
 
   const roleName = (id: string) => roles.find(r => r.id === id)?.name ?? '—';
+  const otherBranches = branches.filter(b => b.id !== currentBranch?.id);
 
   if (editingId) {
     return (
@@ -789,11 +804,28 @@ export function ChecklistsTab({ lang, roles, onShowToast }: {
     <Card
       title={tr(lang, 'Чек-листы', 'Checklists', 'Cheklistlar')}
       action={
-        <button onClick={() => setEditingId('new')} className="px-3 py-1.5 rounded-lg bg-primary text-white text-[12px] font-semibold flex items-center gap-1.5">
-          <Plus size={14} /> {tr(lang, 'Новый', 'New', 'Yangi')}
-        </button>
+        <div className="flex items-center gap-2">
+          {otherBranches.length > 0 && (
+            <button onClick={() => setShowCopyPanel(v => !v)} className="px-3 py-1.5 rounded-lg bg-card border border-border text-[12px] font-semibold flex items-center gap-1.5 text-text">
+              <Copy size={14} /> {tr(lang, 'Скопировать из филиала', 'Copy from branch', 'Filialdan nusxalash')}
+            </button>
+          )}
+          <button onClick={() => setEditingId('new')} className="px-3 py-1.5 rounded-lg bg-primary text-white text-[12px] font-semibold flex items-center gap-1.5">
+            <Plus size={14} /> {tr(lang, 'Новый', 'New', 'Yangi')}
+          </button>
+        </div>
       }
     >
+      {showCopyPanel && (
+        <CopyFromBranchPanel
+          lang={lang}
+          roles={roles}
+          branches={otherBranches}
+          onShowToast={onShowToast}
+          onCopied={() => { setShowCopyPanel(false); load(); }}
+        />
+      )}
+
       {list.length === 0 ? (
         <p className="text-[13px] text-muted">{tr(lang, 'Чек-листов пока нет', 'No checklists yet', "Hozircha cheklist yo'q")}</p>
       ) : (
@@ -812,6 +844,106 @@ export function ChecklistsTab({ lang, roles, onShowToast }: {
     </Card>
   );
 }
+
+// Reads a sibling branch's checklists via the X-Branch-Id override (same
+// mechanism the Sales/Dashboard branch switcher already uses — see
+// checklistApi.checklists.listForBranch/itemsForBranch) and re-creates the
+// picked one in the CURRENT branch. Roles are shared org-wide, so the same
+// `roles` list applies to whichever branch is picked.
+function CopyFromBranchPanel({ lang, roles, branches, onShowToast, onCopied }: {
+  lang: Language; roles: ChecklistRole[]; branches: BranchSummary[];
+  onShowToast: (m: string, t: 'success' | 'error' | 'info') => void;
+  onCopied: () => void;
+}) {
+  const [branchId, setBranchId] = useState(branches[0]?.id ?? '');
+  const [roleId, setRoleId] = useState(roles[0]?.id ?? '');
+  const [sourceList, setSourceList] = useState<Checklist[] | null>(null);
+  const [preview, setPreview] = useState<ChecklistWithItems | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [copying, setCopying] = useState(false);
+
+  useEffect(() => {
+    if (!branchId || !roleId) return;
+    setLoading(true);
+    setSourceList(null);
+    setPreview(null);
+    checklistApi.checklists.listForBranch(roleId, branchId)
+      .then(setSourceList)
+      .catch(() => onShowToast(tr(lang, 'Не удалось загрузить чек-листы филиала', "Failed to load the branch's checklists", "Filial cheklistlarini yuklab bo'lmadi"), 'error'))
+      .finally(() => setLoading(false));
+  }, [branchId, roleId]);
+
+  const openPreview = (checklistId: string) => {
+    checklistApi.checklists.itemsForBranch(checklistId, branchId)
+      .then(setPreview)
+      .catch(() => onShowToast(tr(lang, 'Не удалось загрузить чек-лист', 'Failed to load checklist', "Cheklistni yuklab bo'lmadi"), 'error'));
+  };
+
+  const copy = async () => {
+    if (!preview) return;
+    setCopying(true);
+    try {
+      await checklistApi.checklists.create({
+        roleId,
+        name: preview.checklist.name,
+        description: preview.checklist.description,
+        items: preview.items.map(i => ({ text: i.text, requiresPhoto: i.requires_photo, itemType: i.item_type, options: i.options ?? undefined })),
+      });
+      onShowToast(tr(lang, 'Чек-лист скопирован', 'Checklist copied', 'Cheklist nusxalandi'), 'success');
+      onCopied();
+    } catch {
+      onShowToast(tr(lang, 'Не удалось скопировать', 'Failed to copy', "Nusxalab bo'lmadi"), 'error');
+    } finally {
+      setCopying(false);
+    }
+  };
+
+  return (
+    <div className="mb-4 p-3.5 rounded-xl border border-border bg-background space-y-3">
+      <div className="grid sm:grid-cols-2 gap-2">
+        <select value={branchId} onChange={e => setBranchId(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text">
+          {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+        </select>
+        <select value={roleId} onChange={e => setRoleId(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text">
+          {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </select>
+      </div>
+
+      {loading ? (
+        <p className="text-[13px] text-muted">{tr(lang, 'Загрузка...', 'Loading...', 'Yuklanmoqda...')}</p>
+      ) : preview ? (
+        <div className="p-2.5 rounded-lg bg-card border border-border space-y-2">
+          <p className="text-[13px] font-medium text-text">{preview.checklist.name}</p>
+          <div className="space-y-1">
+            {preview.items.map(i => (
+              <p key={i.id} className="text-[12px] text-muted">• {i.text}</p>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <button onClick={() => setPreview(null)} className="px-3 py-1.5 rounded-lg bg-background border border-border text-muted text-[12px] font-medium">
+              {tr(lang, 'Назад', 'Back', 'Orqaga')}
+            </button>
+            <button onClick={copy} disabled={copying} className="px-3 py-1.5 rounded-lg bg-primary text-white text-[12px] font-semibold disabled:opacity-50">
+              {copying ? tr(lang, 'Копирование...', 'Copying...', 'Nusxalanmoqda...') : tr(lang, 'Скопировать сюда', 'Copy here', 'Bu yerga nusxalash')}
+            </button>
+          </div>
+        </div>
+      ) : !sourceList || sourceList.length === 0 ? (
+        <p className="text-[13px] text-muted">{tr(lang, 'В этом филиале нет чек-листов для этой роли', 'No checklists for this role in that branch', "Bu filialda bu rol uchun cheklist yo'q")}</p>
+      ) : (
+        <div className="space-y-1.5">
+          {sourceList.map(c => (
+            <button key={c.id} onClick={() => openPreview(c.id)} className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-card border border-border text-left hover:border-primary/40">
+              <span className="text-[13px] text-text">{c.name}</span>
+              <ChevronRight size={15} className="text-muted" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 interface DraftItem { text: string; requiresPhoto: boolean; itemType: ChecklistItemType; options: string[] }
 

@@ -2327,8 +2327,8 @@ import {
 // 500 (e.g. tables not migrated yet) silently resolves to an error payload
 // shaped nothing like the expected type, and reading a field off it later
 // crashes the render. Every checklistApi read goes through this instead.
-async function checkedFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await apiFetch(path, init);
+async function checkedFetch<T>(path: string, init: RequestInit = {}, branchIdOverride?: string): Promise<T> {
+  const res = await apiFetch(path, init, branchIdOverride);
   if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
   if (res.status === 204) return undefined as T;
   return res.json();
@@ -2409,6 +2409,13 @@ export const checklistApi = {
     list: (roleId?: string) =>
       checkedFetch<import('../types').Checklist[]>(`/checklist/checklists${roleId ? `?roleId=${roleId}` : ''}`),
     items: (id: string) => checkedFetch<ChecklistWithItems>(`/checklist/checklists/${id}/items`),
+    // "Copy from another branch" — reads a sibling branch's checklists via
+    // the existing X-Branch-Id override (same mechanism the Sales/Dashboard
+    // branch switcher uses), no new backend endpoint needed.
+    listForBranch: (roleId: string, branchId: string) =>
+      checkedFetch<import('../types').Checklist[]>(`/checklist/checklists?roleId=${roleId}`, {}, branchId),
+    itemsForBranch: (id: string, branchId: string) =>
+      checkedFetch<ChecklistWithItems>(`/checklist/checklists/${id}/items`, {}, branchId),
     create: (data: { roleId: string; name: string; description?: string; items: { text: string; requiresPhoto?: boolean; itemType?: import('../types').ChecklistItemType; options?: string[] }[] }) =>
       post<ChecklistWithItems>('/checklist/checklists', data),
     update: (id: string, data: Partial<{ name: string; description: string; active: boolean; items: { text: string; requiresPhoto?: boolean; itemType?: import('../types').ChecklistItemType; options?: string[] }[] }>) =>

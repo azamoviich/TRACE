@@ -13,6 +13,7 @@ import {
   FinancialInventoryDoc,
   PosterInventoryItem,
   PosterInventoryDoc,
+  PosterGLCategory,
   InventoryItem,
   FinancialPL,
   GLSummary,
@@ -540,6 +541,9 @@ export const Financial: React.FC<{
   // GL summary (Учёт tab)
   const [glSummary, setGlSummary]             = useState<GLSummary | null>(null);
   const [glLoading, setGlLoading]             = useState(false);
+  // Poster only — own shape, see PosterGLCategory.
+  const [glCategories, setGlCategories]       = useState<PosterGLCategory[]>([]);
+  const [glCategoriesLoading, setGlCategoriesLoading] = useState(false);
 
   // Menu analysis
   const [menuRows, setMenuRows]               = useState<MenuAnalysisRow[]>([]);
@@ -665,7 +669,12 @@ export const Financial: React.FC<{
         .then(setCashshifts).catch(() => setCashshifts([]))
         .finally(() => setCashshiftsLoading(false));
     }
-    if (tab === 'gl') {
+    if (tab === 'gl' && isPoster) {
+      setGlCategoriesLoading(true);
+      traceApi.financial.glCategories(range)
+        .then(setGlCategories).catch(() => setGlCategories([]))
+        .finally(() => setGlCategoriesLoading(false));
+    } else if (tab === 'gl') {
       setGlLoading(true);
       traceApi.financial.glSummary(range)
         .then(setGlSummary).catch(() => setGlSummary(null))
@@ -689,7 +698,7 @@ export const Financial: React.FC<{
         }).catch(() => setMenuRows([]))
         .finally(() => setMenuLoading(false));
     }
-  }, [tab, range]);
+  }, [tab, range, isPoster]);
 
   const tt = (p: any) => <ChartTooltip {...p} />;
 
@@ -1641,7 +1650,44 @@ export const Financial: React.FC<{
       )}
 
       {/* ── УЧЁТ (GL) TAB ── */}
-      {tab === 'gl' && (
+      {tab === 'gl' && isPoster && (
+        <div className="space-y-4">
+          <p className="text-[10px] text-muted -mt-1">
+            {tr(lang, 'Категории доходов и расходов · Poster', 'Income and expense categories · Poster', 'Daromad va xarajat toifalari · Poster')}
+          </p>
+          <Card title={tr(lang, 'Категории', 'Categories', 'Toifalar')}>
+            {glCategoriesLoading ? <Skeleton /> : glCategories.length === 0 ? (
+              <div className="glass rounded-3xl p-10 text-center text-muted text-[13px]">
+                {tr(lang, 'Нет данных за период', 'No data for this period', "Davr uchun ma'lumot yo'q")}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left min-w-[420px]">
+                  <thead className="border-b border-border">
+                    <tr>
+                      {[tr(lang, 'Категория', 'Category', 'Toifa'), tr(lang, 'Сумма', 'Amount', 'Summa')].map(h => (
+                        <th key={h} className="pb-3 pr-4 text-[10px] uppercase tracking-[0.15em] text-muted font-medium">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {glCategories.map((c, i) => (
+                      <tr key={i} className="border-b border-border last:border-0 hover:bg-card-hover transition-colors">
+                        <td className="py-3 pr-4 text-[13px] text-text" style={{ paddingLeft: `${12 + c.level * 16}px` }}>{c.name}</td>
+                        <td className={`py-3 pr-4 text-[13px] font-semibold metric-number ${c.amount < 0 ? 'text-danger' : 'text-success'}`}>
+                          {c.amount > 0 ? '+' : ''}{c.amount.toLocaleString('ru-RU')} UZS
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {tab === 'gl' && !isPoster && (
         <div className="space-y-4">
           <p className="text-[10px] text-muted -mt-1">
             {tr(lang, 'Кредиторка, налоги и движение по кассам · из проводок iiko (General Ledger)', 'Payables, taxes, and cash channel activity · from iiko\'s general ledger', "Kreditorlik, soliqlar va kassa harakati · iiko provodkalaridan")}

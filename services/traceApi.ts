@@ -1459,6 +1459,12 @@ export const traceApi = {
       const q = range === 'custom' && customFrom && customTo ? `from=${customFrom}&to=${customTo}` : `range=${range}`;
       return apiFetch(`/financial/gl-summary?${q}`).then(r => r.json()).then(d => d ?? null);
     },
+    // Poster only — see PosterGLCategory.
+    glCategories: (range: 'today' | '7days' | '30days' | 'custom' = '7days', customFrom?: string, customTo?: string): Promise<PosterGLCategory[]> => {
+      if (isDemoTenant()) return Promise.resolve([]);
+      const q = range === 'custom' && customFrom && customTo ? `from=${customFrom}&to=${customTo}` : `range=${range}`;
+      return apiFetch(`/financial/gl-categories?${q}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []);
+    },
     cashshifts: (range: 'today' | '7days' | '30days' | 'custom' = '7days', customFrom?: string, customTo?: string): Promise<CashShiftDoc[]> => {
       if (isDemoTenant()) return Promise.resolve(demoCashShiftDocs());
       const q = range === 'custom' && customFrom && customTo ? `from=${customFrom}&to=${customTo}` : `range=${range}`;
@@ -1883,6 +1889,16 @@ export interface ReservationRow {
   durationMin: number;
   status: 'new' | 'accepted' | 'canceled';
   comment: string | null;
+}
+
+// Poster only — finance.getReport's category/amount breakdown. Not a full
+// chart-of-accounts like iiko's GLSummary (no payables/cash-positions/
+// payroll concept in Poster), so it's its own shape/endpoint rather than
+// forced into GLSummary.
+export interface PosterGLCategory {
+  name: string;
+  level: number;
+  amount: number;
 }
 
 // Poster only — storage.getStorageInventories, the doc-based stocktaking

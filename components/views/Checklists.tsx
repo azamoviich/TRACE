@@ -117,22 +117,23 @@ export function DashboardTab({ lang, roles, statsApi = checklistApi.stats }: { l
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex gap-2 flex-wrap">
-          <button onClick={() => setRoleId('')} className={`px-3 py-1.5 rounded-lg text-[12px] font-medium ${!roleId ? 'bg-primary text-white' : 'bg-card text-muted'}`}>
-            {tr(lang, 'Все', 'All', 'Barchasi')}
-          </button>
-          {roles.map(r => (
-            <button key={r.id} onClick={() => setRoleId(r.id)} className={`px-3 py-1.5 rounded-lg text-[12px] font-medium ${roleId === r.id ? 'bg-primary text-white' : 'bg-card text-muted'}`}>
-              {r.name}
-            </button>
-          ))}
-        </div>
-        <div className="relative">
+      {/* One toolbar row instead of a role-pill row + a separate date row —
+          both controls are just filters on the same query, so they read as
+          one decision, not two. */}
+      <div className="flex items-center gap-2">
+        <select
+          value={roleId}
+          onChange={e => setRoleId(e.target.value)}
+          className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-card border border-border text-[13px] font-medium text-text"
+        >
+          <option value="">{tr(lang, 'Все роли', 'All roles', 'Barcha rollar')}</option>
+          {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </select>
+        <div className="relative shrink-0">
           <button
             ref={dateBtnRef}
             onClick={() => setPickerOpen(v => !v)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card border border-border text-[12px] font-medium text-text"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-card border border-border text-[12px] font-medium text-text whitespace-nowrap"
           >
             <CalendarIcon size={13} />
             {range ? `${range.from} — ${range.to}` : tr(lang, 'Сегодня', 'Today', 'Bugun')}
@@ -153,41 +154,46 @@ export function DashboardTab({ lang, roles, statsApi = checklistApi.stats }: { l
         <p className="text-[13px] text-muted">{tr(lang, 'Загрузка...', 'Loading...', 'Yuklanmoqda...')}</p>
       ) : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <Card title={tr(lang, 'Выполнено сегодня', "Completed today", 'Bugun bajarilgan')}>
-              <p className="text-[26px] font-bold text-text metric-number">{pct}%</p>
-              <p className="text-[12px] text-muted mt-1">{stats?.done ?? 0} / {stats?.total ?? 0}</p>
-            </Card>
+          {/* Slim inline stat instead of a whole Card just for one number —
+              the number is the headline here, it doesn't need a box. */}
+          <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-card border border-border">
+            <span className="text-[13px] text-muted">{tr(lang, 'Выполнено', 'Completed', 'Bajarilgan')}</span>
+            <span className="flex items-baseline gap-1.5">
+              <span className="text-[22px] font-bold text-text metric-number">{pct}%</span>
+              <span className="text-[12px] text-muted metric-number">({stats?.done ?? 0}/{stats?.total ?? 0})</span>
+            </span>
           </div>
 
-          <Card title={tr(lang, 'Лидерборд', 'Leaderboard', 'Yetakchilar')}>
-            {(!stats?.leaderboard || stats.leaderboard.length === 0) ? (
-              <p className="text-[13px] text-muted">{tr(lang, 'Пока нет данных', 'No data yet', "Hozircha ma'lumot yo'q")}</p>
-            ) : (
-              <div className="space-y-2">
-                {stats.leaderboard.map(row => (
-                  <div key={row.employee_id} className="flex items-center justify-between text-[13px]">
-                    <span className="text-text">{row.name}</span>
-                    <span className="text-muted metric-number">{row.done}/{row.total}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Card title={tr(lang, 'Лидерборд', 'Leaderboard', 'Yetakchilar')}>
+              {(!stats?.leaderboard || stats.leaderboard.length === 0) ? (
+                <p className="text-[13px] text-muted">{tr(lang, 'Пока нет данных', 'No data yet', "Hozircha ma'lumot yo'q")}</p>
+              ) : (
+                <div className="space-y-2">
+                  {stats.leaderboard.map(row => (
+                    <div key={row.employee_id} className="flex items-center justify-between text-[13px]">
+                      <span className="text-text">{row.name}</span>
+                      <span className="text-muted metric-number">{row.done}/{row.total}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
 
-          <Card title={tr(lang, 'Фото-подтверждения', 'Photo proof', 'Foto tasdiqlar')}>
-            {(!stats?.recentPhotos || stats.recentPhotos.length === 0) ? (
-              <p className="text-[13px] text-muted">{tr(lang, 'Пока нет фото', 'No photos yet', "Hozircha fotolar yo'q")}</p>
-            ) : (
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                {stats.recentPhotos.map((p, i) => (
-                  <a key={i} href={p.photo_url} target="_blank" rel="noreferrer" className="block rounded-lg overflow-hidden border border-border aspect-square">
-                    <img src={p.photo_url} alt={p.item_text} className="w-full h-full object-cover" />
-                  </a>
-                ))}
-              </div>
-            )}
-          </Card>
+            <Card title={tr(lang, 'Фото-подтверждения', 'Photo proof', 'Foto tasdiqlar')}>
+              {(!stats?.recentPhotos || stats.recentPhotos.length === 0) ? (
+                <p className="text-[13px] text-muted">{tr(lang, 'Пока нет фото', 'No photos yet', "Hozircha fotolar yo'q")}</p>
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  {stats.recentPhotos.map((p, i) => (
+                    <a key={i} href={p.photo_url} target="_blank" rel="noreferrer" className="block rounded-lg overflow-hidden border border-border aspect-square">
+                      <img src={p.photo_url} alt={p.item_text} className="w-full h-full object-cover" />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
         </>
       )}
     </div>

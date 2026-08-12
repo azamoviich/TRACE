@@ -162,30 +162,31 @@ function Builder({ lang, session, onSwitchBranch, onLogout }: {
     <div className="min-h-screen bg-background px-4 py-6">
       <ToastContainer toasts={toasts} removeToast={removeToast} />
       <div className="max-w-2xl mx-auto space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
             <h1 className="text-[18px] font-bold text-text">{tr(lang, 'Чек-листы', 'Checklists', 'Cheklistlar')}</h1>
-            <p className="text-[12px] text-muted">{session.name}</p>
+            <p className="text-[12px] text-muted truncate">{session.name}</p>
           </div>
-          <button onClick={onLogout} className="p-2 rounded-lg bg-card text-muted hover:text-text">
-            <LogOut size={18} />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {session.branches.length > 1 && (
+              <div className="relative flex items-center">
+                <Building2 size={14} className="absolute left-2.5 text-muted pointer-events-none" />
+                <select
+                  value={branch}
+                  onChange={e => onSwitchBranch(e.target.value)}
+                  className="appearance-none pl-7 pr-2.5 py-2 rounded-lg bg-card border border-border text-[12px] font-medium text-text"
+                >
+                  {session.branches.map(b => (
+                    <option key={b.subdomain} value={b.subdomain}>{b.name || b.subdomain}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <button onClick={onLogout} className="p-2 rounded-lg bg-card text-muted hover:text-text shrink-0">
+              <LogOut size={18} />
+            </button>
+          </div>
         </div>
-
-        {session.branches.length > 1 && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <Building2 size={14} className="text-muted shrink-0" />
-            {session.branches.map(b => (
-              <button
-                key={b.subdomain}
-                onClick={() => onSwitchBranch(b.subdomain)}
-                className={`px-2.5 py-1 rounded-lg text-[12px] font-medium ${b.subdomain === branch ? 'bg-primary text-white' : 'bg-card border border-border text-muted'}`}
-              >
-                {b.name || b.subdomain}
-              </button>
-            ))}
-          </div>
-        )}
 
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {tabs.map(t => (

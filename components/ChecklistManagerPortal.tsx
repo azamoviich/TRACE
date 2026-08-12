@@ -203,6 +203,7 @@ function ChecklistsBuilderTab({ lang, roles, session, onShowToast }: {
         manager={{
           tenantSubdomain: session.tenantSubdomain,
           token: session.token,
+          onLoadItems: (id) => checklistManagerApi.checklists.items(session.tenantSubdomain, session.token, id),
           onSave: async (data, id) => {
             if (id) await checklistManagerApi.checklists.update(session.tenantSubdomain, session.token, id, data);
             else await checklistManagerApi.checklists.create(session.tenantSubdomain, session.token, data);

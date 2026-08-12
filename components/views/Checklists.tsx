@@ -601,7 +601,12 @@ interface DraftItem { text: string; requiresPhoto: boolean }
 export function ChecklistEditor({ lang, roles, checklistId, onDone, onShowToast, manager }: {
   lang: Language; roles: ChecklistRole[]; checklistId: string | null; onDone: () => void;
   onShowToast: (m: string, t: 'success' | 'error' | 'info') => void;
-  manager?: { tenantSubdomain: string; token: string; onSave: (data: any, id: string | null) => Promise<void>; onDelete: (id: string) => Promise<void> };
+  manager?: {
+    tenantSubdomain: string; token: string;
+    onLoadItems: (id: string) => Promise<import('../../types').ChecklistWithItems>;
+    onSave: (data: any, id: string | null) => Promise<void>;
+    onDelete: (id: string) => Promise<void>;
+  };
 }) {
   const [roleId, setRoleId] = useState(roles[0]?.id ?? '');
   const [name, setName] = useState('');
@@ -612,12 +617,16 @@ export function ChecklistEditor({ lang, roles, checklistId, onDone, onShowToast,
 
   useEffect(() => {
     if (!checklistId) return;
-    checklistApi.checklists.items(checklistId).then(({ checklist, items: existing }) => {
+    const fetchItems = manager ? manager.onLoadItems : checklistApi.checklists.items;
+    fetchItems(checklistId).then(({ checklist, items: existing }) => {
       setRoleId(checklist.role_id);
       setName(checklist.name);
       setDescription(checklist.description);
       setItems(existing.length ? existing.map(i => ({ text: i.text, requiresPhoto: i.requires_photo })) : [{ text: '', requiresPhoto: false }]);
       setLoaded(true);
+    }).catch(() => {
+      onShowToast(tr(lang, 'Не удалось загрузить чек-лист', 'Failed to load checklist', "Cheklistni yuklab bo'lmadi"), 'error');
+      onDone();
     });
   }, [checklistId]);
 

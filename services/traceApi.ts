@@ -2460,8 +2460,14 @@ export const checklistEmployeeApi = {
 // first label is sent back to the login endpoint verbatim — checked before
 // parseEmployeeChecklistHost below, since "manager-benedict" would otherwise
 // also match the generic role-tenant split-on-first-hyphen pattern.
+// "manager" as its own hyphen-delimited segment, anywhere in the subdomain —
+// not just a leading "manager-" prefix. Owners naturally name these things
+// "service-manager", "night-manager-mirabad", etc; requiring the word at the
+// very start meant "service-manager.trace-os.uz" never even reached the
+// manager login screen (fell through to the normal tenant login instead,
+// which is what actually produced the confusing "incorrect password").
 export function isChecklistManagerHost(): boolean {
-  return window.location.hostname.split('.')[0].startsWith('manager-');
+  return /(^|-)manager(-|$)/.test(window.location.hostname.split('.')[0]);
 }
 
 export function getChecklistManagerPortalSubdomain(): string {
@@ -2474,7 +2480,7 @@ export function getChecklistManagerPortalSubdomain(): string {
 // contain hyphens themselves (e.g. "benedict-nukus"), which would otherwise
 // get misrouted into this portal and break the owner dashboard for that
 // tenant. The prefix guarantees no real tenant subdomain ever matches, the
-// same way "manager-" does for isChecklistManagerHost above.
+// same way the reserved "manager" segment does for isChecklistManagerHost above.
 export function parseEmployeeChecklistHost(): { roleSlug: string; tenantSubdomain: string } | null {
   const host = window.location.hostname;
   const parts = host.split('.');

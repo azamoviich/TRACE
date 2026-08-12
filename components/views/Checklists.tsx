@@ -395,7 +395,7 @@ function ManagersTab({ lang, roles, onShowToast }: {
       <div className="grid sm:grid-cols-2 gap-2 mb-3">
         <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder={tr(lang, 'Имя', 'Name', 'Ism')} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text" />
         <input value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} type="password" placeholder={tr(lang, 'Пароль', 'Password', 'Parol')} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text" />
-        <input value={form.portalSubdomain} onChange={e => setForm({ ...form, portalSubdomain: e.target.value })} placeholder={tr(lang, 'Поддомен (manager-benedict)', 'Subdomain (manager-benedict)', 'Subdomen (manager-benedict)')} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text sm:col-span-2" />
+        <input value={form.portalSubdomain} onChange={e => setForm({ ...form, portalSubdomain: e.target.value })} placeholder={tr(lang, 'Поддомен, со словом manager (service-manager)', 'Subdomain, with "manager" in it (service-manager)', '"manager" so\'zi bilan subdomen (service-manager)')} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text sm:col-span-2" />
       </div>
 
       <div className="flex flex-wrap gap-2 mb-3">

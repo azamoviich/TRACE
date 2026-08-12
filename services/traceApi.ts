@@ -1442,7 +1442,7 @@ export const traceApi = {
     },
     invoices: (range: 'today' | '7days' | '30days' = '7days'): Promise<FinancialInvoiceRow[]> =>
       isDemoTenant() ? Promise.resolve(demoInvoices()) : apiFetch(`/financial/invoices?range=${range}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
-    inventory: (range: 'today' | '7days' | '30days' = '30days'): Promise<FinancialInventoryDoc[] | null> =>
+    inventory: (range: 'today' | '7days' | '30days' = '30days'): Promise<(FinancialInventoryDoc | PosterInventoryItem)[] | null> =>
       isDemoTenant() ? Promise.resolve(demoInventory()) : apiFetch(`/financial/inventory?range=${range}`).then(r => r.json()).then(d => (Array.isArray(d) && d.length ? d : null)),
     inventoryItems: (docId: string, date: string, docNum?: string): Promise<InventoryItem[]> =>
       isDemoTenant() ? Promise.resolve(demoInventoryItems(docId)) : apiFetch(`/financial/inventory/items?docId=${encodeURIComponent(docId)}&date=${date}${docNum ? `&docNum=${encodeURIComponent(docNum)}` : ''}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
@@ -1650,6 +1650,19 @@ export interface FinancialInventoryDoc {
   comment: string;
   itemCount: number;
   sum?: number;
+}
+
+// Poster has no stocktaking-document concept like iiko's inventory tab —
+// storage.getStorageLeftovers is a live current-balance snapshot, so this is
+// a flat per-item shape, not FinancialInventoryDoc. Financial.tsx renders it
+// via a separate branch when the tenant is on Poster.
+export interface PosterInventoryItem {
+  id: string;
+  name: string;
+  unit: string;
+  qty: number;
+  unitCost: number;
+  totalValue: number;
 }
 
 export interface InventoryItem {

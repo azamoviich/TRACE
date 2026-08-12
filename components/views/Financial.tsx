@@ -11,6 +11,7 @@ import {
   FinancialWriteoffRow,
   FinancialInvoiceRow,
   FinancialInventoryDoc,
+  PosterInventoryItem,
   InventoryItem,
   FinancialPL,
   GLSummary,
@@ -415,6 +416,9 @@ function Skeleton() {
   );
 }
 
+const isPosterInventoryItem = (row: FinancialInventoryDoc | PosterInventoryItem): row is PosterInventoryItem =>
+  'unit' in row;
+
 function statusColor(status: string) {
   const s = status.toUpperCase();
   if (s === 'ACCEPTED' || s === 'POSTED') return 'text-success bg-success/10';
@@ -497,6 +501,12 @@ export const Financial: React.FC<{
     }).then(setForecast).catch(() => setForecast(null)).finally(() => setForecastLoading(false));
   };
 
+  // POS type — Poster tenants get different (or currently unsupported) data for several tabs below
+  const [isPoster, setIsPoster] = useState(false);
+  useEffect(() => {
+    traceApi.sales.status().then(s => setIsPoster(!!s.poster)).catch(() => {});
+  }, []);
+
   // Invoices
   const [invoices, setInvoices]             = useState<FinancialInvoiceRow[]>([]);
   const [invoicesLoading, setInvoicesLoading] = useState(false);
@@ -512,7 +522,7 @@ export const Financial: React.FC<{
   const woCalendarBtnRef = useRef<HTMLButtonElement>(null);
 
   // Inventory
-  const [inventory, setInventory]               = useState<FinancialInventoryDoc[] | null>(null);
+  const [inventory, setInventory]               = useState<(FinancialInventoryDoc | PosterInventoryItem)[] | null>(null);
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [inventoryDoc, setInventoryDoc]         = useState<FinancialInventoryDoc | null>(null);
 
@@ -1148,7 +1158,11 @@ export const Financial: React.FC<{
       {/* ── INVOICES TAB ── */}
       {tab === 'invoices' && (
         <Card title={t.invoices}>
-          <p className="text-[10px] text-muted mb-3">{tr(lang, 'Приходные накладные · iikoServer', 'Supply invoices · iikoServer', 'Kirim hisob-fakturalari · iikoServer')}</p>
+          <p className="text-[10px] text-muted mb-3">
+            {isPoster
+              ? tr(lang, 'Приходные накладные · Poster', 'Supply invoices · Poster', 'Kirim hisob-fakturalari · Poster')
+              : tr(lang, 'Приходные накладные · iikoServer', 'Supply invoices · iikoServer', 'Kirim hisob-fakturalari · iikoServer')}
+          </p>
           {invoicesLoading ? <Skeleton /> : invoices.length === 0 ? (
             <div className="flex items-center gap-2 py-6 text-muted">
               <Package size={15} />
@@ -1218,7 +1232,11 @@ export const Financial: React.FC<{
           )}
         <Card title={t.writeoffs}>
           <div className="flex items-center justify-between mb-3">
-            <p className="text-[10px] text-muted">{tr(lang, 'Акты списания · iikoServer API', 'Writeoff documents · iikoServer API', 'Hisobdan chiqarish hujjatlari · iikoServer API')}</p>
+            <p className="text-[10px] text-muted">
+              {isPoster
+                ? tr(lang, 'Списания по причине · Poster', 'Write-offs by reason · Poster', 'Sabab bo\'yicha hisobdan chiqarish · Poster')
+                : tr(lang, 'Акты списания · iikoServer API', 'Writeoff documents · iikoServer API', 'Hisobdan chiqarish hujjatlari · iikoServer API')}
+            </p>
           </div>
           {writeoffsLoading ? <Skeleton /> : writeoffs.length === 0 ? (
             <div className="flex items-center gap-2 py-6 text-success">
@@ -1348,18 +1366,59 @@ export const Financial: React.FC<{
       {tab === 'inventory' && (
         <Card title={tr(lang, 'Инвентаризации', 'Inventory', 'Inventarizatsiyalar')}>
           <p className="text-[10px] text-muted mb-3">
-            {tr(lang, 'Документы инвентаризации · iikoServer', 'Stocktaking documents · iikoServer', 'Inventarizatsiya hujjatlari · iikoServer')}
+            {isPoster
+              ? tr(lang, 'Текущие остатки склада · Poster', 'Current stock balance · Poster', 'Joriy ombor qoldig\'i · Poster')
+              : tr(lang, 'Документы инвентаризации · iikoServer', 'Stocktaking documents · iikoServer', 'Inventarizatsiya hujjatlari · iikoServer')}
           </p>
           {inventoryLoading ? <Skeleton /> : !inventory ? (
             <div className="flex flex-col items-center gap-3 py-10 text-center">
               <Package size={28} className="text-muted/40" />
               <p className="text-[12px] text-muted max-w-[260px]">
-                {tr(lang,
-                  'Документов инвентаризации за период не найдено',
-                  'No inventory documents found for period',
-                  'Davr uchun inventarizatsiya hujjatlari topilmadi')}
+                {isPoster
+                  ? tr(lang, 'На складе нет данных об остатках', 'No stock balance data', "Ombor qoldig'i ma'lumotlari yo'q")
+                  : tr(lang,
+                    'Документов инвентаризации за период не найдено',
+                    'No inventory documents found for period',
+                    'Davr uchun inventarizatsiya hujjatlari topilmadi')}
               </p>
             </div>
+          ) : isPoster ? (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left min-w-[480px]">
+                  <thead className="border-b border-border">
+                    <tr>
+                      {[
+                        tr(lang, 'Позиция', 'Item', 'Pozitsiya'),
+                        tr(lang, 'Остаток', 'Qty', 'Qoldiq'),
+                        tr(lang, 'Себест. за ед.', 'Unit cost', 'Birlik tannarxi'),
+                        tr(lang, 'Стоимость', 'Total value', 'Umumiy qiymat'),
+                      ].map(h => (
+                        <th key={h} className="pb-3 pr-4 text-[10px] uppercase tracking-[0.15em] text-muted font-medium">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inventory.filter(isPosterInventoryItem).map(item => (
+                      <tr key={item.id} className="border-b border-border last:border-0 hover:bg-card-hover transition-colors">
+                        <td className="py-3 pr-4 text-[13px] font-medium text-text">{item.name}</td>
+                        <td className="py-3 pr-4 text-[12px] text-muted metric-number">{item.qty.toLocaleString('ru-RU')} {item.unit}</td>
+                        <td className="py-3 pr-4 text-[12px] text-muted font-mono">{item.unitCost.toLocaleString('ru-RU')}</td>
+                        <td className="py-3 pr-4 text-[13px] font-semibold text-text metric-number">{item.totalValue.toLocaleString('ru-RU')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-4 pt-3 border-t border-border">
+                <p className="text-[11px] text-muted">
+                  {tr(lang,
+                    `${inventory.length} позиций · итого ${inventory.filter(isPosterInventoryItem).reduce((s, i) => s + i.totalValue, 0).toLocaleString('ru-RU')} UZS`,
+                    `${inventory.length} items · total ${inventory.filter(isPosterInventoryItem).reduce((s, i) => s + i.totalValue, 0).toLocaleString('ru-RU')} UZS`,
+                    `${inventory.length} pozitsiya · jami ${inventory.filter(isPosterInventoryItem).reduce((s, i) => s + i.totalValue, 0).toLocaleString('ru-RU')} UZS`)}
+                </p>
+              </div>
+            </>
           ) : (
             <>
               <div className="overflow-x-auto">
@@ -1380,7 +1439,7 @@ export const Financial: React.FC<{
                     </tr>
                   </thead>
                   <tbody>
-                    {inventory.map(doc => (
+                    {inventory.filter((d): d is FinancialInventoryDoc => !isPosterInventoryItem(d)).map(doc => (
                       <tr key={doc.id}
                         onClick={() => setInventoryDoc(doc)}
                         className="border-b border-border last:border-0 hover:bg-card-hover transition-colors cursor-pointer group">
@@ -1411,9 +1470,9 @@ export const Financial: React.FC<{
               <div className="mt-4 pt-3 border-t border-border flex items-center justify-between">
                 <p className="text-[11px] text-muted">
                   {tr(lang,
-                    `${inventory.length} докум. · итого ${inventory.reduce((s, d) => s + (d.sum ?? 0), 0).toLocaleString('ru-RU')} UZS`,
-                    `${inventory.length} docs · total ${inventory.reduce((s, d) => s + (d.sum ?? 0), 0).toLocaleString('ru-RU')} UZS`,
-                    `${inventory.length} hujjat · jami ${inventory.reduce((s, d) => s + (d.sum ?? 0), 0).toLocaleString('ru-RU')} UZS`)}
+                    `${inventory.length} докум. · итого ${inventory.reduce((s, d) => s + ((d as FinancialInventoryDoc).sum ?? 0), 0).toLocaleString('ru-RU')} UZS`,
+                    `${inventory.length} docs · total ${inventory.reduce((s, d) => s + ((d as FinancialInventoryDoc).sum ?? 0), 0).toLocaleString('ru-RU')} UZS`,
+                    `${inventory.length} hujjat · jami ${inventory.reduce((s, d) => s + ((d as FinancialInventoryDoc).sum ?? 0), 0).toLocaleString('ru-RU')} UZS`)}
                 </p>
                 <p className="text-[10px] text-muted/50">{tr(lang, 'Нажмите на строку для деталей', 'Click a row for details', 'Tafsilotlar uchun qatorni bosing')}</p>
               </div>

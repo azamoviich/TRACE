@@ -278,7 +278,7 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId }: { lang: Language; onToast?: (m: string, t: 'info') => void; occupiedTables?: Set<number>; tableInfo?: Map<number, { min: number; sum: number }>; branchId?: string }) {
+function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster }: { lang: Language; onToast?: (m: string, t: 'info') => void; occupiedTables?: Set<number>; tableInfo?: Map<number, { min: number; sum: number }>; branchId?: string; isPoster?: boolean }) {
   const [plans, setPlans] = useState<HallPlan[]>([]);
   const [activeTab, setActiveTab] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -448,7 +448,7 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId }: { lang:
           <div className="flex gap-0.5 p-0.5 bg-background rounded-xl border border-border">
             {([
               { id: 'now' as const,     label: tr(lang, 'Сейчас', 'Now', 'Hozir'), icon: Radio },
-              { id: 'revenue' as const, label: tr(lang, 'Выручка', 'Revenue', 'Tushum'), icon: TrendingUp },
+              ...(isPoster ? [] : [{ id: 'revenue' as const, label: tr(lang, 'Выручка', 'Revenue', 'Tushum'), icon: TrendingUp }]),
             ]).map(m => (
               <button
                 key={m.id}
@@ -1441,6 +1441,8 @@ export const Operations: React.FC<{
               <p className="text-[11px] mt-1 font-medium text-muted">
                 {kpis?.avgServiceMin != null
                   ? tr(lang, 'Сегодня · iikoFront', 'Today · iikoFront', 'Bugun · iikoFront')
+                  : isPoster
+                  ? tr(lang, 'Недоступно для Poster', 'Not available for Poster', 'Poster uchun mavjud emas')
                   : tr(lang, 'Накапливаем данные по закрытым заказам', 'Collecting data from closed orders', "Yopilgan buyurtmalar bo'yicha ma'lumot yig'ilmoqda")}
               </p>
             </div>
@@ -1464,6 +1466,8 @@ export const Operations: React.FC<{
               <p className="text-[11px] mt-1 font-medium text-muted">
                 {kpis?.avgKitchenMin != null
                   ? tr(lang, 'Заказ → готово · сегодня', 'Order → ready · today', 'Buyurtma → tayyor · bugun')
+                  : isPoster
+                  ? tr(lang, 'Недоступно для Poster', 'Not available for Poster', 'Poster uchun mavjud emas')
                   : tr(lang, 'Накапливаем данные кухни', 'Collecting kitchen data', "Oshxona ma'lumotlari yig'ilmoqda")}
               </p>
             </div>
@@ -1690,6 +1694,7 @@ export const Operations: React.FC<{
                     branchId={b.id}
                     occupiedTables={occ && occ.tables.size > 0 ? occ.tables : undefined}
                     tableInfo={occ?.info}
+                    isPoster={isPoster}
                   />
                 </div>
               );
@@ -1705,7 +1710,7 @@ export const Operations: React.FC<{
             )}
           </div>
         }>
-          <HallMap lang={lang} onToast={onShowToast} occupiedTables={PLUGIN_ENABLED && pluginConnected && occupiedTables.size > 0 ? occupiedTables : undefined} tableInfo={tableInfo} />
+          <HallMap lang={lang} onToast={onShowToast} occupiedTables={PLUGIN_ENABLED && pluginConnected && occupiedTables.size > 0 ? occupiedTables : undefined} tableInfo={tableInfo} isPoster={isPoster} />
         </Card>
       )}
 
@@ -1732,7 +1737,11 @@ export const Operations: React.FC<{
                      "Har 30s da barcha filiallar bo'yicha yangilanadi (bitta filial rejimidagidek darhol emas).")}
           </p>
         )}
-        {displayOrders.length === 0 ? (
+        {isPoster ? (
+          <div className="flex items-center gap-2 py-6 text-muted">
+            <span className="text-[12px]">{tr(lang, 'Недоступно для Poster — нет потока живых заказов', 'Not available for Poster — no live order feed', "Poster uchun mavjud emas — jonli buyurtmalar oqimi yo'q")}</span>
+          </div>
+        ) : displayOrders.length === 0 ? (
           <div className="flex items-center gap-2 py-6 text-muted">
             <CheckCircle size={15} className="text-success flex-shrink-0" />
             <span className="text-[12px]">{tr(lang, 'Нет активных заказов', 'No active orders', 'Faol buyurtmalar yo\'q')}</span>

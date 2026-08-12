@@ -319,19 +319,31 @@ async function reportStock(range: ReportRange, lang: Language): Promise<XLSX.Wor
   const data = await traceApi.financial.inventory(range === 'custom' ? '30days' : range);
   if (!data || !data.length) throw new Error(tr(lang, 'Нет данных инвентаризации за период', 'No inventory data for period', "Davr uchun inventarizatsiya ma'lumoti yo'q"));
 
-  const totalSum = data.reduce((s, d) => s + (d.sum ?? 0), 0);
+  // Poster gives a live stock-balance snapshot (per-item), not stocktaking
+  // documents like iiko — 'unit' only exists on the Poster shape.
+  const isPoster = 'unit' in data[0];
 
-  const header = lang === 'ru'
-    ? ['#', '№ документа', 'Дата', 'Склад', 'Сумма (UZS)', 'Статус', 'Комментарий']
-    : lang === 'uz'
-    ? ['#', 'Hujjat №', 'Sana', 'Ombor', 'Summa (UZS)', 'Holat', 'Izoh']
-    : ['#', 'Doc #', 'Date', 'Store', 'Amount (UZS)', 'Status', 'Comment'];
+  const header = isPoster
+    ? (lang === 'ru'
+      ? ['#', 'Позиция', 'Остаток', 'Ед.', 'Себест. за ед. (UZS)', 'Стоимость (UZS)']
+      : lang === 'uz'
+      ? ['#', 'Pozitsiya', 'Qoldiq', 'Birlik', 'Birlik tannarxi (UZS)', 'Qiymat (UZS)']
+      : ['#', 'Item', 'Qty', 'Unit', 'Unit cost (UZS)', 'Total value (UZS)'])
+    : (lang === 'ru'
+      ? ['#', '№ документа', 'Дата', 'Склад', 'Сумма (UZS)', 'Статус', 'Комментарий']
+      : lang === 'uz'
+      ? ['#', 'Hujjat №', 'Sana', 'Ombor', 'Summa (UZS)', 'Holat', 'Izoh']
+      : ['#', 'Doc #', 'Date', 'Store', 'Amount (UZS)', 'Status', 'Comment']);
 
-  const rows: (string | number)[][] = data.map((d, i) => [
-    i + 1, d.documentNumber, d.date, d.storeCode ?? '—', d.sum ?? 0, d.status, d.comment ?? '',
-  ]);
+  const totalSum = isPoster
+    ? data.reduce((s, d: any) => s + (d.totalValue ?? 0), 0)
+    : data.reduce((s, d: any) => s + (d.sum ?? 0), 0);
+
+  const rows: (string | number)[][] = isPoster
+    ? data.map((d: any, i) => [i + 1, d.name, d.qty, d.unit, d.unitCost, d.totalValue])
+    : data.map((d: any, i) => [i + 1, d.documentNumber, d.date, d.storeCode ?? '—', d.sum ?? 0, d.status, d.comment ?? '']);
   const totalLabel = tr(lang, 'ИТОГО', 'TOTAL', 'JAMI');
-  const totals = ['', '', '', totalLabel, totalSum, '', ''];
+  const totals = isPoster ? ['', '', '', totalLabel, '', totalSum] : ['', '', '', totalLabel, totalSum, '', ''];
 
   const wb = XLSX.utils.book_new();
   addSheet(wb, buildSheet([

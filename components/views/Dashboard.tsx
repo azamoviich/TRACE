@@ -472,6 +472,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ lang, onShowToast, branch,
   });
   const [revenueTypeOpen, setRevenueTypeOpen] = useState(false);
   useEffect(() => { localStorage.setItem('trace_revenue_type', revenueType); }, [revenueType]);
+  // Guards against a stale localStorage value from a previously-viewed iiko
+  // tenant carrying over — every non-"net" type 400s server-side for Poster.
+  useEffect(() => { if (integrationStatus.poster && revenueType !== 'net') setRevenueType('net'); }, [integrationStatus.poster]);
   // Business hours — server-persisted per tenant (see Settings). Used only
   // to scale "vs yesterday" for partial days; defaults match the same 9/23
   // fallback used before this was backend-persisted.
@@ -840,6 +843,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ lang, onShowToast, branch,
         <div className="flex flex-wrap items-start gap-x-2 gap-y-1.5 relative">
           <HeroRevenue value={heroNum} suffix={heroSuffix} loading={statsLoading} />
           <div className="flex items-center gap-2">
+            {/* Every non-"net" revenue type 400s server-side for Poster
+                (sales.ts only implements iiko's OLAP-derived variants) —
+                hide the selector rather than offer choices that error out. */}
+            {!integrationStatus.poster && (
             <div className="relative">
               <button
                 onClick={() => setRevenueTypeOpen(o => !o)}
@@ -858,6 +865,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ lang, onShowToast, branch,
                 />
               )}
             </div>
+            )}
             {!demo && (
               <button
                 onClick={() => setRgFilterOpen(o => !o)}

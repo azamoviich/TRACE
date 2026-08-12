@@ -115,9 +115,9 @@ export interface ChecklistManager {
   role_ids: string[];
 }
 
-export type ChecklistItemType = 'checkbox' | 'yesno' | 'text' | 'number' | 'rating';
+export type ChecklistItemType = 'checkbox' | 'yesno' | 'text' | 'number' | 'rating' | 'choice';
 
-export type ChecklistAnswerValue = { text: string } | { number: number } | { rating: number };
+export type ChecklistAnswerValue = { text: string } | { number: number } | { rating: number } | { choice: string };
 
 export interface ChecklistItem {
   id: string;
@@ -126,6 +126,8 @@ export interface ChecklistItem {
   sort_order: number;
   requires_photo: boolean;
   item_type: ChecklistItemType;
+  // Manual answer options for item_type 'choice' (e.g. two branch names to pick from)
+  options?: string[] | null;
   active: boolean;
   // Present only when returned alongside completion state (employee "today" view)
   done?: boolean;

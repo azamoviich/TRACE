@@ -193,6 +193,9 @@ function TodayChecklist({ lang, tenantSubdomain, token, name, onLogout }: {
                     if (item.item_type === 'rating') {
                       return <RatingRow key={item.id} lang={lang} item={item} uploading={uploading} onAnswer={answer} />;
                     }
+                    if (item.item_type === 'choice') {
+                      return <ChoiceRow key={item.id} lang={lang} item={item} uploading={uploading} onAnswer={answer} />;
+                    }
                     if (item.item_type === 'text' || item.item_type === 'number') {
                       return <TextOrNumberRow key={item.id} lang={lang} item={item} uploading={uploading} onAnswer={answer} />;
                     }
@@ -255,6 +258,31 @@ function RatingRow({ lang, item, uploading, onAnswer }: {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function ChoiceRow({ lang, item, uploading, onAnswer }: {
+  lang: Language; item: ChecklistItem; uploading: boolean; onAnswer: AnswerFn;
+}) {
+  const current = item.answer_value && 'choice' in item.answer_value ? item.answer_value.choice : null;
+  const options = (item.options ?? []).filter(Boolean);
+  return (
+    <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-border bg-card">
+      <span className="flex-1 text-[14px] text-text">{item.text}</span>
+      {item.requires_photo && uploading && (
+        <span className="text-[11px] text-muted">{tr(lang, 'Загрузка...', 'Uploading...', 'Yuklanmoqda...')}</span>
+      )}
+      {options.map(opt => (
+        <button
+          key={opt}
+          onClick={() => onAnswer(item, true, { choice: opt })}
+          disabled={uploading}
+          className={`px-3 py-1.5 rounded-lg text-[13px] font-semibold ${current === opt ? 'bg-primary text-white' : 'bg-background border border-border text-muted'}`}
+        >
+          {opt}
+        </button>
+      ))}
     </div>
   );
 }

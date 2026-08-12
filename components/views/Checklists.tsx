@@ -596,7 +596,7 @@ export function ChecklistsTab({ lang, roles, onShowToast }: {
   );
 }
 
-interface DraftItem { text: string; requiresPhoto: boolean; itemType: ChecklistItemType }
+interface DraftItem { text: string; requiresPhoto: boolean; itemType: ChecklistItemType; options: string[] }
 
 export function ChecklistEditor({ lang, roles, checklistId, onDone, onShowToast, manager }: {
   lang: Language; roles: ChecklistRole[]; checklistId: string | null; onDone: () => void;
@@ -611,7 +611,7 @@ export function ChecklistEditor({ lang, roles, checklistId, onDone, onShowToast,
   const [roleId, setRoleId] = useState(roles[0]?.id ?? '');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [items, setItems] = useState<DraftItem[]>([{ text: '', requiresPhoto: false, itemType: 'checkbox' }]);
+  const [items, setItems] = useState<DraftItem[]>([{ text: '', requiresPhoto: false, itemType: 'checkbox', options: ['', ''] }]);
   const [busy, setBusy] = useState(false);
 
   // `roles` often arrives async after this component's first render (e.g.
@@ -631,7 +631,7 @@ export function ChecklistEditor({ lang, roles, checklistId, onDone, onShowToast,
       setRoleId(checklist.role_id);
       setName(checklist.name);
       setDescription(checklist.description);
-      setItems(existing.length ? existing.map(i => ({ text: i.text, requiresPhoto: i.requires_photo, itemType: i.item_type ?? 'checkbox' })) : [{ text: '', requiresPhoto: false, itemType: 'checkbox' }]);
+      setItems(existing.length ? existing.map(i => ({ text: i.text, requiresPhoto: i.requires_photo, itemType: i.item_type ?? 'checkbox', options: i.options && i.options.length ? i.options : ['', ''] })) : [{ text: '', requiresPhoto: false, itemType: 'checkbox', options: ['', ''] }]);
       setLoaded(true);
     }).catch(() => {
       onShowToast(tr(lang, 'Не удалось загрузить чек-лист', 'Failed to load checklist', "Cheklistni yuklab bo'lmadi"), 'error');
@@ -640,12 +640,17 @@ export function ChecklistEditor({ lang, roles, checklistId, onDone, onShowToast,
   }, [checklistId]);
 
   const updateItem = (i: number, patch: Partial<DraftItem>) => setItems(prev => prev.map((it, idx) => idx === i ? { ...it, ...patch } : it));
-  const addItem = () => setItems(prev => [...prev, { text: '', requiresPhoto: false, itemType: 'checkbox' }]);
+  const addItem = () => setItems(prev => [...prev, { text: '', requiresPhoto: false, itemType: 'checkbox', options: ['', ''] }]);
   const removeItem = (i: number) => setItems(prev => prev.filter((_, idx) => idx !== i));
 
   const save = async () => {
     if (!roleId || !name.trim()) { onShowToast(tr(lang, 'Укажите название и роль', 'Enter a name and role', 'Nomi va rolni kiriting'), 'error'); return; }
-    const cleanItems = items.filter(i => i.text.trim()).map(i => ({ text: i.text.trim(), requiresPhoto: i.requiresPhoto, itemType: i.itemType }));
+    const cleanItems = items.filter(i => i.text.trim()).map(i => ({
+      text: i.text.trim(),
+      requiresPhoto: i.requiresPhoto,
+      itemType: i.itemType,
+      options: i.itemType === 'choice' ? i.options.map(o => o.trim()).filter(Boolean) : undefined,
+    }));
     setBusy(true);
     try {
       const data = { roleId, name: name.trim(), description, items: cleanItems };
@@ -700,35 +705,54 @@ export function ChecklistEditor({ lang, roles, checklistId, onDone, onShowToast,
           <label className="text-[12px] text-muted mb-1.5 block">{tr(lang, 'Пункты', 'Items', 'Bandlar')}</label>
           <div className="space-y-2">
             {items.map((it, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <input
-                  value={it.text}
-                  onChange={e => updateItem(i, { text: e.target.value })}
-                  placeholder={tr(lang, 'Например: протереть столы', 'e.g. wipe down tables', 'masalan: stollarni artish')}
-                  className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text"
-                />
-                <select
-                  value={it.itemType}
-                  onChange={e => updateItem(i, { itemType: e.target.value as ChecklistItemType })}
-                  title={tr(lang, 'Тип пункта', 'Item type', 'Band turi')}
-                  className="px-2 py-2 rounded-lg border border-border bg-background text-[12px] text-text"
-                >
-                  <option value="checkbox">{tr(lang, 'Чекбокс', 'Checkbox', 'Chekbоks')}</option>
-                  <option value="yesno">{tr(lang, 'Да / Нет', 'Yes / No', 'Ha / Yo\'q')}</option>
-                  <option value="text">{tr(lang, 'Текст', 'Text', 'Matn')}</option>
-                  <option value="number">{tr(lang, 'Число', 'Number', 'Raqam')}</option>
-                  <option value="rating">{tr(lang, 'Оценка 1-5', 'Rating 1-5', 'Baho 1-5')}</option>
-                </select>
-                <button
-                  onClick={() => updateItem(i, { requiresPhoto: !it.requiresPhoto })}
-                  title={tr(lang, 'Требуется фото', 'Requires photo', 'Foto talab qilinadi')}
-                  className={`p-2 rounded-lg ${it.requiresPhoto ? 'bg-primary text-white' : 'bg-background border border-border text-muted'}`}
-                >
-                  <Camera size={15} />
-                </button>
-                <button onClick={() => removeItem(i)} className="text-red-500 hover:text-red-600">
-                  <X size={15} />
-                </button>
+              <div key={i} className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <input
+                    value={it.text}
+                    onChange={e => updateItem(i, { text: e.target.value })}
+                    placeholder={tr(lang, 'Например: протереть столы', 'e.g. wipe down tables', 'masalan: stollarni artish')}
+                    className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text"
+                  />
+                  <select
+                    value={it.itemType}
+                    onChange={e => updateItem(i, { itemType: e.target.value as ChecklistItemType })}
+                    title={tr(lang, 'Тип пункта', 'Item type', 'Band turi')}
+                    className="px-2 py-2 rounded-lg border border-border bg-background text-[12px] text-text"
+                  >
+                    <option value="checkbox">{tr(lang, 'Чекбокс', 'Checkbox', 'Chekbоks')}</option>
+                    <option value="yesno">{tr(lang, 'Да / Нет', 'Yes / No', 'Ha / Yo\'q')}</option>
+                    <option value="text">{tr(lang, 'Текст', 'Text', 'Matn')}</option>
+                    <option value="number">{tr(lang, 'Число', 'Number', 'Raqam')}</option>
+                    <option value="rating">{tr(lang, 'Оценка 1-5', 'Rating 1-5', 'Baho 1-5')}</option>
+                    <option value="choice">{tr(lang, 'Выбор из 2 вариантов', 'Choice of 2', "2 variantdan tanlash")}</option>
+                  </select>
+                  <button
+                    onClick={() => updateItem(i, { requiresPhoto: !it.requiresPhoto })}
+                    title={tr(lang, 'Требуется фото', 'Requires photo', 'Foto talab qilinadi')}
+                    className={`p-2 rounded-lg ${it.requiresPhoto ? 'bg-primary text-white' : 'bg-background border border-border text-muted'}`}
+                  >
+                    <Camera size={15} />
+                  </button>
+                  <button onClick={() => removeItem(i)} className="text-red-500 hover:text-red-600">
+                    <X size={15} />
+                  </button>
+                </div>
+                {it.itemType === 'choice' && (
+                  <div className="flex items-center gap-2 pl-1">
+                    <input
+                      value={it.options[0] ?? ''}
+                      onChange={e => updateItem(i, { options: [e.target.value, it.options[1] ?? ''] })}
+                      placeholder={tr(lang, 'Вариант 1, напр. Филиал А', 'Option 1, e.g. Branch A', "1-variant, masalan: Filial A")}
+                      className="flex-1 px-3 py-1.5 rounded-lg border border-border bg-background text-[12px] text-text"
+                    />
+                    <input
+                      value={it.options[1] ?? ''}
+                      onChange={e => updateItem(i, { options: [it.options[0] ?? '', e.target.value] })}
+                      placeholder={tr(lang, 'Вариант 2, напр. Филиал Б', 'Option 2, e.g. Branch B', "2-variant, masalan: Filial B")}
+                      className="flex-1 px-3 py-1.5 rounded-lg border border-border bg-background text-[12px] text-text"
+                    />
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -2407,9 +2407,9 @@ export const checklistApi = {
     list: (roleId?: string) =>
       checkedFetch<import('../types').Checklist[]>(`/checklist/checklists${roleId ? `?roleId=${roleId}` : ''}`),
     items: (id: string) => checkedFetch<ChecklistWithItems>(`/checklist/checklists/${id}/items`),
-    create: (data: { roleId: string; name: string; description?: string; items: { text: string; requiresPhoto?: boolean; itemType?: import('../types').ChecklistItemType }[] }) =>
+    create: (data: { roleId: string; name: string; description?: string; items: { text: string; requiresPhoto?: boolean; itemType?: import('../types').ChecklistItemType; options?: string[] }[] }) =>
       post<ChecklistWithItems>('/checklist/checklists', data),
-    update: (id: string, data: Partial<{ name: string; description: string; active: boolean; items: { text: string; requiresPhoto?: boolean; itemType?: import('../types').ChecklistItemType }[] }>) =>
+    update: (id: string, data: Partial<{ name: string; description: string; active: boolean; items: { text: string; requiresPhoto?: boolean; itemType?: import('../types').ChecklistItemType; options?: string[] }[] }>) =>
       checkedFetch<ChecklistWithItems>(`/checklist/checklists/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
     remove: (id: string) => checkedFetch<void>(`/checklist/checklists/${id}`, { method: 'DELETE' }),
   },
@@ -2427,9 +2427,9 @@ export const checklistManagerApi = {
       scopedFetch<import('../types').Checklist[]>(`/checklist-manager/checklists${roleId ? `?roleId=${roleId}` : ''}`, tenantSubdomain, token),
     items: (tenantSubdomain: string, token: string, id: string) =>
       scopedFetch<ChecklistWithItems>(`/checklist-manager/checklists/${id}/items`, tenantSubdomain, token),
-    create: (tenantSubdomain: string, token: string, data: { roleId: string; name: string; description?: string; items: { text: string; requiresPhoto?: boolean; itemType?: import('../types').ChecklistItemType }[] }) =>
+    create: (tenantSubdomain: string, token: string, data: { roleId: string; name: string; description?: string; items: { text: string; requiresPhoto?: boolean; itemType?: import('../types').ChecklistItemType; options?: string[] }[] }) =>
       scopedFetch<ChecklistWithItems>('/checklist-manager/checklists', tenantSubdomain, token, { method: 'POST', body: JSON.stringify(data) }),
-    update: (tenantSubdomain: string, token: string, id: string, data: Partial<{ name: string; description: string; active: boolean; items: { text: string; requiresPhoto?: boolean; itemType?: import('../types').ChecklistItemType }[] }>) =>
+    update: (tenantSubdomain: string, token: string, id: string, data: Partial<{ name: string; description: string; active: boolean; items: { text: string; requiresPhoto?: boolean; itemType?: import('../types').ChecklistItemType; options?: string[] }[] }>) =>
       scopedFetch<ChecklistWithItems>(`/checklist-manager/checklists/${id}`, tenantSubdomain, token, { method: 'PATCH', body: JSON.stringify(data) }),
     remove: (tenantSubdomain: string, token: string, id: string) =>
       scopedFetch<void>(`/checklist-manager/checklists/${id}`, tenantSubdomain, token, { method: 'DELETE' }),

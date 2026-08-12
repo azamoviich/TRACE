@@ -1426,7 +1426,8 @@ export const Operations: React.FC<{
 
       {/* ── TOP KPIs ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Avg Service Time — requires plugin */}
+        {/* Avg Service Time / Kitchen Serve Time — TRACEPLUGIN-only, no Poster data source exists (no live open/close-table or cooking-start/ready events) */}
+        {!isPoster && (
         <Card className="stagger-item">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-blue-500/10 text-blue-400 rounded-md flex-shrink-0"><Clock size={20} /></div>
@@ -1441,15 +1442,14 @@ export const Operations: React.FC<{
               <p className="text-[11px] mt-1 font-medium text-muted">
                 {kpis?.avgServiceMin != null
                   ? tr(lang, 'Сегодня · iikoFront', 'Today · iikoFront', 'Bugun · iikoFront')
-                  : isPoster
-                  ? tr(lang, 'Недоступно для Poster', 'Not available for Poster', 'Poster uchun mavjud emas')
                   : tr(lang, 'Накапливаем данные по закрытым заказам', 'Collecting data from closed orders', "Yopilgan buyurtmalar bo'yicha ma'lumot yig'ilmoqda")}
               </p>
             </div>
           </div>
         </Card>
+        )}
 
-        {/* Kitchen serve time — cooking start → ready, from kitchen events */}
+        {!isPoster && (
         <Card className="stagger-item">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-amber-500/10 text-amber-400 rounded-md flex-shrink-0"><ChefHat size={20} /></div>
@@ -1466,13 +1466,12 @@ export const Operations: React.FC<{
               <p className="text-[11px] mt-1 font-medium text-muted">
                 {kpis?.avgKitchenMin != null
                   ? tr(lang, 'Заказ → готово · сегодня', 'Order → ready · today', 'Buyurtma → tayyor · bugun')
-                  : isPoster
-                  ? tr(lang, 'Недоступно для Poster', 'Not available for Poster', 'Poster uchun mavjud emas')
                   : tr(lang, 'Накапливаем данные кухни', 'Collecting kitchen data', "Oshxona ma'lumotlari yig'ilmoqda")}
               </p>
             </div>
           </div>
         </Card>
+        )}
 
         {/* Waste — from iiko OLAP writeoffs */}
         <Card className="stagger-item">
@@ -1715,7 +1714,8 @@ export const Operations: React.FC<{
       )}
 
       {/* ── ACTIVE ORDERS ── */}
-      {(() => {
+      {/* TRACEPLUGIN-only (realtime_events) — no Poster equivalent, hidden rather than shown broken/empty */}
+      {!isPoster && (() => {
         const displayOrders: any[] = isAllBranches ? combinedActiveOrders : mergedActiveOrders;
         return (
       <Card title={
@@ -1737,11 +1737,7 @@ export const Operations: React.FC<{
                      "Har 30s da barcha filiallar bo'yicha yangilanadi (bitta filial rejimidagidek darhol emas).")}
           </p>
         )}
-        {isPoster ? (
-          <div className="flex items-center gap-2 py-6 text-muted">
-            <span className="text-[12px]">{tr(lang, 'Недоступно для Poster — нет потока живых заказов', 'Not available for Poster — no live order feed', "Poster uchun mavjud emas — jonli buyurtmalar oqimi yo'q")}</span>
-          </div>
-        ) : displayOrders.length === 0 ? (
+        {displayOrders.length === 0 ? (
           <div className="flex items-center gap-2 py-6 text-muted">
             <CheckCircle size={15} className="text-success flex-shrink-0" />
             <span className="text-[12px]">{tr(lang, 'Нет активных заказов', 'No active orders', 'Faol buyurtmalar yo\'q')}</span>

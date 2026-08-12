@@ -15,9 +15,8 @@ import { Admin } from './components/views/Admin';
 import { Compare } from './components/views/Compare';
 import { Globe, Sun, Moon } from 'lucide-react';
 import { TRANSLATIONS, nextLang, tr } from './constants';
-import { isAdminSubdomain, isDemoTenant, isManagerPortal, LIVE_MODE, tenantAuth, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, staffLogin, getStaffToken, clearStaffToken, StaffLoginResult } from './services/traceApi';
+import { isAdminSubdomain, isDemoTenant, isManagerPortal, LIVE_MODE, tenantAuth, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID } from './services/traceApi';
 import { ManagerPortal } from './components/ManagerPortal';
-import { Checklist } from './components/views/Checklist';
 import { PWAInstallGuide } from './components/PWAInstallGuide';
 import { Sidebar } from './components/Sidebar';
 import {
@@ -25,8 +24,7 @@ import {
   loadNavStyle, loadMobileNavStyle, loadHiddenPages, loadDefaultPage, loadAccent, applyAccent, loadLogoUrl,
 } from './components/navConfig';
 
-const Login: React.FC<{ onLogin: (remember: boolean) => void; onStaffLogin: (info: StaffLoginResult) => void; lang: Language; setLang: (l: Language) => void }> = ({ onLogin, onStaffLogin, lang, setLang }) => {
-  const [staffMode, setStaffMode] = useState(false);
+const Login: React.FC<{ onLogin: (remember: boolean) => void; lang: Language; setLang: (l: Language) => void }> = ({ onLogin, lang, setLang }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [loginVal, setLoginVal] = useState('');
@@ -38,13 +36,6 @@ const Login: React.FC<{ onLogin: (remember: boolean) => void; onStaffLogin: (inf
     e.preventDefault();
     setLoading(true);
     setError('');
-    if (staffMode) {
-      const result = await staffLogin(loginVal, passwordVal);
-      setLoading(false);
-      if (result) onStaffLogin(result);
-      else setError(tr(lang, 'Неверный логин или пароль', 'Invalid login or password', 'Login yoki parol noto\'g\'ri'));
-      return;
-    }
     const ok = isDemoTenant()
       ? (loginVal === 'admin' && passwordVal === '123')
       : await tenantAuth(loginVal, passwordVal);
@@ -87,13 +78,11 @@ const Login: React.FC<{ onLogin: (remember: boolean) => void; onStaffLogin: (inf
               <input type="password" value={passwordVal} onChange={e => setPasswordVal(e.target.value)} autoComplete="current-password"
                 className="w-full bg-white/[0.03] border border-white/[0.08] rounded-2xl px-4 py-3 text-text text-[14px] focus:border-primary/60 focus:bg-white/[0.05] focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all" />
             </div>
-            {!staffMode && (
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded accent-primary cursor-pointer" />
-                <span className="text-[12px] text-muted">{t.remember_me}</span>
-              </label>
-            )}
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)}
+                className="w-4 h-4 rounded accent-primary cursor-pointer" />
+              <span className="text-[12px] text-muted">{t.remember_me}</span>
+            </label>
             {error && <p className="text-[12px] text-danger">{error}</p>}
             <button
               type="submit" disabled={loading || !loginVal || !passwordVal}
@@ -104,18 +93,6 @@ const Login: React.FC<{ onLogin: (remember: boolean) => void; onStaffLogin: (inf
                 : t.enter_system}
             </button>
           </form>
-
-          {!isDemoTenant() && (
-            <button
-              type="button"
-              onClick={() => { setStaffMode(m => !m); setError(''); setLoginVal(''); setPasswordVal(''); }}
-              className="w-full text-center text-[11px] text-muted hover:text-text mt-4 transition-colors"
-            >
-              {staffMode
-                ? tr(lang, '← Вход владельца', '← Owner login', "← Egasi kirishi")
-                : tr(lang, 'Вход для менеджера', 'Manager login', 'Menejer kirishi')}
-            </button>
-          )}
         </div>
 
         <p className="text-center text-[11px] text-muted mt-4 leading-relaxed">
@@ -174,13 +151,9 @@ export default function App() {
 
   const [isLoggedIn, setIsLoggedIn] = useState(() => isDemoTenant());
   const [authChecking, setAuthChecking] = useState(() => !isDemoTenant() && localStorage.getItem('trace_remember') === '1');
-  const [staffSession, setStaffSession] = useState<StaffLoginResult | null>(() => {
-    if (!getStaffToken()) return null;
-    try { return JSON.parse(localStorage.getItem('trace_staff_session') ?? 'null'); } catch { return null; }
-  });
   const [currentView, setCurrentView] = useState<ViewState>(() => {
     const v = new URLSearchParams(window.location.search).get('view');
-    const valid: ViewState[] = ['dashboard', 'sales', 'operations', 'financial', 'reviews', 'loyalty', 'reports', 'settings', 'compare', 'checklist_view'];
+    const valid: ViewState[] = ['dashboard', 'sales', 'operations', 'financial', 'reviews', 'loyalty', 'reports', 'settings', 'compare'];
     return valid.includes(v as ViewState) ? (v as ViewState) : loadDefaultPage();
   });
   const [lang, setLangState] = useState<Language>(() => {
@@ -286,7 +259,7 @@ export default function App() {
     </div>;
   }
 
-  if (!isLoggedIn && !staffSession) {
+  if (!isLoggedIn) {
     return <Login
       onLogin={(remember) => {
         if (remember) {
@@ -302,35 +275,8 @@ export default function App() {
         }
         setIsLoggedIn(true);
       }}
-      onStaffLogin={(info) => {
-        localStorage.setItem('trace_staff_session', JSON.stringify(info));
-        setStaffSession(info);
-      }}
       lang={lang} setLang={setLang}
     />;
-  }
-
-  if (staffSession) {
-    return (
-      <div className="min-h-screen bg-background text-text font-sans selection:bg-primary/20">
-        <ToastContainer toasts={toasts} removeToast={removeToast} />
-        <div className="sticky top-0 z-30 glass border-b border-white/[0.06] px-4 md:px-10 py-3 flex items-center justify-between">
-          <div>
-            <div className="font-display text-[15px] font-bold tracking-wide">{staffSession.displayName}</div>
-            <div className="text-[10px] uppercase tracking-[0.15em] text-muted">{staffSession.roleName}</div>
-          </div>
-          <button
-            onClick={() => { clearStaffToken(); localStorage.removeItem('trace_staff_session'); setStaffSession(null); }}
-            className="text-[11px] text-muted hover:text-text glass glass-hover px-3 py-1.5 rounded-full transition-colors"
-          >
-            {tr(lang, 'Выйти', 'Log out', 'Chiqish')}
-          </button>
-        </div>
-        <main className="px-4 md:px-10 py-5 md:py-8 max-w-[1400px] mx-auto">
-          <Checklist lang={lang} onShowToast={showToast} />
-        </main>
-      </div>
-    );
   }
 
   if (!themeChosen) {
@@ -368,7 +314,6 @@ export default function App() {
         />
       );
       case 'compare':     return <Compare lang={lang} branches={branches} />;
-      case 'checklist_view': return isDemoTenant() ? <Dashboard key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} /> : <Checklist lang={lang} onShowToast={showToast} />;
       default:            return <Dashboard lang={lang} onShowToast={showToast} branch={selectedBranch} />;
     }
   };

@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { ViewState, Language } from '../types';
 import { TRANSLATIONS, nextLang, tr } from '../constants';
-import { BranchSummary, ALL_BRANCHES_ID, isDemoTenant } from '../services/traceApi';
+import { BranchSummary, ALL_BRANCHES_ID } from '../services/traceApi';
 import { NAV_ITEMS, NavStyle, MobileNavStyle } from './navConfig';
 
 interface TopNavProps {
@@ -50,9 +50,7 @@ export const TopNav: React.FC<TopNavProps> = ({
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const showBranches = branches.length > 1;
-  // Checklist isn't part of the sales demo — real tenants only.
-  const baseNav = (isDemoTenant() ? NAV.filter(n => n.id !== 'checklist_view') : NAV)
-    .filter(n => !hiddenPages.includes(n.id));
+  const baseNav = NAV.filter(n => !hiddenPages.includes(n.id));
   const navItems = showBranches ? [...baseNav, COMPARE_NAV] : baseNav;
 
   // Mobile bottom tab bar: primary 4 sections always visible + "More" sheet for the rest.

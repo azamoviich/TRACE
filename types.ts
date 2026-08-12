@@ -54,8 +54,7 @@ export type ViewState =
   | 'loyalty'
   | 'reports'
   | 'settings'
-  | 'compare'
-  | 'checklist_view';
+  | 'compare';
 
 export type TimeRange = 'today' | '7days' | '30days' | 'month' | 'custom';
 

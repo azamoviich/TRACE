@@ -42,26 +42,6 @@ export function branchHeaders(branchIdOverride?: string): Record<string, string>
   return { 'X-Branch-Id': id };
 }
 
-// Checklist staff (delegated manager) session — parallel to the
-// owner's trace_token, but scoped server-side to whatever checklist
-// departments the owner assigned this account. Sent as a bearer token on
-// every tenant-scoped request; routes that don't check for staff (almost
-// everything except /checklist/*) simply ignore it.
-const STAFF_TOKEN_KEY = 'trace_staff_token';
-
-export function getStaffToken(): string | null {
-  return typeof window !== 'undefined' ? localStorage.getItem(STAFF_TOKEN_KEY) : null;
-}
-
-export function clearStaffToken(): void {
-  if (typeof window !== 'undefined') localStorage.removeItem(STAFF_TOKEN_KEY);
-}
-
-function staffAuthHeaders(): Record<string, string> {
-  const token = getStaffToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
 // Tenant-scoped fetch — adds the active branch override header when set.
 // Pass branchIdOverride to force a specific sibling branch regardless of the
 // globally active one — used to fan out a request to every branch in an
@@ -69,7 +49,7 @@ function staffAuthHeaders(): Record<string, string> {
 function apiFetch(path: string, init: RequestInit = {}, branchIdOverride?: string): Promise<Response> {
   return fetch(`${BASE}${path}`, {
     ...init,
-    headers: { ...branchHeaders(branchIdOverride), ...staffAuthHeaders(), ...(init.headers ?? {}) },
+    headers: { ...branchHeaders(branchIdOverride), ...(init.headers ?? {}) },
   });
 }
 
@@ -2172,176 +2152,6 @@ export function getTenantPlan(): 'base' | 'pro' {
   if (isDemoTenant()) return 'pro';
   return sessionStorage.getItem(TENANT_PLAN_KEY) === 'base' ? 'base' : 'pro';
 }
-
-// ── Checklist: Должности + Сотрудники (flat, no hierarchy) ────────────
-
-// Whichever bearer token this browser is currently signed in with — the
-// owner's tenant token, or a logged-in employee's token (see getStaffToken).
-function staffAuthToken(): string {
-  return getStaffToken() ?? getTenantOwnerToken() ?? '';
-}
-
-export interface StaffLoginResult {
-  displayName: string;
-  roleName: string;
-  departments: { id: string; name: string }[];
-}
-
-export async function staffLogin(username: string, password: string): Promise<StaffLoginResult | null> {
-  const subdomain = getSubdomain();
-  try {
-    const r = await fetch(`${BASE}/staff/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subdomain, username, password }),
-    });
-    const json = await r.json();
-    if (json.ok !== true) return null;
-    localStorage.setItem(STAFF_TOKEN_KEY, json.token);
-    return { displayName: json.displayName, roleName: json.roleName, departments: json.departments ?? [] };
-  } catch {
-    return null;
-  }
-}
-
-// Должности — owner-only plain named list (title + active flag only, no
-// permissions attached to a position itself — see EmployeePermissions).
-export interface StaffPosition {
-  id: string;
-  name: string;
-  active: boolean;
-  created_at: string;
-  deleted_at: string | null;
-}
-
-export const positionsApi = {
-  list: (includeDeleted = false): Promise<StaffPosition[]> =>
-    authedGet<StaffPosition[]>(`/positions${includeDeleted ? '?include_deleted=1' : ''}`, getTenantOwnerToken() ?? ''),
-  create: (name: string): Promise<StaffPosition> =>
-    post<StaffPosition>('/positions', { name }, getTenantOwnerToken() ?? ''),
-  update: (id: string, data: { name?: string; active?: boolean; deleted?: boolean }): Promise<StaffPosition> =>
-    patch<StaffPosition>(`/positions/${id}`, data, getTenantOwnerToken() ?? ''),
-  remove: (id: string): Promise<void> =>
-    del(`/positions/${id}`, getTenantOwnerToken() ?? ''),
-};
-
-// Flat permission bag — no role templates, no inheritance. Matches the
-// reference product's 6 checkboxes on the employee edit form.
-export interface EmployeePermissions {
-  mobile_admin?: boolean;
-  take_checklists?: boolean;
-  admin_panel?: boolean;
-  view_reports?: boolean;
-  manage_objects?: boolean;
-  gallery_upload?: boolean;
-}
-
-// Сотрудники — flat tenant-wide employee list. Being rebuilt from scratch:
-// no department scope, no PIN — just name/position/login for now.
-export interface StaffEmployee {
-  id: string;
-  name: string;
-  active: boolean;
-  created_at: string;
-  position_id: string | null;
-  position_name: string | null;
-  username: string | null;
-  telegram_id: string | null;
-  max_id: string | null;
-  permissions: EmployeePermissions;
-  has_login: boolean;
-}
-
-export interface StaffEmployeeInput {
-  name?: string;
-  active?: boolean;
-  position_id?: string | null;
-  username?: string;
-  password?: string;
-  permissions?: EmployeePermissions;
-  telegram_id?: string;
-  max_id?: string;
-}
-
-export const employeesApi = {
-  list: (): Promise<StaffEmployee[]> =>
-    authedGet<StaffEmployee[]>('/employees', getTenantOwnerToken() ?? ''),
-  create: (data: StaffEmployeeInput): Promise<StaffEmployee> =>
-    post<StaffEmployee>('/employees', data, getTenantOwnerToken() ?? ''),
-  update: (id: string, data: StaffEmployeeInput): Promise<StaffEmployee> =>
-    patch<StaffEmployee>(`/employees/${id}`, data, getTenantOwnerToken() ?? ''),
-  remove: (id: string): Promise<void> =>
-    del(`/employees/${id}`, getTenantOwnerToken() ?? ''),
-  importFromPos: (): Promise<{ newEmployees: number; updatedEmployees: number; newPositions: number }> =>
-    post(`/employees/import-from-pos`, {}, getTenantOwnerToken() ?? ''),
-};
-
-// ── Checklist dashboard stats ─────────────────────────────────────────────
-// No checklist create/edit UI exists yet (later phase) — this reads
-// whatever's in the checklist tables, which is genuinely empty until then.
-export interface ChecklistStatsOverview {
-  totalChecklists: number;
-  activeChecklists: number;
-  totalItems: number;
-  employeesCovered: number;
-  totalEmployees: number;
-}
-export interface ChecklistStatsToday {
-  done: number;
-  total: number;
-  employeesActive: number;
-}
-export interface ChecklistTrendPoint { date: string; done: number }
-export interface ChecklistLeaderboardEntry {
-  employee_id: string;
-  employee_name: string;
-  position_name: string | null;
-  completed_count: number;
-  last_active: string;
-}
-export interface ChecklistByPosition {
-  position_name: string;
-  completed_count: number;
-  employee_count: number;
-}
-export interface ChecklistAuditEntry {
-  id: string;
-  checklist_id: string | null;
-  checklist_name: string;
-  actor_employee_id: string | null;
-  actor_name: string | null;
-  action: 'checklist_created' | 'checklist_updated' | 'checklist_deleted' | 'item_added' | 'item_updated' | 'item_deleted';
-  detail: string | null;
-  created_at: string;
-}
-export interface ChecklistRecentPhoto {
-  photo_url: string;
-  created_at: string;
-  employee_name: string;
-  item_text: string;
-  checklist_name: string;
-}
-export interface ChecklistStats {
-  overview: ChecklistStatsOverview;
-  today: ChecklistStatsToday;
-  trend: ChecklistTrendPoint[];
-  leaderboard: ChecklistLeaderboardEntry[];
-  neverUsedCount: number;
-  byPosition: ChecklistByPosition[];
-  managerActivity: ChecklistAuditEntry[];
-  recentPhotos: ChecklistRecentPhoto[];
-  since: string;
-  until: string;
-}
-
-export const checklistStatsApi = {
-  get: (opts: { range?: '7days' | '30days'; from?: string; to?: string } = {}): Promise<ChecklistStats> => {
-    const params = new URLSearchParams();
-    if (opts.from && opts.to) { params.set('from', opts.from); params.set('to', opts.to); }
-    else params.set('range', opts.range ?? '7days');
-    return authedGet<ChecklistStats>(`/checklist-stats?${params.toString()}`, getTenantOwnerToken() ?? '');
-  },
-};
 
 export function getSubdomain(): string {
   const host = window.location.hostname;

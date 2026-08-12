@@ -95,7 +95,7 @@ function DashboardTab({ lang, roles }: { lang: Language; roles: ChecklistRole[] 
           </div>
 
           <Card title={tr(lang, 'Лидерборд', 'Leaderboard', 'Yetakchilar')}>
-            {(!stats || stats.leaderboard.length === 0) ? (
+            {(!stats?.leaderboard || stats.leaderboard.length === 0) ? (
               <p className="text-[13px] text-muted">{tr(lang, 'Пока нет данных', 'No data yet', "Hozircha ma'lumot yo'q")}</p>
             ) : (
               <div className="space-y-2">
@@ -110,7 +110,7 @@ function DashboardTab({ lang, roles }: { lang: Language; roles: ChecklistRole[] 
           </Card>
 
           <Card title={tr(lang, 'Фото-подтверждения', 'Photo proof', 'Foto tasdiqlar')}>
-            {(!stats || stats.recentPhotos.length === 0) ? (
+            {(!stats?.recentPhotos || stats.recentPhotos.length === 0) ? (
               <p className="text-[13px] text-muted">{tr(lang, 'Пока нет фото', 'No photos yet', "Hozircha fotolar yo'q")}</p>
             ) : (
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">

@@ -2323,6 +2323,17 @@ import {
   ChecklistTodayItem, ChecklistStats,
 } from '../types';
 
+// apiFetch alone doesn't check res.ok — a plain `.then(r => r.json())` on a
+// 500 (e.g. tables not migrated yet) silently resolves to an error payload
+// shaped nothing like the expected type, and reading a field off it later
+// crashes the render. Every checklistApi read goes through this instead.
+async function checkedFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await apiFetch(path, init);
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
+
 async function scopedFetch<T>(
   path: string,
   tenantSubdomain: string,
@@ -2371,42 +2382,42 @@ export const checklistAuthApi = {
 // TRACE dashboard's Checklists tab. Owner routes trust tenantMiddleware alone.
 export const checklistApi = {
   roles: {
-    list: () => apiFetch('/checklist/roles').then(r => r.json()) as Promise<ChecklistRole[]>,
+    list: () => checkedFetch<ChecklistRole[]>('/checklist/roles'),
     create: (name: string) => post<ChecklistRole>('/checklist/roles', { name }),
     update: (id: string, patchBody: { name?: string; active?: boolean }) =>
-      apiFetch(`/checklist/roles/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patchBody) }).then(r => r.json()) as Promise<ChecklistRole>,
-    remove: (id: string) => apiFetch(`/checklist/roles/${id}`, { method: 'DELETE' }).then(() => undefined),
+      checkedFetch<ChecklistRole>(`/checklist/roles/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patchBody) }),
+    remove: (id: string) => checkedFetch<void>(`/checklist/roles/${id}`, { method: 'DELETE' }),
   },
   employees: {
     list: (roleId?: string) =>
-      apiFetch(`/checklist/employees${roleId ? `?roleId=${roleId}` : ''}`).then(r => r.json()) as Promise<ChecklistEmployee[]>,
+      checkedFetch<ChecklistEmployee[]>(`/checklist/employees${roleId ? `?roleId=${roleId}` : ''}`),
     create: (name: string, roleId: string, pin: string) =>
       post<ChecklistEmployee>('/checklist/employees', { name, roleId, pin }),
     update: (id: string, patchBody: { name?: string; active?: boolean; pin?: string }) =>
-      apiFetch(`/checklist/employees/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patchBody) }).then(r => r.json()) as Promise<ChecklistEmployee>,
-    remove: (id: string) => apiFetch(`/checklist/employees/${id}`, { method: 'DELETE' }).then(() => undefined),
+      checkedFetch<ChecklistEmployee>(`/checklist/employees/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patchBody) }),
+    remove: (id: string) => checkedFetch<void>(`/checklist/employees/${id}`, { method: 'DELETE' }),
   },
   managers: {
-    list: () => apiFetch('/checklist/managers').then(r => r.json()) as Promise<ChecklistManager[]>,
+    list: () => checkedFetch<ChecklistManager[]>('/checklist/managers'),
     create: (data: { name: string; email: string; password: string; portalSubdomain: string; roleIds: string[] }) =>
       post<ChecklistManager>('/checklist/managers', data),
     update: (id: string, data: Partial<{ name: string; email: string; password: string; portalSubdomain: string; active: boolean; roleIds: string[] }>) =>
-      apiFetch(`/checklist/managers/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.json()) as Promise<ChecklistManager>,
-    remove: (id: string) => apiFetch(`/checklist/managers/${id}`, { method: 'DELETE' }).then(() => undefined),
+      checkedFetch<ChecklistManager>(`/checklist/managers/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
+    remove: (id: string) => checkedFetch<void>(`/checklist/managers/${id}`, { method: 'DELETE' }),
   },
   checklists: {
     list: (roleId?: string) =>
-      apiFetch(`/checklist/checklists${roleId ? `?roleId=${roleId}` : ''}`).then(r => r.json()) as Promise<import('../types').Checklist[]>,
-    items: (id: string) => apiFetch(`/checklist/checklists/${id}/items`).then(r => r.json()) as Promise<ChecklistWithItems>,
+      checkedFetch<import('../types').Checklist[]>(`/checklist/checklists${roleId ? `?roleId=${roleId}` : ''}`),
+    items: (id: string) => checkedFetch<ChecklistWithItems>(`/checklist/checklists/${id}/items`),
     create: (data: { roleId: string; name: string; description?: string; items: { text: string; requiresPhoto?: boolean }[] }) =>
       post<ChecklistWithItems>('/checklist/checklists', data),
     update: (id: string, data: Partial<{ name: string; description: string; active: boolean; items: { text: string; requiresPhoto?: boolean }[] }>) =>
-      apiFetch(`/checklist/checklists/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.json()) as Promise<ChecklistWithItems>,
-    remove: (id: string) => apiFetch(`/checklist/checklists/${id}`, { method: 'DELETE' }).then(() => undefined),
+      checkedFetch<ChecklistWithItems>(`/checklist/checklists/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
+    remove: (id: string) => checkedFetch<void>(`/checklist/checklists/${id}`, { method: 'DELETE' }),
   },
   stats: (params: { roleId?: string; from?: string; to?: string } = {}) => {
     const q = new URLSearchParams(params as Record<string, string>).toString();
-    return apiFetch(`/checklist/stats${q ? `?${q}` : ''}`).then(r => r.json()) as Promise<ChecklistStats>;
+    return checkedFetch<ChecklistStats>(`/checklist/stats${q ? `?${q}` : ''}`);
   },
 };
 

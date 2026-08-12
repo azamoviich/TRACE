@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, Camera, ChevronRight, ArrowLeft, X, Download, Pencil } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Language } from '../../types';
-import { checklistApi } from '../../services/traceApi';
+import { checklistApi, getSubdomain } from '../../services/traceApi';
 import type {
   ChecklistRole, ChecklistEmployee, ChecklistManager, Checklist, ChecklistItem, ChecklistStats,
 } from '../../types';
@@ -147,6 +147,13 @@ function RolesTab({ lang, roles, loading, onChange, onShowToast }: {
     finally { setBusy(false); }
   };
 
+  const tenantSubdomain = getSubdomain();
+  const employeeUrl = (r: ChecklistRole) => `checklist-${r.slug}-${tenantSubdomain}.trace-os.uz`;
+  const copyUrl = (r: ChecklistRole) => {
+    navigator.clipboard.writeText(`https://${employeeUrl(r)}`);
+    onShowToast(tr(lang, 'Ссылка скопирована', 'Link copied', 'Havola nusxalandi'), 'success');
+  };
+
   return (
     <Card title={tr(lang, 'Должности', 'Roles', 'Lavozimlar')} subtitle={tr(lang, 'Официант, кассир, хостес и т.д.', 'Waiter, cashier, hostess, etc.', 'Ofitsiant, kassir va h.k.')}>
       <div className="flex gap-2 mb-4">
@@ -170,7 +177,12 @@ function RolesTab({ lang, roles, loading, onChange, onShowToast }: {
         <div className="space-y-1.5">
           {roles.map(r => (
             <div key={r.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-background border border-border">
-              <span className="text-[13px] text-text">{r.name}</span>
+              <div>
+                <span className="text-[13px] text-text">{r.name}</span>
+                <button onClick={() => copyUrl(r)} className="block text-[11px] text-muted hover:text-primary mt-0.5 text-left">
+                  {employeeUrl(r)}
+                </button>
+              </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={async () => { await checklistApi.roles.update(r.id, { active: !r.active }); onChange(); }}

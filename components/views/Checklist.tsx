@@ -1,11 +1,12 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Card } from '../ui/Card';
+import { DateRangePicker } from '../ui/DateRangePicker';
 import { Language } from '../../types';
 import { tr } from '../../constants';
 import {
   Plus, Trash2, Loader2, Check, X, UserPlus,
   Pencil, RotateCcw, Eye, EyeOff, RefreshCw, Briefcase, Download,
-  Gauge, ClipboardList, Camera, Trophy, History, ImageOff,
+  Gauge, ClipboardList, Camera, Trophy, History, ImageOff, Calendar, AlertTriangle,
 } from 'lucide-react';
 import {
   positionsApi, employeesApi, checklistStatsApi, getStaffToken,
@@ -64,7 +65,11 @@ export const Checklist: React.FC<{
 
   const [stats, setStats] = useState<ChecklistStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
-  const [statsRange, setStatsRange] = useState<'7days' | '30days'>('7days');
+  const [statsError, setStatsError] = useState<string | null>(null);
+  const [statsRange, setStatsRange] = useState<'today' | '7days' | '30days' | 'custom'>('7days');
+  const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const calendarBtnRef = useRef<HTMLButtonElement>(null);
 
   const [positions, setPositions] = useState<StaffPosition[]>([]);
   const [positionsLoading, setPositionsLoading] = useState(true);
@@ -93,11 +98,22 @@ export const Checklist: React.FC<{
     finally { setBusyIds(p => { const n = new Set(p); n.delete(id); return n; }); }
   };
 
-  useEffect(() => {
+  const loadStats = useCallback(() => {
     if (isStaff) return;
     setStatsLoading(true);
-    checklistStatsApi.get(statsRange).then(setStats).catch(() => {}).finally(() => setStatsLoading(false));
-  }, [statsRange, isStaff]);
+    setStatsError(null);
+    const opts = statsRange === 'custom' && customRange
+      ? { from: customRange.from, to: customRange.to }
+      : statsRange === 'today'
+      ? { from: new Date().toISOString().slice(0, 10), to: new Date().toISOString().slice(0, 10) }
+      : { range: statsRange as '7days' | '30days' };
+    checklistStatsApi.get(opts)
+      .then(setStats)
+      .catch((e: Error) => setStatsError(e.message ?? tr(lang, 'Ошибка загрузки', 'Failed to load', 'Yuklashda xatolik')))
+      .finally(() => setStatsLoading(false));
+  }, [statsRange, customRange, isStaff, lang]);
+
+  useEffect(() => { loadStats(); }, [loadStats]);
 
   const loadPositions = useCallback(() => {
     setPositionsLoading(true);
@@ -241,21 +257,58 @@ export const Checklist: React.FC<{
 
       {tab === 'overview' && (
         <div className="space-y-4 animate-fade-in">
-          <div className="flex items-center gap-1 bg-background border border-border rounded-xl p-1 w-fit">
-            {(['7days', '30days'] as const).map(r => (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex items-center gap-1 bg-background border border-border rounded-xl p-1 w-fit">
+              {(['today', '7days', '30days'] as const).map(r => (
+                <button
+                  key={r}
+                  onClick={() => { setStatsRange(r); setCustomRange(null); }}
+                  className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-colors ${statsRange === r ? 'bg-card text-text shadow-sm' : 'text-muted hover:text-text'}`}
+                >
+                  {r === 'today' ? tr(lang, 'Сегодня', 'Today', 'Bugun') : r === '7days' ? tr(lang, '7 дней', '7 days', '7 kun') : tr(lang, '30 дней', '30 days', '30 kun')}
+                </button>
+              ))}
+            </div>
+            <div className="relative">
               <button
-                key={r}
-                onClick={() => setStatsRange(r)}
-                className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-colors ${statsRange === r ? 'bg-card text-text shadow-sm' : 'text-muted hover:text-text'}`}
+                ref={calendarBtnRef}
+                onClick={() => setPickerOpen(o => !o)}
+                title={tr(lang, 'Свой период', 'Custom range', "O'z davri")}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium rounded-lg border transition-all ${
+                  statsRange === 'custom' ? 'bg-primary text-white border-primary' : 'bg-background border-border text-muted hover:text-text'
+                }`}
               >
-                {r === '7days' ? tr(lang, '7 дней', '7 days', '7 kun') : tr(lang, '30 дней', '30 days', '30 kun')}
+                <Calendar size={13} />
+                {statsRange === 'custom' && customRange ? `${customRange.from} → ${customRange.to}` : tr(lang, 'Свой период', 'Custom range', "O'z davri")}
               </button>
-            ))}
+              <DateRangePicker
+                lang={lang}
+                value={customRange}
+                isOpen={pickerOpen}
+                onClose={() => setPickerOpen(false)}
+                anchorRef={calendarBtnRef}
+                onApply={(r) => { setCustomRange(r); setStatsRange('custom'); setPickerOpen(false); }}
+                onClear={() => { setCustomRange(null); setStatsRange('7days'); }}
+              />
+            </div>
           </div>
 
-          {statsLoading || !stats ? (
+          {statsError ? (
+            <Card>
+              <div className="flex flex-col items-center gap-2 py-8 text-center">
+                <AlertTriangle size={20} className="text-danger" />
+                <p className="text-[12px] text-danger">{statsError}</p>
+                <button
+                  onClick={loadStats}
+                  className="text-[11px] font-semibold text-primary hover:underline"
+                >
+                  {tr(lang, 'Повторить', 'Retry', "Qayta urinish")}
+                </button>
+              </div>
+            </Card>
+          ) : statsLoading ? (
             <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-muted" /></div>
-          ) : (
+          ) : stats ? (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <Card className="p-4">
@@ -276,7 +329,7 @@ export const Checklist: React.FC<{
                 <Card className="p-4">
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-muted mb-1">{tr(lang, 'Не пользуются', 'Never used', "Foydalanmaydi")}</p>
                   <p className="text-[22px] font-bold text-text">{stats.neverUsedCount}</p>
-                  <p className="text-[10px] text-muted mt-0.5">{tr(lang, `сотрудников за ${stats.range} дней`, `employees in ${stats.range} days`, `${stats.range} kunda xodim`)}</p>
+                  <p className="text-[10px] text-muted mt-0.5">{tr(lang, `за период ${stats.since} → ${stats.until}`, `in period ${stats.since} → ${stats.until}`, `${stats.since} → ${stats.until} davrida`)}</p>
                 </Card>
               </div>
 
@@ -377,7 +430,7 @@ export const Checklist: React.FC<{
                 )}
               </Card>
             </>
-          )}
+          ) : null}
         </div>
       )}
 

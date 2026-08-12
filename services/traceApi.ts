@@ -2330,12 +2330,17 @@ export interface ChecklistStats {
   byPosition: ChecklistByPosition[];
   managerActivity: ChecklistAuditEntry[];
   recentPhotos: ChecklistRecentPhoto[];
-  range: number;
+  since: string;
+  until: string;
 }
 
 export const checklistStatsApi = {
-  get: (range: '7days' | '30days' = '7days'): Promise<ChecklistStats> =>
-    authedGet<ChecklistStats>(`/checklist-stats?range=${range}`, getTenantOwnerToken() ?? ''),
+  get: (opts: { range?: '7days' | '30days'; from?: string; to?: string } = {}): Promise<ChecklistStats> => {
+    const params = new URLSearchParams();
+    if (opts.from && opts.to) { params.set('from', opts.from); params.set('to', opts.to); }
+    else params.set('range', opts.range ?? '7days');
+    return authedGet<ChecklistStats>(`/checklist-stats?${params.toString()}`, getTenantOwnerToken() ?? '');
+  },
 };
 
 export function getSubdomain(): string {

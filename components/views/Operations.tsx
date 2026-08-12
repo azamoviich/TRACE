@@ -11,7 +11,7 @@ import { DateRangePicker } from '../ui/DateRangePicker';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { traceApi, CashShift, OpsKpis, StaffRow, StopItem, HallPlan, HallElement, isDemoTenant, demoActiveOrders, OpsAlert, VoidEvent, getTenantPlan, ShiftScheduleDay, StaffAbcRow, BranchSummary, ActiveOrderRow } from '../../services/traceApi';
+import { traceApi, CashShift, OpsKpis, StaffRow, StopItem, HallPlan, HallElement, isDemoTenant, demoActiveOrders, OpsAlert, VoidEvent, getTenantPlan, ShiftScheduleDay, StaffAbcRow, BranchSummary, ActiveOrderRow, ReservationRow } from '../../services/traceApi';
 import { HallEditor } from '../HallEditor';
 import { ProLock } from '../ui/ProLock';
 import { SlotText } from '../ui/SlotNumber';
@@ -448,7 +448,7 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster 
           <div className="flex gap-0.5 p-0.5 bg-background rounded-xl border border-border">
             {([
               { id: 'now' as const,     label: tr(lang, 'Сейчас', 'Now', 'Hozir'), icon: Radio },
-              ...(isPoster ? [] : [{ id: 'revenue' as const, label: tr(lang, 'Выручка', 'Revenue', 'Tushum'), icon: TrendingUp }]),
+              { id: 'revenue' as const, label: tr(lang, 'Выручка', 'Revenue', 'Tushum'), icon: TrendingUp },
             ]).map(m => (
               <button
                 key={m.id}
@@ -1354,6 +1354,29 @@ export const Operations: React.FC<{
     }));
   }, [rtOrders, lang, now]);
 
+  // rtOrders above is a WebSocket replay (TRACEPLUGIN-only) and stays empty
+  // for Poster tenants — Poster has no push feed, so poll the same REST
+  // endpoint useOccupiedTables already re-fetches every 30s, same pattern
+  // as the "all branches" combinedActiveOrders effect below.
+  const [posterActiveOrders, setPosterActiveOrders] = useState<ActiveOrderRow[]>([]);
+  useEffect(() => {
+    if (!isPoster || isAllBranches) { setPosterActiveOrders([]); return; }
+    let cancelled = false;
+    const load = () => { traceApi.operations.activeOrders().then(rows => { if (!cancelled) setPosterActiveOrders(rows); }).catch(() => {}); };
+    load();
+    const id = setInterval(load, 30_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [isPoster, isAllBranches]);
+
+  // Poster only — incomingOrders.getReservations, no iiko-side equivalent.
+  const [reservations, setReservations] = useState<ReservationRow[]>([]);
+  const [reservationsLoading, setReservationsLoading] = useState(false);
+  useEffect(() => {
+    if (!isPoster || isAllBranches) { setReservations([]); return; }
+    setReservationsLoading(true);
+    traceApi.operations.reservations().then(setReservations).catch(() => setReservations([])).finally(() => setReservationsLoading(false));
+  }, [isPoster, isAllBranches]);
+
   // "All branches" combined active orders — polls the REST snapshot per
   // sibling branch and merges, rather than fanning out live WebSocket
   // connections (useRealtimeData above is wired for a single tenant). Less
@@ -1426,8 +1449,7 @@ export const Operations: React.FC<{
 
       {/* ── TOP KPIs ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Avg Service Time / Kitchen Serve Time — TRACEPLUGIN-only, no Poster data source exists (no live open/close-table or cooking-start/ready events) */}
-        {!isPoster && (
+        {/* Avg Service Time — real for Poster too now (date_close - date_start on today's closed orders), just labeled differently below */}
         <Card className="stagger-item">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-blue-500/10 text-blue-400 rounded-md flex-shrink-0"><Clock size={20} /></div>
@@ -1441,14 +1463,14 @@ export const Operations: React.FC<{
               }
               <p className="text-[11px] mt-1 font-medium text-muted">
                 {kpis?.avgServiceMin != null
-                  ? tr(lang, 'Сегодня · iikoFront', 'Today · iikoFront', 'Bugun · iikoFront')
+                  ? (isPoster ? tr(lang, 'Сегодня · Poster', 'Today · Poster', 'Bugun · Poster') : tr(lang, 'Сегодня · iikoFront', 'Today · iikoFront', 'Bugun · iikoFront'))
                   : tr(lang, 'Накапливаем данные по закрытым заказам', 'Collecting data from closed orders', "Yopilgan buyurtmalar bo'yicha ma'lumot yig'ilmoqda")}
               </p>
             </div>
           </div>
         </Card>
-        )}
 
+        {/* Kitchen Serve Time — Poster's processing_status has no timestamped history of transitions (see getServiceTiming comment), so avgKitchenMin stays null; hidden rather than shown permanently stuck */}
         {!isPoster && (
         <Card className="stagger-item">
           <div className="flex items-center gap-4">
@@ -1709,14 +1731,14 @@ export const Operations: React.FC<{
             )}
           </div>
         }>
-          <HallMap lang={lang} onToast={onShowToast} occupiedTables={PLUGIN_ENABLED && pluginConnected && occupiedTables.size > 0 ? occupiedTables : undefined} tableInfo={tableInfo} isPoster={isPoster} />
+          <HallMap lang={lang} onToast={onShowToast} occupiedTables={(PLUGIN_ENABLED && pluginConnected || isPoster) && occupiedTables.size > 0 ? occupiedTables : undefined} tableInfo={tableInfo} isPoster={isPoster} />
         </Card>
       )}
 
       {/* ── ACTIVE ORDERS ── */}
-      {/* TRACEPLUGIN-only (realtime_events) — no Poster equivalent, hidden rather than shown broken/empty */}
-      {!isPoster && (() => {
-        const displayOrders: any[] = isAllBranches ? combinedActiveOrders : mergedActiveOrders;
+      {/* Poster path is poll-based (dash.getTransactions?status=1, re-fetched every 30s), not TRACEPLUGIN's push feed — labeled accordingly below, not shown as "Live" */}
+      {(() => {
+        const displayOrders: any[] = isAllBranches ? combinedActiveOrders : isPoster ? posterActiveOrders : mergedActiveOrders;
         return (
       <Card title={
         <div className="flex items-center gap-2">
@@ -1725,8 +1747,10 @@ export const Operations: React.FC<{
             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-[3px] bg-primary/10 text-primary text-[9px] font-semibold uppercase tracking-[0.12em]">
               {tr(lang, `Все филиалы (${branches.length})`, `All branches (${branches.length})`, `Barcha filiallar (${branches.length})`)}
             </span>
-          ) : PLUGIN_ENABLED && pluginConnected && (
+          ) : PLUGIN_ENABLED && pluginConnected ? (
             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-[3px] bg-success/10 text-success text-[9px] font-semibold uppercase tracking-[0.12em]"><Radio size={8} className="animate-pulse" />{tr(lang, 'Live', 'Live', 'Live')}</span>
+          ) : isPoster && (
+            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-[3px] bg-muted/10 text-muted text-[9px] font-semibold uppercase tracking-[0.12em]">{tr(lang, 'Опрос · 30с', 'Poll · 30s', "So'rov · 30s")}</span>
           )}
         </div>
       }>
@@ -1779,9 +1803,16 @@ export const Operations: React.FC<{
                     <span className={`px-2 py-0.5 rounded-[3px] text-[10px] font-semibold uppercase tracking-[0.08em] ${
                       o.status === 'Bill'
                         ? 'text-amber-400 bg-amber-400/10'
+                        : o.kitchenStatus === 'ready'
+                        ? 'text-success bg-success/10'
+                        : o.kitchenStatus === 'preparing'
+                        ? 'text-amber-400 bg-amber-400/10'
                         : 'text-primary bg-primary/10'
                     }`}>
-                      {o.status === 'Bill' ? tr(lang, 'Счёт', 'Bill', 'Hisob') : o.status}
+                      {o.status === 'Bill' ? tr(lang, 'Счёт', 'Bill', 'Hisob')
+                        : o.kitchenStatus === 'ready' ? tr(lang, 'Готово', 'Ready', 'Tayyor')
+                        : o.kitchenStatus === 'preparing' ? tr(lang, 'Готовится', 'Preparing', 'Tayyorlanmoqda')
+                        : o.status}
                     </span>
                   </td>
                 </tr>
@@ -1818,6 +1849,64 @@ export const Operations: React.FC<{
         );
       })()}
 
+      {/* ── RESERVATIONS ── */}
+      {/* Poster only — incomingOrders.getReservations, no iiko-side equivalent anywhere in TRACE */}
+      {isPoster && !isAllBranches && (
+        <Card title={
+          <div className="flex items-center gap-2">
+            <CalendarClock size={14} />
+            <span>{tr(lang, 'Бронирования', 'Reservations', 'Bronlar')}</span>
+          </div>
+        }>
+          {reservationsLoading ? (
+            <div className="h-16 bg-zinc-800/40 rounded animate-pulse" />
+          ) : reservations.length === 0 ? (
+            <div className="flex items-center gap-2 py-6 text-muted">
+              <CheckCircle size={15} className="text-success flex-shrink-0" />
+              <span className="text-[12px]">{tr(lang, 'Нет бронирований на ближайшие 14 дней', 'No reservations in the next 14 days', 'Keyingi 14 kun uchun bronlar yo\'q')}</span>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left min-w-[480px]">
+                <thead>
+                  <tr className="border-b border-border">
+                    {[
+                      tr(lang, 'Гость', 'Guest', 'Mehmon'),
+                      tr(lang, 'Телефон', 'Phone', 'Telefon'),
+                      tr(lang, 'Дата и время', 'Date & time', 'Sana va vaqt'),
+                      tr(lang, 'Длительность', 'Duration', 'Davomiyligi'),
+                      tr(lang, 'Статус', 'Status', 'Holat'),
+                    ].map(h => (
+                      <th key={h} className="py-2 pr-4 text-[10px] uppercase tracking-[0.15em] text-muted font-medium whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {reservations.map(r => (
+                    <tr key={r.id} className="border-b border-border last:border-0 hover:bg-card-hover transition-colors">
+                      <td className="py-2.5 pr-4 text-[13px] font-medium text-text">{r.guestName}</td>
+                      <td className="py-2.5 pr-4 text-[12px] text-muted">{r.phone ?? '—'}</td>
+                      <td className="py-2.5 pr-4 text-[12px] text-muted">{r.date}</td>
+                      <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{formatMinutesShort(r.durationMin, lang)}</td>
+                      <td className="py-2.5">
+                        <span className={`px-2 py-0.5 rounded-[3px] text-[10px] font-semibold uppercase tracking-[0.08em] ${
+                          r.status === 'accepted' ? 'text-success bg-success/10'
+                          : r.status === 'canceled' ? 'text-muted bg-muted/10'
+                          : 'text-amber-400 bg-amber-400/10'
+                        }`}>
+                          {r.status === 'accepted' ? tr(lang, 'Подтверждено', 'Accepted', 'Tasdiqlangan')
+                            : r.status === 'canceled' ? tr(lang, 'Отменено', 'Canceled', 'Bekor qilingan')
+                            : tr(lang, 'Новое', 'New', 'Yangi')}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* ── STAFF (perf + ABC + narrative, merged) ── */}
       <StaffPerfCard

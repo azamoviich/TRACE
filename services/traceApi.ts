@@ -1160,8 +1160,8 @@ export interface LoyaltyGuestRow {
   name: string | null;
   visitCount: number;
   totalSpent: number;
-  firstSeen: string;
-  lastSeen: string;
+  firstSeen: string | null; // null for Poster — clients.getClients has no join-date field
+  lastSeen: string | null;
 }
 
 export interface LoyaltyVisit {
@@ -1444,6 +1444,9 @@ export const traceApi = {
       isDemoTenant() ? Promise.resolve(demoInvoices()) : apiFetch(`/financial/invoices?range=${range}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     inventory: (range: 'today' | '7days' | '30days' = '30days'): Promise<(FinancialInventoryDoc | PosterInventoryItem)[] | null> =>
       isDemoTenant() ? Promise.resolve(demoInventory()) : apiFetch(`/financial/inventory?range=${range}`).then(r => r.json()).then(d => (Array.isArray(d) && d.length ? d : null)),
+    // Poster only — doc-based stocktaking archive, a second view alongside inventory() above.
+    inventoryDocs: (): Promise<PosterInventoryDoc[]> =>
+      isDemoTenant() ? Promise.resolve([]) : apiFetch(`/financial/inventory-docs`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     inventoryItems: (docId: string, date: string, docNum?: string): Promise<InventoryItem[]> =>
       isDemoTenant() ? Promise.resolve(demoInventoryItems(docId)) : apiFetch(`/financial/inventory/items?docId=${encodeURIComponent(docId)}&date=${date}${docNum ? `&docNum=${encodeURIComponent(docNum)}` : ''}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     pl: (range: 'today' | '7days' | '30days' | 'custom' = '7days', customFrom?: string, customTo?: string): Promise<FinancialPL | null> => {
@@ -1553,6 +1556,9 @@ export const traceApi = {
       isDemoTenant() ? Promise.resolve([]) : apiFetch(`/operations/void-events`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     delivery: (): Promise<DeliveryRow[]> =>
       isDemoTenant() ? Promise.resolve(demoDelivery()) : apiFetch(`/operations/delivery`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+    // Poster only — no iiko-side equivalent anywhere in TRACE.
+    reservations: (): Promise<ReservationRow[]> =>
+      isDemoTenant() ? Promise.resolve([]) : apiFetch(`/operations/reservations`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     tableTurns: (): Promise<TableTurnRow[]> =>
       isDemoTenant() ? Promise.resolve(demoTableTurns()) : apiFetch(`/operations/table-turns`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     peakPrep: (): Promise<PeakSlot[]> =>
@@ -1867,6 +1873,30 @@ export interface DeliveryRow {
   updatedAt: string;
 }
 
+// Poster only — incomingOrders.getReservations, no iiko-side equivalent.
+export interface ReservationRow {
+  id: string;
+  guestName: string;
+  phone: string | null;
+  partySize: number | null; // Poster's reservation API has no party-size field
+  date: string;
+  durationMin: number;
+  status: 'new' | 'accepted' | 'canceled';
+  comment: string | null;
+}
+
+// Poster only — storage.getStorageInventories, the doc-based stocktaking
+// archive, offered alongside the live-balance PosterInventoryItem view.
+export interface PosterInventoryDoc {
+  id: string;
+  storageId: string;
+  storageName: string;
+  dateStart: string;
+  dateEnd: string;
+  sum: number;
+  status: string;
+}
+
 export interface TableTurnRow {
   orderId: string;
   tableNumber: string;
@@ -2047,6 +2077,7 @@ export interface ActiveOrderRow {
   items: number;
   guests?: number | null;
   status: string;
+  kitchenStatus?: 'preparing' | 'ready' | null; // Poster only — live processing_status snapshot, no iiko equivalent
   openTime: string;
   sum: number;
   ticketMin: number;

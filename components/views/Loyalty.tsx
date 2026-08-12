@@ -310,7 +310,7 @@ export const Loyalty: React.FC<{ lang: Language }> = ({ lang }) => {
                           </td>
                           <td className="py-2.5 pr-4 text-[13px] text-text metric-number">{g.visitCount}</td>
                           <td className="py-2.5 pr-4 text-[13px] text-text metric-number">{fmtSum(g.totalSpent)}</td>
-                          <td className="py-2.5 pr-4 text-[12px] text-muted">{new Date(g.lastSeen).toLocaleDateString(ru ? 'ru-RU' : isUz ? 'uz-Latn-UZ' : 'en-US')}</td>
+                          <td className="py-2.5 pr-4 text-[12px] text-muted">{fmtDate(lang, g.lastSeen)}</td>
                         </tr>
                         {detail?.phone === g.phone && (
                           <tr>

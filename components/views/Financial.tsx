@@ -12,6 +12,7 @@ import {
   FinancialInvoiceRow,
   FinancialInventoryDoc,
   PosterInventoryItem,
+  PosterInventoryDoc,
   InventoryItem,
   FinancialPL,
   GLSummary,
@@ -525,6 +526,12 @@ export const Financial: React.FC<{
   const [inventory, setInventory]               = useState<(FinancialInventoryDoc | PosterInventoryItem)[] | null>(null);
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [inventoryDoc, setInventoryDoc]         = useState<FinancialInventoryDoc | null>(null);
+  // Poster only — storage.getStorageInventories, a second (doc-based) view
+  // alongside the live-balance one above; toggled, not merged, since the
+  // two shapes represent genuinely different things (current stock vs. past count events).
+  const [inventoryView, setInventoryView] = useState<'live' | 'docs'>('live');
+  const [inventoryDocs, setInventoryDocs] = useState<PosterInventoryDoc[]>([]);
+  const [inventoryDocsLoading, setInventoryDocsLoading] = useState(false);
 
   // Cash shifts
   const [cashshifts, setCashshifts]           = useState<CashShiftDoc[]>([]);
@@ -641,6 +648,15 @@ export const Financial: React.FC<{
         .finally(() => setInventoryLoading(false));
     }
   }, [tab, range]);
+
+  useEffect(() => {
+    if (tab === 'inventory' && isPoster && inventoryView === 'docs') {
+      setInventoryDocsLoading(true);
+      traceApi.financial.inventoryDocs()
+        .then(setInventoryDocs).catch(() => setInventoryDocs([]))
+        .finally(() => setInventoryDocsLoading(false));
+    }
+  }, [tab, isPoster, inventoryView]);
 
   useEffect(() => {
     if (tab === 'cashshifts') {
@@ -1367,10 +1383,62 @@ export const Financial: React.FC<{
         <Card title={tr(lang, 'Инвентаризации', 'Inventory', 'Inventarizatsiyalar')}>
           <p className="text-[10px] text-muted mb-3">
             {isPoster
-              ? tr(lang, 'Текущие остатки склада · Poster', 'Current stock balance · Poster', 'Joriy ombor qoldig\'i · Poster')
+              ? (inventoryView === 'live'
+                ? tr(lang, 'Текущие остатки склада · Poster', 'Current stock balance · Poster', 'Joriy ombor qoldig\'i · Poster')
+                : tr(lang, 'Архив инвентаризаций · Poster', 'Stocktaking archive · Poster', 'Inventarizatsiya arxivi · Poster'))
               : tr(lang, 'Документы инвентаризации · iikoServer', 'Stocktaking documents · iikoServer', 'Inventarizatsiya hujjatlari · iikoServer')}
           </p>
-          {inventoryLoading ? <Skeleton /> : !inventory ? (
+          {isPoster && (
+            <div className="inline-flex items-center gap-1 bg-background border border-border rounded-lg p-0.5 mb-3">
+              <button
+                onClick={() => setInventoryView('live')}
+                className={`px-3 py-1.5 text-[11px] font-semibold rounded-[5px] transition-all ${inventoryView === 'live' ? 'bg-primary text-white shadow-sm' : 'text-muted hover:text-text'}`}>
+                {tr(lang, 'Текущий остаток', 'Live stock', 'Joriy qoldiq')}
+              </button>
+              <button
+                onClick={() => setInventoryView('docs')}
+                className={`px-3 py-1.5 text-[11px] font-semibold rounded-[5px] transition-all ${inventoryView === 'docs' ? 'bg-primary text-white shadow-sm' : 'text-muted hover:text-text'}`}>
+                {tr(lang, 'Архив инвентаризаций', 'Count history', 'Inventarizatsiya arxivi')}
+              </button>
+            </div>
+          )}
+          {isPoster && inventoryView === 'docs' ? (
+            inventoryDocsLoading ? <Skeleton /> : inventoryDocs.length === 0 ? (
+              <div className="flex items-center gap-2 py-6 text-muted">
+                <Package size={15} />
+                <span className="text-[12px]">{tr(lang, 'Инвентаризаций не найдено', 'No count events found', 'Inventarizatsiya topilmadi')}</span>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left min-w-[480px]">
+                  <thead className="border-b border-border">
+                    <tr>
+                      {[
+                        tr(lang, 'Склад', 'Storage', 'Ombor'),
+                        tr(lang, 'Начало', 'Started', 'Boshlandi'),
+                        tr(lang, 'Окончание', 'Ended', 'Tugadi'),
+                        tr(lang, 'Сумма', 'Amount', 'Summa'),
+                        tr(lang, 'Статус', 'Status', 'Holati'),
+                      ].map(h => (
+                        <th key={h} className="pb-3 pr-4 text-[10px] uppercase tracking-[0.15em] text-muted font-medium">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inventoryDocs.map(doc => (
+                      <tr key={doc.id} className="border-b border-border last:border-0 hover:bg-card-hover transition-colors">
+                        <td className="py-3 pr-4 text-[13px] font-medium text-text">{doc.storageName}</td>
+                        <td className="py-3 pr-4 text-[12px] text-muted">{doc.dateStart}</td>
+                        <td className="py-3 pr-4 text-[12px] text-muted">{doc.dateEnd}</td>
+                        <td className="py-3 pr-4 text-[13px] font-semibold text-text metric-number">{doc.sum.toLocaleString('ru-RU')}</td>
+                        <td className="py-3 pr-4 text-[11px] text-muted">{doc.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          ) : inventoryLoading ? <Skeleton /> : !inventory ? (
             <div className="flex flex-col items-center gap-3 py-10 text-center">
               <Package size={28} className="text-muted/40" />
               <p className="text-[12px] text-muted max-w-[260px]">

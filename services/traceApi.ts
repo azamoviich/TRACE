@@ -2396,6 +2396,9 @@ export const checklistApi = {
     update: (id: string, patchBody: { name?: string; active?: boolean; pin?: string }) =>
       checkedFetch<ChecklistEmployee>(`/checklist/employees/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patchBody) }),
     remove: (id: string) => checkedFetch<void>(`/checklist/employees/${id}`, { method: 'DELETE' }),
+    posPreview: () => checkedFetch<{ groups: { posRoleName: string; names: string[] }[] }>('/checklist/employees/pos-preview'),
+    import: (roleId: string, names: string[]) =>
+      post<{ created: { name: string; pin: string }[] }>('/checklist/employees/import', { roleId, names }),
   },
   managers: {
     list: () => checkedFetch<ChecklistManager[]>('/checklist/managers'),

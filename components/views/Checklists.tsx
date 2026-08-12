@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, Camera, ChevronRight, ArrowLeft, X } from 'lucide-react';
+import { Plus, Trash2, Camera, ChevronRight, ArrowLeft, X, Download } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Language } from '../../types';
 import { checklistApi } from '../../services/traceApi';
@@ -191,6 +191,86 @@ function RolesTab({ lang, roles, loading, onChange, onShowToast }: {
 }
 
 // ── Employees ────────────────────────────────────────────────────────────
+// ── POS import ───────────────────────────────────────────────────────────
+function PosImportPanel({ lang, roles, onShowToast, onImported }: {
+  lang: Language; roles: ChecklistRole[];
+  onShowToast: (m: string, t: 'success' | 'error' | 'info') => void;
+  onImported: () => void;
+}) {
+  const [groups, setGroups] = useState<{ posRoleName: string; names: string[] }[] | null>(null);
+  const [mapping, setMapping] = useState<Record<string, string>>({}); // posRoleName -> checklist roleId
+  const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState<string | null>(null);
+  const [imported, setImported] = useState<Record<string, { name: string; pin: string }[]>>({});
+
+  useEffect(() => {
+    checklistApi.employees.posPreview()
+      .then(res => setGroups(res.groups))
+      .catch(() => onShowToast(tr(lang, 'Не удалось получить данные из POS', 'Failed to fetch POS data', "POS'dan ma'lumot olib bo'lmadi"), 'error'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const importGroup = async (posRoleName: string, names: string[]) => {
+    const roleId = mapping[posRoleName];
+    if (!roleId) { onShowToast(tr(lang, 'Выберите роль для этой группы', 'Pick a role for this group', 'Bu guruh uchun rol tanlang'), 'error'); return; }
+    setImporting(posRoleName);
+    try {
+      const res = await checklistApi.employees.import(roleId, names);
+      setImported(prev => ({ ...prev, [posRoleName]: res.created }));
+      onImported();
+    } catch { onShowToast(tr(lang, 'Не удалось импортировать', 'Import failed', "Import qilib bo'lmadi"), 'error'); }
+    finally { setImporting(null); }
+  };
+
+  return (
+    <div className="mb-4 p-3.5 rounded-xl border border-border bg-background space-y-3">
+      {loading ? (
+        <p className="text-[13px] text-muted">{tr(lang, 'Запрашиваем POS...', 'Fetching from POS...', "POS'dan so'ralmoqda...")}</p>
+      ) : !groups || groups.length === 0 ? (
+        <p className="text-[13px] text-muted">{tr(lang, 'В POS не найдено сотрудников', 'No employees found in POS', "POS'da xodim topilmadi")}</p>
+      ) : (
+        groups.map(g => (
+          <div key={g.posRoleName} className="p-2.5 rounded-lg bg-card border border-border">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+              <div>
+                <p className="text-[13px] font-medium text-text">{g.posRoleName}</p>
+                <p className="text-[11px] text-muted">{g.names.join(', ')}</p>
+              </div>
+              {imported[g.posRoleName] ? (
+                <span className="text-[11px] font-semibold text-green-600">{tr(lang, 'Импортировано', 'Imported', "Import qilindi")}</span>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <select
+                    value={mapping[g.posRoleName] ?? ''}
+                    onChange={e => setMapping(prev => ({ ...prev, [g.posRoleName]: e.target.value }))}
+                    className="px-2 py-1.5 rounded-lg border border-border bg-background text-[12px] text-text"
+                  >
+                    <option value="">{tr(lang, 'Роль...', 'Role...', 'Rol...')}</option>
+                    {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  </select>
+                  <button
+                    onClick={() => importGroup(g.posRoleName, g.names)}
+                    disabled={importing === g.posRoleName}
+                    className="px-2.5 py-1.5 rounded-lg bg-primary text-white text-[12px] font-semibold disabled:opacity-50"
+                  >
+                    {tr(lang, 'Импорт', 'Import', 'Import')}
+                  </button>
+                </div>
+              )}
+            </div>
+            {imported[g.posRoleName] && (
+              <div className="mt-2 text-[12px] text-muted space-y-0.5">
+                <p className="text-[11px] text-text font-medium">{tr(lang, 'PIN-коды (запишите, больше не показываются):', 'PINs (write these down, shown only once):', 'PIN kodlar (yozib qoying, faqat bir marta ko\'rsatiladi):')}</p>
+                {imported[g.posRoleName].map(e => <p key={e.name}>{e.name} — <span className="metric-number font-semibold text-text">{e.pin}</span></p>)}
+              </div>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 function EmployeesTab({ lang, roles, onShowToast }: {
   lang: Language; roles: ChecklistRole[];
   onShowToast: (m: string, t: 'success' | 'error' | 'info') => void;
@@ -200,6 +280,7 @@ function EmployeesTab({ lang, roles, onShowToast }: {
   const [name, setName] = useState('');
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   const load = () => checklistApi.employees.list().then(setEmployees).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -222,7 +303,19 @@ function EmployeesTab({ lang, roles, onShowToast }: {
   const roleName = (id: string) => roles.find(r => r.id === id)?.name ?? '—';
 
   return (
-    <Card title={tr(lang, 'Сотрудники', 'Employees', 'Xodimlar')} subtitle={tr(lang, 'Имя и PIN для входа на своей странице', 'Name and PIN to log into their own page', "O'z sahifasiga kirish uchun ism va PIN")}>
+    <Card
+      title={tr(lang, 'Сотрудники', 'Employees', 'Xodimlar')}
+      subtitle={tr(lang, 'Имя и PIN для входа на своей странице', 'Name and PIN to log into their own page', "O'z sahifasiga kirish uchun ism va PIN")}
+      action={
+        <button onClick={() => setShowImport(v => !v)} className="px-3 py-1.5 rounded-lg bg-card border border-border text-[12px] font-semibold flex items-center gap-1.5 text-text">
+          <Download size={14} /> {tr(lang, 'Загрузить из POS', 'Load from POS', "POS'dan yuklash")}
+        </button>
+      }
+    >
+      {showImport && (
+        <PosImportPanel lang={lang} roles={roles} onShowToast={onShowToast} onImported={() => { setShowImport(false); load(); }} />
+      )}
+
       <div className="flex flex-wrap gap-2 mb-4">
         <select value={roleId} onChange={e => setRoleId(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text">
           {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}

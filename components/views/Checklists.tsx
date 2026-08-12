@@ -3,7 +3,7 @@ import { Plus, Trash2, Camera, ChevronRight, ArrowLeft, X, Download, Pencil, Cal
 import { Card } from '../ui/Card';
 import { DateRangePicker } from '../ui/DateRangePicker';
 import { Language } from '../../types';
-import { checklistApi, getSubdomain, traceApi, BranchSummary } from '../../services/traceApi';
+import { checklistApi, getSubdomain, getActiveBranchId, traceApi, BranchSummary } from '../../services/traceApi';
 import type {
   ChecklistRole, ChecklistEmployee, ChecklistManager, Checklist, ChecklistItem, ChecklistItemType, ChecklistStats,
   ChecklistHistoryRow, ChecklistAuditLogEntry, ChecklistWithItems,
@@ -39,7 +39,14 @@ export function Checklists({ lang, onShowToast }: Props) {
   useEffect(() => { loadRoles(); }, []);
   useEffect(() => { traceApi.org.branches().then(setBranches).catch(() => {}); }, []);
 
-  const currentBranch = branches.find(b => b.subdomain === getSubdomain());
+  // The header's branch switcher doesn't change the actual URL/subdomain —
+  // it just sets an X-Branch-Id override (see getActiveBranchId/apiFetch) for
+  // every request. getSubdomain() always reflects the real browser hostname
+  // (the home branch), so it never changed after switching — this component
+  // remounts on switch (App.tsx's key={branchKey}), so re-reading
+  // getActiveBranchId() here on mount gives the actual selected branch.
+  const activeBranchId = getActiveBranchId();
+  const currentBranch = branches.find(b => b.id === activeBranchId) ?? branches.find(b => b.subdomain === getSubdomain());
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'dashboard', label: tr(lang, 'Дашборд', 'Dashboard', 'Boshqaruv') },
@@ -283,7 +290,7 @@ export function HistoryTab({ lang, roles, historyApi, auditLogApi }: {
                             {emp.items.map(item => {
                               const text = answerText(lang, item);
                               return (
-                                <div key={item.item_id} className="flex items-center gap-2 text-[12px]">
+                                <div key={item.item_id} className="flex items-center gap-2 text-[12px] flex-wrap">
                                   <span className={item.done ? 'text-green-600' : 'text-muted'}>{item.done ? '✓' : '—'}</span>
                                   <span className="text-muted">{item.item_text}</span>
                                   {text && <span className="text-text font-medium">({text})</span>}
@@ -328,13 +335,13 @@ export function HistoryTab({ lang, roles, historyApi, auditLogApi }: {
             ) : (
               <div className="space-y-1.5 max-h-96 overflow-y-auto">
                 {auditLog.map(entry => (
-                  <div key={entry.id} className="flex items-center justify-between text-[12px] px-2 py-1.5 rounded-lg bg-background border border-border">
-                    <span className="text-text">
+                  <div key={entry.id} className="flex items-center justify-between gap-2 flex-wrap text-[12px] px-2 py-1.5 rounded-lg bg-background border border-border">
+                    <span className="text-text break-words">
                       <span className="font-semibold">{entry.actor_name}</span>
                       {' '}{actionLabel(entry.action)}{' '}{entityLabel(entry.entity_type)}{' '}
                       <span className="font-medium">«{entry.entity_name}»</span>
                     </span>
-                    <span className="text-muted whitespace-nowrap ml-2">{new Date(entry.created_at).toLocaleString(lang === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                    <span className="text-muted whitespace-nowrap">{new Date(entry.created_at).toLocaleString(lang === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
                 ))}
               </div>
@@ -801,21 +808,21 @@ export function ChecklistsTab({ lang, roles, onShowToast, branches = [], current
   }
 
   return (
-    <Card
-      title={tr(lang, 'Чек-листы', 'Checklists', 'Cheklistlar')}
-      action={
-        <div className="flex items-center gap-2">
+    <Card>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+        <h3 className="text-[15px] font-semibold text-text tracking-tight">{tr(lang, 'Чек-листы', 'Checklists', 'Cheklistlar')}</h3>
+        <div className="flex items-center gap-2 flex-wrap">
           {otherBranches.length > 0 && (
             <button onClick={() => setShowCopyPanel(v => !v)} className="px-3 py-1.5 rounded-lg bg-card border border-border text-[12px] font-semibold flex items-center gap-1.5 text-text">
-              <Copy size={14} /> {tr(lang, 'Скопировать из филиала', 'Copy from branch', 'Filialdan nusxalash')}
+              <Copy size={14} /> <span className="hidden sm:inline">{tr(lang, 'Скопировать из филиала', 'Copy from branch', 'Filialdan nusxalash')}</span>
             </button>
           )}
           <button onClick={() => setEditingId('new')} className="px-3 py-1.5 rounded-lg bg-primary text-white text-[12px] font-semibold flex items-center gap-1.5">
             <Plus size={14} /> {tr(lang, 'Новый', 'New', 'Yangi')}
           </button>
         </div>
-      }
-    >
+      </div>
+
       {showCopyPanel && (
         <CopyFromBranchPanel
           lang={lang}
@@ -1055,51 +1062,51 @@ export function ChecklistEditor({ lang, roles, checklistId, onDone, onShowToast,
           <label className="text-[12px] text-muted mb-1.5 block">{tr(lang, 'Пункты', 'Items', 'Bandlar')}</label>
           <div className="space-y-2">
             {items.map((it, i) => (
-              <div key={i} className="space-y-1.5">
+              <div key={i} className="p-2.5 rounded-lg border border-border bg-background/50 space-y-2">
                 <div className="flex items-center gap-2">
                   <input
                     value={it.text}
                     onChange={e => updateItem(i, { text: e.target.value })}
                     placeholder={tr(lang, 'Например: протереть столы', 'e.g. wipe down tables', 'masalan: stollarni artish')}
-                    className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text"
+                    className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text"
                   />
-                  <select
-                    value={it.itemType}
-                    onChange={e => updateItem(i, { itemType: e.target.value as ChecklistItemType })}
-                    title={tr(lang, 'Тип пункта', 'Item type', 'Band turi')}
-                    className="px-2 py-2 rounded-lg border border-border bg-background text-[12px] text-text"
-                  >
-                    <option value="checkbox">{tr(lang, 'Чекбокс', 'Checkbox', 'Chekbоks')}</option>
-                    <option value="yesno">{tr(lang, 'Да / Нет', 'Yes / No', 'Ha / Yo\'q')}</option>
-                    <option value="text">{tr(lang, 'Текст', 'Text', 'Matn')}</option>
-                    <option value="number">{tr(lang, 'Число', 'Number', 'Raqam')}</option>
-                    <option value="rating">{tr(lang, 'Оценка 1-5', 'Rating 1-5', 'Baho 1-5')}</option>
-                    <option value="choice">{tr(lang, 'Выбор из 2 вариантов', 'Choice of 2', "2 variantdan tanlash")}</option>
-                  </select>
                   <button
                     onClick={() => updateItem(i, { requiresPhoto: !it.requiresPhoto })}
                     title={tr(lang, 'Требуется фото', 'Requires photo', 'Foto talab qilinadi')}
-                    className={`p-2 rounded-lg ${it.requiresPhoto ? 'bg-primary text-white' : 'bg-background border border-border text-muted'}`}
+                    className={`shrink-0 p-2 rounded-lg ${it.requiresPhoto ? 'bg-primary text-white' : 'bg-background border border-border text-muted'}`}
                   >
                     <Camera size={15} />
                   </button>
-                  <button onClick={() => removeItem(i)} className="text-red-500 hover:text-red-600">
+                  <button onClick={() => removeItem(i)} className="shrink-0 text-red-500 hover:text-red-600">
                     <X size={15} />
                   </button>
                 </div>
+                <select
+                  value={it.itemType}
+                  onChange={e => updateItem(i, { itemType: e.target.value as ChecklistItemType })}
+                  title={tr(lang, 'Тип пункта', 'Item type', 'Band turi')}
+                  className="w-full px-2 py-2 rounded-lg border border-border bg-background text-[12px] text-text"
+                >
+                  <option value="checkbox">{tr(lang, 'Чекбокс', 'Checkbox', 'Chekbоks')}</option>
+                  <option value="yesno">{tr(lang, 'Да / Нет', 'Yes / No', 'Ha / Yo\'q')}</option>
+                  <option value="text">{tr(lang, 'Текст', 'Text', 'Matn')}</option>
+                  <option value="number">{tr(lang, 'Число', 'Number', 'Raqam')}</option>
+                  <option value="rating">{tr(lang, 'Оценка 1-5', 'Rating 1-5', 'Baho 1-5')}</option>
+                  <option value="choice">{tr(lang, 'Выбор из 2 вариантов', 'Choice of 2', "2 variantdan tanlash")}</option>
+                </select>
                 {it.itemType === 'choice' && (
-                  <div className="flex items-center gap-2 pl-1">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <input
                       value={it.options[0] ?? ''}
                       onChange={e => updateItem(i, { options: [e.target.value, it.options[1] ?? ''] })}
                       placeholder={tr(lang, 'Вариант 1, напр. Филиал А', 'Option 1, e.g. Branch A', "1-variant, masalan: Filial A")}
-                      className="flex-1 px-3 py-1.5 rounded-lg border border-border bg-background text-[12px] text-text"
+                      className="flex-1 min-w-[140px] px-3 py-1.5 rounded-lg border border-border bg-background text-[12px] text-text"
                     />
                     <input
                       value={it.options[1] ?? ''}
                       onChange={e => updateItem(i, { options: [it.options[0] ?? '', e.target.value] })}
                       placeholder={tr(lang, 'Вариант 2, напр. Филиал Б', 'Option 2, e.g. Branch B', "2-variant, masalan: Filial B")}
-                      className="flex-1 px-3 py-1.5 rounded-lg border border-border bg-background text-[12px] text-text"
+                      className="flex-1 min-w-[140px] px-3 py-1.5 rounded-lg border border-border bg-background text-[12px] text-text"
                     />
                   </div>
                 )}

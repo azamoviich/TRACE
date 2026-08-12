@@ -268,25 +268,29 @@ function TodayChecklist({ lang, tenantSubdomain, token, name, onLogout }: {
                     const uploading = uploadingItemId === item.id;
                     if (item.item_type === 'yesno') {
                       return (
-                        <div key={item.id} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-border bg-card">
-                          <span className="flex-1 text-[14px] text-text">{item.text}</span>
-                          {item.requires_photo && uploading && (
-                            <span className="text-[11px] text-muted">{tr(lang, 'Загрузка...', 'Uploading...', 'Yuklanmoqda...')}</span>
-                          )}
-                          <button
-                            onClick={() => answer(item, true)}
-                            disabled={uploading}
-                            className={`px-3 py-1.5 rounded-lg text-[13px] font-semibold ${item.done === true ? 'bg-green-500 text-white' : 'bg-background border border-border text-muted'}`}
-                          >
-                            {tr(lang, 'Да', 'Yes', 'Ha')}
-                          </button>
-                          <button
-                            onClick={() => answer(item, false)}
-                            disabled={uploading}
-                            className={`px-3 py-1.5 rounded-lg text-[13px] font-semibold ${item.done === false && item.completed_at ? 'bg-red-500 text-white' : 'bg-background border border-border text-muted'}`}
-                          >
-                            {tr(lang, 'Нет', 'No', "Yo'q")}
-                          </button>
+                        <div key={item.id} className="px-4 py-3.5 rounded-xl border border-border bg-card">
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <span className="text-[14px] text-text break-words">{item.text}</span>
+                            {item.requires_photo && uploading && (
+                              <span className="text-[11px] text-muted shrink-0">{tr(lang, 'Загрузка...', 'Uploading...', 'Yuklanmoqda...')}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              onClick={() => answer(item, true)}
+                              disabled={uploading}
+                              className={`px-4 py-2 rounded-lg text-[13px] font-semibold ${item.done === true ? 'bg-green-500 text-white' : 'bg-background border border-border text-muted'}`}
+                            >
+                              {tr(lang, 'Да', 'Yes', 'Ha')}
+                            </button>
+                            <button
+                              onClick={() => answer(item, false)}
+                              disabled={uploading}
+                              className={`px-4 py-2 rounded-lg text-[13px] font-semibold ${item.done === false && item.completed_at ? 'bg-red-500 text-white' : 'bg-background border border-border text-muted'}`}
+                            >
+                              {tr(lang, 'Нет', 'No', "Yo'q")}
+                            </button>
+                          </div>
                         </div>
                       );
                     }
@@ -368,21 +372,25 @@ function ChoiceRow({ lang, item, uploading, onAnswer }: {
   const current = item.answer_value && 'choice' in item.answer_value ? item.answer_value.choice : null;
   const options = (item.options ?? []).filter(Boolean);
   return (
-    <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-border bg-card">
-      <span className="flex-1 text-[14px] text-text">{item.text}</span>
-      {item.requires_photo && uploading && (
-        <span className="text-[11px] text-muted">{tr(lang, 'Загрузка...', 'Uploading...', 'Yuklanmoqda...')}</span>
-      )}
-      {options.map(opt => (
-        <button
-          key={opt}
-          onClick={() => onAnswer(item, true, { choice: opt })}
-          disabled={uploading}
-          className={`px-3 py-1.5 rounded-lg text-[13px] font-semibold ${current === opt ? 'bg-primary text-white' : 'bg-background border border-border text-muted'}`}
-        >
-          {opt}
-        </button>
-      ))}
+    <div className="px-4 py-3.5 rounded-xl border border-border bg-card">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <span className="text-[14px] text-text break-words">{item.text}</span>
+        {item.requires_photo && uploading && (
+          <span className="text-[11px] text-muted shrink-0">{tr(lang, 'Загрузка...', 'Uploading...', 'Yuklanmoqda...')}</span>
+        )}
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        {options.map(opt => (
+          <button
+            key={opt}
+            onClick={() => onAnswer(item, true, { choice: opt })}
+            disabled={uploading}
+            className={`px-3 py-2 rounded-lg text-[13px] font-semibold ${current === opt ? 'bg-primary text-white' : 'bg-background border border-border text-muted'}`}
+          >
+            {opt}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -413,7 +421,7 @@ function TextOrNumberRow({ lang, item, uploading, onAnswer }: {
         <span className="text-[14px] text-text">{item.text}</span>
         {item.done && <Check size={16} className="text-green-500 shrink-0" />}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <input
           value={value}
           onChange={e => setValue(e.target.value)}
@@ -421,12 +429,12 @@ function TextOrNumberRow({ lang, item, uploading, onAnswer }: {
           type={isNumber ? 'number' : 'text'}
           inputMode={isNumber ? 'decimal' : undefined}
           placeholder={isNumber ? tr(lang, 'Число', 'Number', 'Raqam') : tr(lang, 'Ответ', 'Answer', 'Javob')}
-          className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-[14px] text-text"
+          className="flex-1 min-w-[120px] px-3 py-2 rounded-lg border border-border bg-background text-[14px] text-text"
         />
         <button
           onClick={submit}
           disabled={uploading || !value.trim()}
-          className="px-3 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold disabled:opacity-50"
+          className="px-3 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold disabled:opacity-50 shrink-0"
         >
           {uploading
             ? tr(lang, 'Загрузка...', 'Uploading...', 'Yuklanmoqda...')

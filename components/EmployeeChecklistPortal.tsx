@@ -35,35 +35,26 @@ export function EmployeeChecklistPortal({ roleSlug, tenantSubdomain }: Props) {
   };
 
   if (!token) {
-    return <NameAndPinLogin lang={lang} roleSlug={roleSlug} tenantSubdomain={tenantSubdomain} onLoggedIn={onLoggedIn} />;
+    return <PinLogin lang={lang} tenantSubdomain={tenantSubdomain} onLoggedIn={onLoggedIn} />;
   }
   return <TodayChecklist lang={lang} tenantSubdomain={tenantSubdomain} token={token} name={name ?? ''} onLogout={logout} />;
 }
 
-function NameAndPinLogin({ lang, roleSlug, tenantSubdomain, onLoggedIn }: {
-  lang: Language; roleSlug: string; tenantSubdomain: string; onLoggedIn: (token: string, name: string) => void;
+// PINs are unique across every active employee in the tenant, so the PIN
+// alone identifies who's logging in (and their role) — no name-picker step.
+function PinLogin({ lang, tenantSubdomain, onLoggedIn }: {
+  lang: Language; tenantSubdomain: string; onLoggedIn: (token: string, name: string) => void;
 }) {
-  const [employees, setEmployees] = useState<{ id: string; name: string }[]>([]);
-  const [roleName, setRoleName] = useState('');
-  const [selected, setSelected] = useState<{ id: string; name: string } | null>(null);
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    checklistAuthApi.employeeRoster(tenantSubdomain, roleSlug)
-      .then(res => { setEmployees(res.employees); setRoleName(res.roleName); })
-      .catch(() => setError(tr(lang, 'Страница не найдена', 'Page not found', 'Sahifa topilmadi')))
-      .finally(() => setLoading(false));
-  }, []);
 
   const submitPin = async () => {
-    if (!selected || pin.length < 4) return;
+    if (pin.length < 4) return;
     setBusy(true);
     setError('');
     try {
-      const res = await checklistAuthApi.employeeLogin(tenantSubdomain, selected.id, pin);
+      const res = await checklistAuthApi.employeeLogin(tenantSubdomain, pin);
       onLoggedIn(res.token, res.name);
     } catch {
       setError(tr(lang, 'Неверный PIN', 'Wrong PIN', "PIN noto'g'ri"));
@@ -73,34 +64,8 @@ function NameAndPinLogin({ lang, roleSlug, tenantSubdomain, onLoggedIn }: {
     }
   };
 
-  if (loading) return <CenteredMessage>{tr(lang, 'Загрузка...', 'Loading...', 'Yuklanmoqda...')}</CenteredMessage>;
-
-  if (!selected) {
-    return (
-      <div className="min-h-screen bg-background px-4 py-8">
-        <div className="max-w-sm mx-auto">
-          <h1 className="text-[20px] font-bold text-text text-center mb-1">{roleName}</h1>
-          <p className="text-[13px] text-muted text-center mb-6">{tr(lang, 'Выберите своё имя', 'Pick your name', "Ismingizni tanlang")}</p>
-          {error && <p className="text-[13px] text-red-500 text-center mb-4">{error}</p>}
-          <div className="space-y-2">
-            {employees.map(e => (
-              <button
-                key={e.id}
-                onClick={() => setSelected(e)}
-                className="w-full py-3.5 rounded-xl bg-card border border-border text-[15px] font-medium text-text hover:border-primary/40"
-              >
-                {e.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-background px-4 py-8 flex flex-col items-center">
-      <h1 className="text-[20px] font-bold text-text mb-1">{selected.name}</h1>
+    <div className="min-h-screen bg-background px-4 py-8 flex flex-col items-center justify-center">
       <p className="text-[13px] text-muted mb-6">PIN</p>
       <input
         autoFocus
@@ -112,14 +77,9 @@ function NameAndPinLogin({ lang, roleSlug, tenantSubdomain, onLoggedIn }: {
         className="w-40 text-center text-[28px] tracking-[0.3em] py-3 rounded-xl border border-border bg-card text-text"
       />
       {error && <p className="text-[13px] text-red-500 mt-3">{error}</p>}
-      <div className="flex gap-2 mt-6 w-full max-w-xs">
-        <button onClick={() => { setSelected(null); setPin(''); setError(''); }} className="flex-1 py-2.5 rounded-lg bg-card text-muted text-[14px] font-medium">
-          {tr(lang, 'Назад', 'Back', 'Orqaga')}
-        </button>
-        <button onClick={submitPin} disabled={busy || pin.length < 4} className="flex-1 py-2.5 rounded-lg bg-primary text-white text-[14px] font-semibold disabled:opacity-50">
-          {tr(lang, 'Войти', 'Log in', 'Kirish')}
-        </button>
-      </div>
+      <button onClick={submitPin} disabled={busy || pin.length < 4} className="mt-6 w-full max-w-xs py-2.5 rounded-lg bg-primary text-white text-[14px] font-semibold disabled:opacity-50">
+        {tr(lang, 'Войти', 'Log in', 'Kirish')}
+      </button>
     </div>
   );
 }

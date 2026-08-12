@@ -2360,21 +2360,16 @@ export const checklistAuthApi = {
       '/checklist/manager-login',
       { portalSubdomain, password },
     ),
-  employeeRoster: (tenantSubdomain: string, role: string) =>
-    fetch(`${BASE}/checklist/auth/employee/roster?role=${encodeURIComponent(role)}`, {
-      headers: { 'X-Tenant': tenantSubdomain },
-    }).then(r => {
-      if (!r.ok) throw new Error(`${r.status}`);
-      return r.json() as Promise<{ roleName: string; employees: { id: string; name: string }[] }>;
-    }),
-  employeeLogin: (tenantSubdomain: string, employeeId: string, pin: string) =>
+  // PINs are unique across every active employee in the tenant — the PIN
+  // alone identifies who's logging in, no name-picker step needed first.
+  employeeLogin: (tenantSubdomain: string, pin: string) =>
     fetch(`${BASE}/checklist/auth/employee/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Tenant': tenantSubdomain },
-      body: JSON.stringify({ employeeId, pin }),
+      body: JSON.stringify({ pin }),
     }).then(r => {
       if (!r.ok) throw new Error(`${r.status}`);
-      return r.json() as Promise<{ token: string; name: string }>;
+      return r.json() as Promise<{ token: string; name: string; roleName: string }>;
     }),
 };
 

@@ -62,6 +62,11 @@ export const Reviews: React.FC<{ lang: Language; onContextReady?: (ctx: string) 
     new URLSearchParams(window.location.search).get('tab') === 'shifts' ? 'shifts' : 'reviews'
   );
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
+  // Unfiltered snapshot (always the "all platforms" fetch) — used for the
+  // platform filter buttons and the sidebar breakdown, which both need to
+  // show every platform even while `reviews` itself is server-filtered
+  // down to one platform for the main list.
+  const [allReviews, setAllReviews] = useState<ReviewRow[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -103,7 +108,7 @@ export const Reviews: React.FC<{ lang: Language; onContextReady?: (ctx: string) 
     const posLines = posReviews.map(r =>
       `  [${r.platform}] ${r.author} (${r.rating ?? '?'}★, ${r.date}): "${r.text.slice(0, 150)}"`
     ).join('\n');
-    const recent = [...rv].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5);
+    const recent = [...rv].sort((a, b) => (b.date || b.created_at).localeCompare(a.date || a.created_at)).slice(0, 5);
     const recentLines = recent.map(r =>
       `  ${r.date} [${r.platform}] ${r.author} (${r.sentiment}, ${r.rating ?? '?'}★): "${r.text.slice(0, 150)}"`
     ).join('\n');
@@ -126,6 +131,7 @@ export const Reviews: React.FC<{ lang: Language; onContextReady?: (ctx: string) 
         const rv = demoReviewRows();
         const st = demoReviewStats();
         setReviews(rv as ReviewRow[]);
+        setAllReviews(rv as ReviewRow[]);
         setStats(st);
         buildContext(rv as ReviewRow[], st);
         setLoading(false);
@@ -133,15 +139,28 @@ export const Reviews: React.FC<{ lang: Language; onContextReady?: (ctx: string) 
       }
       const safeJson = (r: Response) => r.ok ? r.json().catch(() => null) : Promise.resolve(null);
       const headers = { 'X-Tenant': sub, ...branchHeaders() };
-      const [rv, st] = await Promise.all([
-        fetch(`${BASE}/reviews?limit=200`, { headers }).then(safeJson),
+      // Server-side platform filter — the API's 200-row window is sorted by
+      // review_date across ALL platforms, so client-filtering that shared
+      // window after the fact starves any platform with fewer/older reviews
+      // than the top 200 combined (e.g. clicking "2GIS" shows almost
+      // nothing even though 2GIS reviews exist, because they fell outside
+      // the 200-row cut dominated by a busier platform).
+      const platformParam = filter !== 'all' ? `&platform=${encodeURIComponent(filter)}` : '';
+      const fetches = [
+        fetch(`${BASE}/reviews?limit=200${platformParam}`, { headers }).then(safeJson),
         fetch(`${BASE}/reviews/stats`, { headers }).then(safeJson),
-      ]);
+      ];
+      // Also fetch the unfiltered set when a platform filter is active, so
+      // the filter buttons/sidebar breakdown still show every platform.
+      if (filter !== 'all') fetches.push(fetch(`${BASE}/reviews?limit=200`, { headers }).then(safeJson));
+      const [rv, st, rvAll] = await Promise.all(fetches);
       const rvArr: ReviewRow[] = Array.isArray(rv) ? rv : [];
       const stObj: Stats | null = st?.total !== undefined ? st : null;
+      const allArr: ReviewRow[] = filter !== 'all' ? (Array.isArray(rvAll) ? rvAll : []) : rvArr;
       setReviews(rvArr);
+      setAllReviews(allArr);
       setStats(stObj);
-      buildContext(rvArr, stObj);
+      buildContext(allArr, stObj);
     } catch {
       setError(ru ? 'Не удалось загрузить отзывы' : isUz ? "Sharhlarni yuklab bo'lmadi" : 'Failed to load reviews');
     } finally {
@@ -149,7 +168,7 @@ export const Reviews: React.FC<{ lang: Language; onContextReady?: (ctx: string) 
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [filter]);
 
   const generateReply = (review: ReviewRow) => {
     setReplyMap(m => ({ ...m, [review.id]: { text: '', loading: true, copied: false } }));
@@ -177,18 +196,24 @@ export const Reviews: React.FC<{ lang: Language; onContextReady?: (ctx: string) 
       .finally(() => setTrendsLoading(false));
   };
 
-  const platforms = [...new Set(reviews.map(r => r.platform))];
+  const platforms = [...new Set(allReviews.map(r => r.platform))];
+  // reviews is already server-filtered by platform (see load()) — only
+  // sentiment/date/sort remain to apply client-side. Filtering/sorting by
+  // review_date (r.date) here, not created_at (ingestion time) — those two
+  // can diverge (a review from months ago ingested today), which used to
+  // make the date-range filter and "newest/oldest" sort disagree with the
+  // "this week" stat (computed server-side from review_date).
   const filtered = reviews
-    .filter(r => filter === 'all' || r.platform === filter)
     .filter(r => sentimentFilter === 'all' || r.sentiment === sentimentFilter)
     .filter(r => {
       if (!dateRange) return true;
-      const d = (r.created_at || r.date || '').slice(0, 10);
+      const d = (r.date || r.created_at || '').slice(0, 10);
       return d >= dateRange.from && d <= dateRange.to;
     })
     .sort((a, b) => {
-      if (sortMode === 'newest') return b.created_at.localeCompare(a.created_at);
-      if (sortMode === 'oldest') return a.created_at.localeCompare(b.created_at);
+      const ad = a.date || a.created_at, bd = b.date || b.created_at;
+      if (sortMode === 'newest') return bd.localeCompare(ad);
+      if (sortMode === 'oldest') return ad.localeCompare(bd);
       if (sortMode === 'rating_desc') return (b.rating ?? -1) - (a.rating ?? -1);
       return (a.rating ?? 999) - (b.rating ?? 999);
     });
@@ -518,9 +543,9 @@ export const Reviews: React.FC<{ lang: Language; onContextReady?: (ctx: string) 
               <p className="text-muted text-[13px]">{ru ? 'Нет данных' : isUz ? "Ma'lumot yo'q" : 'No data'}</p>
             )}
             {platforms.map(p => {
-              const count = reviews.filter(r => r.platform === p).length;
-              const pct = reviews.length > 0 ? Math.round(count / reviews.length * 100) : 0;
-              const ratedForP = reviews.filter(r => r.platform === p && r.rating != null);
+              const count = allReviews.filter(r => r.platform === p).length;
+              const pct = allReviews.length > 0 ? Math.round(count / allReviews.length * 100) : 0;
+              const ratedForP = allReviews.filter(r => r.platform === p && r.rating != null);
               const avgR = ratedForP.length > 0 ? ratedForP.reduce((s, r) => s + (r.rating ?? 0), 0) / ratedForP.length : null;
               return (
                 <div key={p} className="flex items-center justify-between py-2.5 border-b border-border last:border-0">

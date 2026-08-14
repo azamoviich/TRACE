@@ -564,10 +564,15 @@ function SmartAlerts({ lang, pluginConnected }: { lang: Language; pluginConnecte
   }, [lang]);
 
   useEffect(() => {
+    // Alerts are derived from realtime_events (TRACEPLUGIN-only) — always
+    // empty for Poster (pluginConnected is always false there), so skip
+    // polling for data that will never arrive rather than fetching only to
+    // have the early return below discard it.
+    if (!pluginConnected) { setLoading(false); return; }
     load();
     intervalRef.current = setInterval(load, 60_000);
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [load]);
+  }, [load, pluginConnected]);
 
   const [open, setOpen] = useState(false);
 
@@ -708,10 +713,15 @@ function VoidTrackerCard({ lang, pluginConnected }: { lang: Language; pluginConn
   const [detail, setDetail] = useState<VoidEvent | null>(null);
 
   useEffect(() => {
+    // Poster has no order-void data source (realtime_events is TRACEPLUGIN-only) —
+    // pluginConnected is always false for Poster, so the card never renders
+    // (see the early return below); skip the fetch entirely rather than
+    // polling for data that will always come back empty.
+    if (!pluginConnected) return;
     traceApi.operations.voidEvents().then(setEvents).catch(() => {});
     const id = setInterval(() => traceApi.operations.voidEvents().then(setEvents).catch(() => {}), 120_000);
     return () => clearInterval(id);
-  }, []);
+  }, [pluginConnected]);
 
   const byWaiter = useMemo(() => {
     const m = new Map<string, VoidEvent[]>();

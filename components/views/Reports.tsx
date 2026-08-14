@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card } from '../ui/Card';
 import { Language, ViewState } from '../../types';
 import { TRANSLATIONS, tr } from '../../constants';
@@ -935,6 +935,11 @@ export const Reports: React.FC<{
   const [pickerOpen, setPickerOpen] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
   const calendarBtnRef = React.useRef<HTMLButtonElement>(null);
+  // Void/deletion report is sourced from realtime_events (TRACEPLUGIN-only) —
+  // always empty for Poster, which threw a misleading "no voids recorded"
+  // instead of "not available for your POS". Hidden below instead.
+  const [isPoster, setIsPoster] = useState(false);
+  useEffect(() => { traceApi.sales.status().then(s => setIsPoster(!!s.poster)).catch(() => {}); }, []);
 
   const CATS: { key: ReportCat2; label: string }[] = [
     { key: 'all',     label: t.all },
@@ -954,7 +959,8 @@ export const Reports: React.FC<{
     ? `${customRange.from} → ${customRange.to}`
     : RANGES.find(r => r.key === range)?.label ?? '';
 
-  const filtered = cat === 'all' ? REPORT_TEMPLATES : REPORT_TEMPLATES.filter(r => r.cat === cat);
+  const templates = isPoster ? REPORT_TEMPLATES.filter(r => r.id !== 'r14') : REPORT_TEMPLATES;
+  const filtered = cat === 'all' ? templates : templates.filter(r => r.cat === cat);
 
   const BRAND = tr(lang, 'TRACE · Отчёты', 'TRACE · Reports', 'TRACE · Hisobotlar');
 

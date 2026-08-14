@@ -539,10 +539,30 @@ export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.empl
   const [busy, setBusy] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editPin, setEditPin] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
 
   const load = () => api.list().then(setEmployees).catch(() => {});
   useEffect(() => { load(); }, []);
   useEffect(() => { if (!roleId && roles[0]) setRoleId(roles[0].id); }, [roles]);
+
+  const startEdit = (e: ChecklistEmployee) => { setEditingId(e.id); setEditName(e.name); setEditPin(''); };
+
+  const saveEdit = async (id: string) => {
+    if (!editName.trim() || (editPin && !/^\d{4,6}$/.test(editPin))) {
+      onShowToast(tr(lang, 'Укажите имя и корректный PIN (4-6 цифр)', 'Enter a name and a valid PIN (4-6 digits)', "Ism va to'g'ri PIN (4-6 raqam) kiriting"), 'error');
+      return;
+    }
+    setEditBusy(true);
+    try {
+      await api.update(id, { name: editName.trim(), ...(editPin ? { pin: editPin } : {}) });
+      setEditingId(null);
+      load();
+    } catch { onShowToast(tr(lang, 'Не удалось сохранить изменения', 'Failed to save changes', "O'zgarishlarni saqlab bo'lmadi"), 'error'); }
+    finally { setEditBusy(false); }
+  };
 
   const add = async () => {
     if (!name.trim() || !roleId || !/^\d{4,6}$/.test(pin)) {
@@ -610,7 +630,22 @@ export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.empl
         <p className="text-[13px] text-muted">{tr(lang, 'Сотрудников пока нет', 'No employees yet', "Hozircha xodim yo'q")}</p>
       ) : (
         <div className="space-y-1.5">
-          {employees.map(e => (
+          {employees.map(e => editingId === e.id ? (
+            <div key={e.id} className="p-3 rounded-lg bg-background border border-border space-y-2">
+              <div className="grid sm:grid-cols-2 gap-2">
+                <input value={editName} onChange={ev => setEditName(ev.target.value)} placeholder={tr(lang, 'Имя', 'Name', 'Ism')} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
+                <input value={editPin} onChange={ev => setEditPin(ev.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={tr(lang, 'Новый PIN (необязательно)', 'New PIN (optional)', "Yangi PIN (ixtiyoriy)")} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => saveEdit(e.id)} disabled={editBusy} className="px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold disabled:opacity-50">
+                  {tr(lang, 'Сохранить', 'Save', 'Saqlash')}
+                </button>
+                <button onClick={() => setEditingId(null)} className="px-3.5 py-2 rounded-lg bg-card border border-border text-muted text-[13px] font-medium">
+                  {tr(lang, 'Отмена', 'Cancel', 'Bekor qilish')}
+                </button>
+              </div>
+            </div>
+          ) : (
             <div key={e.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-background border border-border">
               <div>
                 <span className="text-[13px] text-text">{e.name}</span>
@@ -622,6 +657,9 @@ export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.empl
                   className={`text-[11px] font-semibold px-2 py-0.5 rounded ${e.active ? 'bg-green-500/10 text-green-600' : 'bg-muted/10 text-muted'}`}
                 >
                   {e.active ? tr(lang, 'Активен', 'Active', 'Faol') : tr(lang, 'Скрыт', 'Hidden', 'Yashirilgan')}
+                </button>
+                <button onClick={() => startEdit(e)} className="text-muted hover:text-text">
+                  <Pencil size={15} />
                 </button>
                 <button onClick={async () => { if (!confirmDelete(lang, e.name)) return; await api.remove(e.id); load(); }} className="text-red-500 hover:text-red-600">
                   <Trash2 size={15} />

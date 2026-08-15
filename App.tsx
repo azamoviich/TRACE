@@ -214,8 +214,10 @@ export default function App() {
     if (saved === 'dark' || saved === 'light') return saved;
     return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
-  const [themeChosen, setThemeChosen] = useState(() => localStorage.getItem('trace_theme') !== null);
-  const [demoPosChosen, setDemoPosChosen] = useState(() => !isDemoTenant() || localStorage.getItem('trace_demo_pos') !== null);
+  // Demo tenants get asked every load — no persistence — so switching POS/theme
+  // to compare demos doesn't require clearing localStorage by hand.
+  const [themeChosen, setThemeChosen] = useState(() => !isDemoTenant() && localStorage.getItem('trace_theme') !== null);
+  const [demoPosChosen, setDemoPosChosen] = useState(() => !isDemoTenant());
 
   const [navStyle, setNavStyleState] = useState<NavStyle>(loadNavStyle);
   const setNavStyle = (s: NavStyle) => { setNavStyleState(s); localStorage.setItem(NAV_STYLE_KEY, s); };

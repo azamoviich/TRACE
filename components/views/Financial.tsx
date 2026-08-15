@@ -480,7 +480,9 @@ export const Financial: React.FC<{
   // (a one-directional reveal, not a flash-then-switch), and Poster
   // tenants never see it at all.
   const TABS = (!posKnown || isPoster) ? ALL_TABS.filter(x => x.key !== 'pl') : ALL_TABS;
-  useEffect(() => { if (posKnown && isPoster && tab === 'pl') setTab('gl'); }, [posKnown, isPoster, tab]);
+  // Land on the first available tab (Menu Analysis), not a specific
+  // arbitrary one — jumping straight to Accounting read as broken/random.
+  useEffect(() => { if (posKnown && isPoster && tab === 'pl') setTab(TABS[0]?.key ?? 'menu'); }, [posKnown, isPoster, tab]);
 
 
   // Shared range for all tabs

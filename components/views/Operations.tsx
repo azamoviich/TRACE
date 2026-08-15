@@ -139,29 +139,6 @@ async function downloadShiftSchedulePdfClientSide(
   doc.save(`TRACE-shift-schedule-${generatedAt}.pdf`);
 }
 
-// Previously rendered a fabricated 16-table restaurant layout (HALL_TABLES,
-// a hardcoded T1-T16 demo shape unrelated to any real tenant's floor plan)
-// colored with Math.random() when no real occupancy data existed — looked
-// identical to the real heatmap while being pure fiction. No hall plan
-// means no real data to show; an honest empty state pointing at the real
-// fix (draw the hall plan in Admin) replaces it.
-function HallMapFallback({ lang }: { lang: Language }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-14 text-center">
-      <Grid2x2 size={28} className="text-muted mb-3" strokeWidth={1.5} />
-      <p className="text-[13px] font-medium text-text">
-        {tr(lang, 'План зала не настроен', 'No hall plan configured', "Zal rejasi sozlanmagan")}
-      </p>
-      <p className="text-[11px] text-muted mt-1 max-w-xs">
-        {tr(lang,
-          'Тепловая карта появится после того, как администратор создаст план зала в разделе «Админ».',
-          'The heatmap will appear once an admin draws the hall plan in the Admin section.',
-          'Zal rejasi "Admin" bo\'limida yaratilgandan so\'ng issiqlik xaritasi ko\'rinadi.')}
-      </p>
-    </div>
-  );
-}
-
 const HEAT_PERIODS = ['today', 7, 30, 90] as const;
 type HeatPeriod = typeof HEAT_PERIODS[number];
 
@@ -169,7 +146,7 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster }: { lang: Language; onToast?: (m: string, t: 'info') => void; occupiedTables?: Set<number>; tableInfo?: Map<number, { min: number; sum: number }>; branchId?: string; isPoster?: boolean }) {
+function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster, onHasPlanChange }: { lang: Language; onToast?: (m: string, t: 'info') => void; occupiedTables?: Set<number>; tableInfo?: Map<number, { min: number; sum: number }>; branchId?: string; isPoster?: boolean; onHasPlanChange?: (hasPlan: boolean) => void }) {
   const [plans, setPlans] = useState<HallPlan[]>([]);
   const [activeTab, setActiveTab] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -183,7 +160,9 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster 
   const revenueCache = useRef<Map<string, { table: number; revenue: number; orders: number }[]>>(new Map());
 
   useEffect(() => {
-    traceApi.halls.list(branchId).then(p => { setPlans(p); setLoading(false); }).catch((e) => { console.warn('halls fetch:', e); setLoading(false); });
+    traceApi.halls.list(branchId)
+      .then(p => { setPlans(p); setLoading(false); onHasPlanChange?.(p.length > 0); })
+      .catch((e) => { console.warn('halls fetch:', e); setLoading(false); onHasPlanChange?.(false); });
   }, [branchId]);
 
   // Effective request args — a custom calendar pick wins, otherwise "today"
@@ -278,7 +257,7 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster 
   }
 
   if (plans.length === 0) {
-    return <HallMapFallback lang={lang} />;
+    return null;
   }
 
   const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');
@@ -1106,6 +1085,13 @@ export const Operations: React.FC<{
   // regardless of POS type) reads as "plugin connected" with zero real events
   // ever arriving — a permanent "waiting..." state, not an honest empty one.
   const [isPoster, setIsPoster] = useState(false);
+  // Whether the (single-branch) hall map has a real plan to show — default
+  // true so the card doesn't flash visible-then-gone while HallMap's own
+  // fetch is still in flight; HallMap reports the real answer once known.
+  const [hasHallPlan, setHasHallPlan] = useState(true);
+  // Same idea per-branch for the "All branches" hall map view — each
+  // branch's own HallMap instance reports whether it has a real plan.
+  const [branchHasHallPlan, setBranchHasHallPlan] = useState<Map<string, boolean>>(new Map());
 
   useEffect(() => {
     if (demo) return;
@@ -1596,6 +1582,7 @@ export const Operations: React.FC<{
 
       {/* ── HALL MAP ── */}
       {isAllBranches ? (
+        branches.some(b => branchHasHallPlan.get(b.id) !== false) && (
         <Card title={
           <div className="flex items-center gap-2">
             <span>{t.hall_heatmap}</span>
@@ -1610,7 +1597,7 @@ export const Operations: React.FC<{
                      "Har bir filial alohida ko'rsatilgan — zal tartiblari filiallar bo'yicha har xil, shuning uchun bitta sxemaga birlashtirilmaydi.")}
           </p>
           <div className="space-y-6">
-            {branches.map(b => {
+            {branches.filter(b => branchHasHallPlan.get(b.id) !== false).map(b => {
               const occ = perBranchOccupancy.get(b.id);
               return (
                 <div key={b.id}>
@@ -1622,13 +1609,15 @@ export const Operations: React.FC<{
                     occupiedTables={occ && occ.tables.size > 0 ? occ.tables : undefined}
                     tableInfo={occ?.info}
                     isPoster={isPoster}
+                    onHasPlanChange={hasPlan => setBranchHasHallPlan(m => new Map(m).set(b.id, hasPlan))}
                   />
                 </div>
               );
             })}
           </div>
         </Card>
-      ) : (
+        )
+      ) : hasHallPlan && (
         <Card title={
           <div className="flex items-center gap-2">
             <span>{t.hall_heatmap}</span>
@@ -1637,7 +1626,7 @@ export const Operations: React.FC<{
             )}
           </div>
         }>
-          <HallMap lang={lang} onToast={onShowToast} occupiedTables={(PLUGIN_ENABLED && pluginConnected || isPoster) && occupiedTables.size > 0 ? occupiedTables : undefined} tableInfo={tableInfo} isPoster={isPoster} />
+          <HallMap lang={lang} onToast={onShowToast} occupiedTables={(PLUGIN_ENABLED && pluginConnected || isPoster) && occupiedTables.size > 0 ? occupiedTables : undefined} tableInfo={tableInfo} isPoster={isPoster} onHasPlanChange={setHasHallPlan} />
         </Card>
       )}
 
@@ -1758,8 +1747,10 @@ export const Operations: React.FC<{
       })()}
 
       {/* ── RESERVATIONS ── */}
-      {/* Poster only — incomingOrders.getReservations, no iiko-side equivalent anywhere in TRACE */}
-      {isPoster && !isAllBranches && (
+      {/* Poster only — incomingOrders.getReservations, no iiko-side equivalent anywhere in TRACE.
+          Hidden entirely (not an empty state) once loaded with zero upcoming reservations —
+          a permanent "nothing here" card is clutter, not information. */}
+      {isPoster && !isAllBranches && (reservationsLoading || reservations.length > 0) && (
         <Card title={
           <div className="flex items-center gap-2">
             <CalendarClock size={14} />
@@ -1768,11 +1759,6 @@ export const Operations: React.FC<{
         }>
           {reservationsLoading ? (
             <div className="h-16 bg-zinc-800/40 rounded animate-pulse" />
-          ) : reservations.length === 0 ? (
-            <div className="flex items-center gap-2 py-6 text-muted">
-              <CheckCircle size={15} className="text-success flex-shrink-0" />
-              <span className="text-[12px]">{tr(lang, 'Нет бронирований на ближайшие 14 дней', 'No reservations in the next 14 days', 'Keyingi 14 kun uchun bronlar yo\'q')}</span>
-            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left min-w-[480px]">

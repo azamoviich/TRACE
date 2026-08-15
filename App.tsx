@@ -113,11 +113,11 @@ const DemoPosPicker: React.FC<{ lang: Language; onChoose: (p: 'iiko' | 'poster')
   return (
     <div className="min-h-screen bg-background text-text flex items-center justify-center p-4">
       <div className="w-full max-w-[420px] text-center animate-fade-in">
-        <div className="inline-flex w-14 h-14 rounded-[18px] glass overflow-hidden mb-6 shadow-[0_8px_32px_rgba(0,0,0,0.15)]">
+        <div className="flex w-14 h-14 mx-auto rounded-[18px] glass overflow-hidden mb-6 shadow-[0_8px_32px_rgba(0,0,0,0.15)]">
           <img src="/trace-logo.png" alt="TRACE" className="w-full h-full object-cover invert dark:invert-0"
             onError={(e) => { e.currentTarget.style.display = 'none'; }} />
         </div>
-        <span className="inline-block text-[11px] font-bold tracking-wide uppercase px-3 py-1 rounded-full mb-4" style={{ background: 'rgba(255,107,53,0.12)', color: '#ff6b35' }}>
+        <span className="block w-fit mx-auto text-[11px] font-bold tracking-wide uppercase px-3 py-1 rounded-full mb-4" style={{ background: 'rgba(255,107,53,0.12)', color: '#ff6b35' }}>
           {tr(lang, 'Это демо · вымышленные данные', 'This is a demo · fictional data', 'Bu demo · demonstrativ maʼlumotlar')}
         </span>
         <h1 className="text-[20px] font-bold mb-2">

@@ -1096,6 +1096,9 @@ export const Operations: React.FC<{
   useEffect(() => {
     if (demo) return;
     traceApi.settings.telegramStatus().then(s => setTelegramConnected(!!s.connected)).catch(() => {});
+  }, [demo]);
+
+  useEffect(() => {
     traceApi.sales.status().then(s => setIsPoster(!!s.poster)).catch(() => {});
   }, [demo]);
 

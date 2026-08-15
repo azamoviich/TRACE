@@ -111,6 +111,17 @@ export function setDemoPos(pos: 'iiko' | 'poster'): void {
   localStorage.setItem('trace_demo_pos', pos);
 }
 
+// A real Poster tenant gets null/0/empty for several fields a real iiko
+// tenant gets real data for (no attendance module, no per-visit loyalty
+// history, no dish-level cost data, etc. — see POSTER_AUDIT.md /
+// DEMO_VS_PROD_AUDIT.md). The demo must degrade the same way, or a
+// prospect who picks Poster sees capabilities their own account will
+// never have. Wrap every such field with this instead of hardcoding the
+// iiko-shaped value unconditionally.
+function demoPoster<T>(iikoValue: T, posterValue: T): T {
+  return getDemoPos() === 'poster' ? posterValue : iikoValue;
+}
+
 function demoBriefing(lang: Language): AIDailyBriefing {
   const ru = lang === 'ru';
   return {
@@ -345,6 +356,34 @@ function demoComboSuggestions(lang: Language) {
 function demoWasteRootCause(lang: Language) {
   const uz = lang === 'uz'; const en = lang === 'en';
   const t = <R, U, E>(r: R, u: U, e: E) => en ? e : uz ? u : r;
+  // Poster's storage.getWastes has no per-dish/ingredient breakdown — the
+  // AI prompt for a real Poster tenant is built from waste REASON strings
+  // grouped by storage (ai.ts), not named ingredients like avocado/coconut
+  // milk, which only exist in iiko's writeoff OLAP rows.
+  if (getDemoPos() === 'poster') {
+    return {
+      fromAI: true,
+      patterns: [
+        {
+          dish: t('Списание по сроку годности', 'Yaroqlilik muddati bo\'yicha hisobdan chiqarish', 'Expired shelf life'),
+          peakDay: t('Понедельник', 'Dushanba', 'Monday'),
+          rootCause: t('Закупка партии превышает спрос в начале недели', 'Partiya xaridi haftaning boshida talabdan oshib ketadi', 'Batch purchasing outpaces early-week demand'),
+          advice: t('Снизить объём закупки на 20% по понедельникам', 'Dushanbadagi xarid hajmini 20% ga kamaytiring', 'Cut Monday order volume by 20%'),
+        },
+        {
+          dish: t('Порча при хранении', 'Saqlash vaqtida buzilish', 'Spoiled in storage'),
+          peakDay: t('Среда', 'Chorshanba', 'Wednesday'),
+          rootCause: t('Температурный режим склада нестабилен', 'Ombor harorat rejimi beqaror', 'Storage temperature control is inconsistent'),
+          advice: t('Проверить холодильное оборудование основного склада', 'Asosiy ombordagi sovutish uskunasini tekshiring', 'Inspect the main storage refrigeration unit'),
+        },
+      ],
+      summary: t(
+        'Основные потери — по причине истечения сроков годности в начале недели (по данным причин списания).',
+        'Asosiy yo\'qotishlar — hafta boshida yaroqlilik muddati tugashi tufayli (hisobdan chiqarish sabablariga ko\'ra).',
+        'Most waste is tagged as expired shelf life early in the week (based on write-off reasons).',
+      ),
+    };
+  }
   return {
     fromAI: true,
     patterns: [
@@ -622,8 +661,15 @@ const DEMO_COST_RATIOS: Record<string, number> = {
 };
 
 function demoAbc(): AbcRow[] {
+  // dash.getProductsSales has no cost field usable at Poster's own scale —
+  // sales.ts leaves marginPct/costPerUnit null for a real Poster tenant,
+  // and abcProfit falls back to an avgPrice-ranked Pareto instead of a
+  // margin-based one (computeAbcGrades, sales.ts:567-572).
+  const isPoster = getDemoPos() === 'poster';
   const sorted = [...DEMO_DISHES].sort((a, b) => b.weight - a.weight);
   const total = sorted.reduce((s, d) => s + 40 * d.weight * d.price, 0);
+  const byAvgPrice = [...sorted].sort((a, b) => b.price - a.price);
+  const priceRank = new Map(byAvgPrice.map((d, i) => [d.name, i]));
   let cum = 0;
   return sorted.map((d, i) => {
     const qty = Math.round(40 * d.weight);
@@ -631,6 +677,17 @@ function demoAbc(): AbcRow[] {
     cum += revenue;
     const share = Math.round((revenue / total) * 1000) / 10;
     const grade: AbcGrade = cum / total <= 0.7 ? 'A' : cum / total <= 0.9 ? 'B' : 'C';
+    const abcQty: AbcGrade = i < 3 ? 'A' : i < 6 ? 'B' : 'C';
+    if (isPoster) {
+      const rank = priceRank.get(d.name) ?? i;
+      return {
+        name: d.name, cat: d.category, revenue, qty,
+        avgPrice: d.price, velocity: Math.round(qty / 7 * 10) / 10, share,
+        cost: undefined, grossProfit: undefined, marginPct: null, costPerUnit: null, foodCostPct: null,
+        abc: grade, abcRevenue: grade, abcQty,
+        abcProfit: rank < 3 ? 'A' : rank < 6 ? 'B' : 'C',
+      };
+    }
     const costRatio = DEMO_COST_RATIOS[d.name] ?? 0.35;
     const cost = Math.round(revenue * costRatio);
     const grossProfit = revenue - cost;
@@ -641,8 +698,7 @@ function demoAbc(): AbcRow[] {
       name: d.name, cat: d.category, revenue, qty,
       avgPrice: d.price, velocity: Math.round(qty / 7 * 10) / 10, share,
       cost, grossProfit, marginPct, costPerUnit, foodCostPct,
-      abc: grade, abcRevenue: grade,
-      abcQty: i < 3 ? 'A' : i < 6 ? 'B' : 'C',
+      abc: grade, abcRevenue: grade, abcQty,
       abcProfit: marginPct >= 65 ? 'A' : marginPct >= 60 ? 'B' : 'C',
     };
   });
@@ -725,10 +781,11 @@ function demoAbcDaypart(dishName: string, lang: Language): DaypartData {
 
 function demoReservations(): ReservationRow[] {
   if (getDemoPos() !== 'poster') return [];
+  // Poster's incomingOrders.getReservations has no party-size field.
   return [
-    { id: 'r1', guestName: 'Азиз Каримов', phone: '+998 90 123 45 67', partySize: 4, date: demoDateStr(0) + 'T19:30:00', durationMin: 90, status: 'accepted', comment: 'У окна' },
-    { id: 'r2', guestName: 'Мадина Юсупова', phone: '+998 91 234 56 78', partySize: 2, date: demoDateStr(0) + 'T20:00:00', durationMin: 60, status: 'new', comment: null },
-    { id: 'r3', guestName: 'Шерзод Ахмедов', phone: '+998 93 345 67 89', partySize: 6, date: demoDateStr(1) + 'T18:00:00', durationMin: 120, status: 'accepted', comment: 'День рождения' },
+    { id: 'r1', guestName: 'Азиз Каримов', phone: '+998 90 123 45 67', partySize: null, date: demoDateStr(0) + 'T19:30:00', durationMin: 90, status: 'accepted', comment: 'У окна' },
+    { id: 'r2', guestName: 'Мадина Юсупова', phone: '+998 91 234 56 78', partySize: null, date: demoDateStr(0) + 'T20:00:00', durationMin: 60, status: 'new', comment: null },
+    { id: 'r3', guestName: 'Шерзод Ахмедов', phone: '+998 93 345 67 89', partySize: null, date: demoDateStr(1) + 'T18:00:00', durationMin: 120, status: 'accepted', comment: 'День рождения' },
   ];
 }
 
@@ -791,10 +848,14 @@ function demoStaffProfitability(range: 'today' | '7days' | '30days'): StaffProfi
     { name: 'Aziz N.',    revenue: 1_276_000 * daysInPeriod / 7, orders: 29 * daysInPeriod / 7, avgCheck: 44000, salaryCost: 3_500_000 / 30 * daysInPeriod, salaryType: 'fixed' },
     { name: 'Лола К.',    revenue: 1_032_000 * daysInPeriod / 7, orders: 24 * daysInPeriod / 7, avgCheck: 43000, salaryCost: null, salaryType: null },
   ];
+  // Poster has no salary/attendance module to compute cost-based
+  // profitability against — operations.ts nulls salaryCost/salaryType/roi
+  // for a real Poster tenant, keeping only revenue-derived fields.
+  const isPoster = getDemoPos() === 'poster';
   const rows: StaffProfitabilityRow[] = staff.map(s => {
     const revenue = Math.round(s.revenue);
     const orders = Math.round(s.orders);
-    const salaryCost = s.salaryCost !== null ? Math.round(s.salaryCost) : null;
+    const salaryCost = !isPoster && s.salaryCost !== null ? Math.round(s.salaryCost) : null;
     const profit = salaryCost !== null ? revenue - salaryCost : null;
     return {
       name: s.name,
@@ -802,7 +863,7 @@ function demoStaffProfitability(range: 'today' | '7days' | '30days'): StaffProfi
       orders,
       avgCheck: s.avgCheck,
       salaryCost,
-      salaryType: s.salaryType,
+      salaryType: isPoster ? null : s.salaryType,
       profit,
       profitabilityPct: profit !== null && salaryCost ? Math.round((profit / salaryCost) * 100) : null,
       roi: profit !== null && salaryCost ? Math.round((revenue / salaryCost) * 100) / 100 : null,
@@ -870,21 +931,25 @@ function demoPeakPrep(): PeakSlot[] {
 
 function demoCashShift(): CashShift {
   const open = new Date(); open.setHours(10, 0, 0, 0);
+  // Poster's dash.getTransactions lumps card/third-party/e-wallet into one
+  // generic "card" line (no acquirer-level breakdown) and has no
+  // cash-drawer payout field — payOut is always 0, sessionId always null.
+  const isPoster = getDemoPos() === 'poster';
   return {
     cashier: 'Нодира А.',
-    sessionId: 'demo-session-1',
+    sessionId: isPoster ? null : 'demo-session-1',
     openTime: open.toISOString(),
     status: 'open',
     cash: 1_840_000,
     card: 5_120_000,
-    cardBreakdown: [
+    cardBreakdown: isPoster ? [{ type: 'card', amount: 5_120_000 }] : [
       { type: 'Uzcard', amount: 3_180_000 },
       { type: 'Humo', amount: 1_240_000 },
       { type: 'Visa/Mastercard', amount: 700_000 },
     ],
     revenue: 6_960_000,
     orders: 142,
-    payOut: 220_000,
+    payOut: isPoster ? 0 : 220_000,
   };
 }
 
@@ -894,13 +959,16 @@ function demoKpis(): OpsKpis {
 
 function demoStaffOpsRows(): StaffRow[] {
   const dishes = (a: [string, number, number][]) => a.map(([name, qty, revenue]) => ({ name, qty, revenue }));
-  return [
+  const rows: StaffRow[] = [
     { name: 'Дмитрий В.', orders: 38, revenue: 1_710_000, guests: 71, dishes: 96, avgCheck: 45000, avgServiceMin: 14, enterTime: '09:02', exitTime: null,    hoursWorked: null, topDishes: dishes([['Плов', 12, 480_000], ['Лагман', 9, 315_000], ['Чай зелёный', 22, 66_000]]) },
     { name: 'Maria S.',   orders: 33, revenue: 1_485_000, guests: 64, dishes: 88, avgCheck: 45000, avgServiceMin: 12, enterTime: '09:15', exitTime: null,    hoursWorked: null, topDishes: dishes([['Шашлык из баранины', 10, 420_000], ['Салат Цезарь', 14, 350_000], ['Компот', 18, 54_000]]) },
     { name: 'Aziz N.',    orders: 29, revenue: 1_276_000, guests: 55, dishes: 74, avgCheck: 44000, avgServiceMin: 18, enterTime: '08:58', exitTime: null,    hoursWorked: null, topDishes: dishes([['Манты', 11, 385_000], ['Борщ', 8, 216_000], ['Морс', 16, 48_000]]) },
     { name: 'Лола К.',    orders: 24, revenue: 1_032_000, guests: 47, dishes: 61, avgCheck: 43000, avgServiceMin: 15, enterTime: '09:30', exitTime: null,    hoursWorked: null, topDishes: dishes([['Стейк рибай', 6, 480_000], ['Тирамису', 9, 225_000], ['Латте', 12, 96_000]]) },
     { name: 'Sardor T.',  orders: 18, revenue: 738_000,   guests: 36, dishes: 47, avgCheck: 41000, avgServiceMin: 21, enterTime: null,    exitTime: null,    hoursWorked: null, topDishes: dishes([['Пицца Маргарита', 7, 315_000], ['Паста Карбонара', 5, 200_000], ['Лимонад', 10, 60_000]]) },
   ];
+  // Poster has no attendance/clock-in module — a real Poster tenant never
+  // gets enterTime/exitTime/hoursWorked (operations.ts sets them null).
+  return demoPoster(rows, rows.map(r => ({ ...r, enterTime: null, exitTime: null, hoursWorked: null, openTables: 0 })));
 }
 
 function demoOpsStopList(): StopItem[] {
@@ -1024,6 +1092,17 @@ function demoRealtimeEvents(): RealtimeEvent[] {
 }
 
 function demoWriteoffs(): FinancialWriteoffRow[] {
+  // storage.getWastes has no per-ingredient breakdown — Poster gives a
+  // waste REASON (not a dish/ingredient name), the STORAGE name as
+  // category, qty always 1, and an opaque waste_id as docNumber.
+  if (getDemoPos() === 'poster') {
+    return [
+      { id: 1, name: 'Списание по сроку годности', category: 'Основной склад', qty: 1, cost: 14000, date: demoDateStr(1), docNumber: '4821' },
+      { id: 2, name: 'Порча при хранении', category: 'Основной склад', qty: 1, cost: 14000, date: demoDateStr(2), docNumber: '4809' },
+      { id: 3, name: 'Брак на кухне', category: 'Кухня', qty: 1, cost: 24000, date: demoDateStr(3), docNumber: '4788' },
+      { id: 4, name: 'Списание по сроку годности', category: 'Основной склад', qty: 1, cost: 12000, date: demoDateStr(4), docNumber: '4771' },
+    ];
+  }
   return [
     { id: 1, name: 'Зелень микс', category: 'Овощи', qty: 0.4, cost: 14000, date: demoDateStr(1), docNumber: 'СП-0142' },
     { id: 2, name: 'Молоко 3.2%', category: 'Молочные продукты', qty: 1, cost: 14000, date: demoDateStr(2), docNumber: 'СП-0141' },
@@ -1110,12 +1189,22 @@ function demoInventoryItems(docId: string): InventoryItem[] {
 }
 
 function demoCashShiftDocs(): CashShiftDoc[] {
-  return [
+  const rows: CashShiftDoc[] = [
     { id: 'cs-1', sessionNumber: 412, openDate: `${demoDateStr(0)}T09:00:00`, closeDate: null, payOrders: 142, salesCash: 1_840_000, salesCard: 5_120_000, salesCredit: 0, payIn: 200000, payOut: 220000, cashDiff: 0, sessionStatus: 'OPEN' },
     { id: 'cs-2', sessionNumber: 411, openDate: `${demoDateStr(1)}T09:00:00`, closeDate: `${demoDateStr(1)}T23:40:00`, payOrders: 168, salesCash: 2_120_000, salesCard: 6_340_000, salesCredit: 0, payIn: 150000, payOut: 180000, cashDiff: 0, sessionStatus: 'CLOSED' },
     { id: 'cs-3', sessionNumber: 410, openDate: `${demoDateStr(2)}T09:00:00`, closeDate: `${demoDateStr(2)}T23:35:00`, payOrders: 151, salesCash: 1_960_000, salesCard: 5_780_000, salesCredit: 0, payIn: 100000, payOut: 140000, cashDiff: 0, sessionStatus: 'CLOSED' },
     { id: 'cs-4', sessionNumber: 409, openDate: `${demoDateStr(3)}T09:00:00`, closeDate: `${demoDateStr(3)}T23:50:00`, payOrders: 159, salesCash: 2_040_000, salesCard: 6_010_000, salesCredit: 0, payIn: 180000, payOut: 200000, cashDiff: 4000, sessionStatus: 'CLOSED' },
   ];
+  if (getDemoPos() !== 'poster') return rows;
+  // Poster's cash-shift adapter: payOrders is a MONEY total (cash+card),
+  // not an order count; payOut has no Poster field (always 0); cashDiff is
+  // null while a shift is open — not a reconciled 0.00.
+  return rows.map(r => ({
+    ...r,
+    payOrders: r.salesCash + r.salesCard,
+    payOut: 0,
+    cashDiff: r.sessionStatus === 'OPEN' ? null : r.cashDiff,
+  }));
 }
 
 function demoPL(): FinancialPL {
@@ -1255,6 +1344,10 @@ export interface LoyaltyVisit {
 }
 
 export function demoLoyaltyHistory(): LoyaltyVisit[] {
+  // Poster has no itemized per-client visit history endpoint (loyalty.ts
+  // returns [] for it) — a real Poster tenant's purchase-history panel is
+  // always empty.
+  if (getDemoPos() === 'poster') return [];
   const dishes = ['Плов Узбекский', 'Шашлык из баранины', 'Лагман', 'Самса с мясом', 'Чай зелёный', 'Салат «Ачичук»'];
   return Array.from({ length: 5 }, (_, i) => {
     const n = 1 + Math.round(Math.random() * 2);
@@ -1269,6 +1362,12 @@ export function demoLoyaltyHistory(): LoyaltyVisit[] {
 }
 
 export function demoLoyaltySummary(): LoyaltySummary {
+  // Poster's clients.getClients has no per-visit history — loyalty.ts
+  // leaves newMembers/returningMembers/returningPct/trend at 0/empty for a
+  // real Poster tenant, only totalMembers/avgSpent are real.
+  if (getDemoPos() === 'poster') {
+    return { totalMembers: 312, newMembers: 0, returningMembers: 0, returningPct: 0, avgSpent: 412000, trend: [] };
+  }
   const trend = Array.from({ length: 14 }, (_, i) => {
     const guests = 4 + Math.round(Math.random() * 6);
     return { date: demoDateStr(13 - i), guests, revenue: guests * (35000 + Math.round(Math.random() * 15000)) };
@@ -1277,14 +1376,17 @@ export function demoLoyaltySummary(): LoyaltySummary {
 }
 
 export function demoLoyaltyGuests(): LoyaltyGuestRow[] {
+  const isPoster = getDemoPos() === 'poster';
   const names = ['Aziza R.', 'Jasur T.', 'Kamola S.', 'Bekzod M.', 'Nilufar A.', 'Sherzod Q.', 'Madina K.', 'Dilshod P.'];
   return names.map((name, i) => ({
     phone: `+99890${(1234567 + i * 111).toString().slice(0, 7)}`,
     name,
-    visitCount: 12 - i,
+    // Poster's clients.getClients has no per-visit history field — a real
+    // Poster tenant sees visitCount:0 and no first/last-seen dates.
+    visitCount: isPoster ? 0 : 12 - i,
     totalSpent: (12 - i) * (380000 - i * 9000),
-    firstSeen: `${demoDateStr(120 - i * 6)}T12:00:00Z`,
-    lastSeen: `${demoDateStr(i)}T19:00:00Z`,
+    firstSeen: isPoster ? null : `${demoDateStr(120 - i * 6)}T12:00:00Z`,
+    lastSeen: isPoster ? null : `${demoDateStr(i)}T19:00:00Z`,
   })).sort((a, b) => b.totalSpent - a.totalSpent);
 }
 
@@ -1293,6 +1395,22 @@ export function demoLoyaltyGuestDetail(phone: string) {
   const digits = phone.replace(/\D/g, '');
   const seed = digits.split('').reduce((s, d) => s + Number(d), 0);
   const [name, surname] = (known?.name ?? 'Гость Демо').split(' ');
+  // Poster's CRM has no card-number concept and no multi-tier ladder — a
+  // real Poster tenant's guest-detail panel shows at most the single CRM
+  // group name, no registration/first-order/last-order dates.
+  if (getDemoPos() === 'poster') {
+    return {
+      name,
+      surname: surname ?? '',
+      phone,
+      cards: [] as { number: string }[],
+      categories: [{ name: 'Постоянный гость', isActive: true }],
+      walletBalances: [{ id: 'demo-wallet', name: 'Бонусный счёт', balance: (known?.totalSpent ?? 50000 + seed * 1000) % 200000 }],
+      whenRegistered: undefined as string | undefined,
+      firstOrderDate: undefined as string | undefined,
+      lastProcessedOrderDate: undefined as string | undefined,
+    };
+  }
   const tiers = ['Bronze', 'Silver', 'Gold'];
   const tier = tiers[seed % tiers.length];
   return {
@@ -1319,8 +1437,20 @@ function demoMenuAnalysis(): MenuAnalysisRow[] {
     { name: 'Чай зелёный',        category: 'Напитки',        qty: 104, avgPrice: 8000, costRatio: 0.15 },
     { name: 'Морс ягодный',       category: 'Напитки',        qty: 58,  avgPrice: 14000, costRatio: 0.22 },
   ];
+  // Most Poster accounts never configure technical cards (menu.getProducts'
+  // cost field) — getMenuAnalysis then has no cost data to attach, and
+  // cost/grossProfit/marginPct/costPerUnit come back null rather than a
+  // fabricated 0/100%.
+  const isPoster = getDemoPos() === 'poster';
   return dishes.map(d => {
-    const revenue     = d.qty * d.avgPrice;
+    const revenue = d.qty * d.avgPrice;
+    if (isPoster) {
+      return {
+        name: d.name, category: d.category, qty: d.qty, revenue,
+        cost: null, grossProfit: null, marginPct: null,
+        avgPrice: d.avgPrice, costPerUnit: null,
+      };
+    }
     const cost        = Math.round(revenue * d.costRatio);
     const grossProfit = revenue - cost;
     return {
@@ -1814,7 +1944,7 @@ export interface CashShiftDoc {
   salesCredit: number;
   payIn: number;
   payOut: number;
-  cashDiff: number;
+  cashDiff: number | null; // null while the shift is open (Poster) — not the same as a reconciled 0.00
   sessionStatus: string;
 }
 

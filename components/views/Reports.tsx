@@ -959,7 +959,10 @@ export const Reports: React.FC<{
     ? `${customRange.from} → ${customRange.to}`
     : RANGES.find(r => r.key === range)?.label ?? '';
 
-  const templates = isPoster ? REPORT_TEMPLATES.filter(r => r.id !== 'r14') : REPORT_TEMPLATES;
+  // r7 (P&L) and r8 (GL) both call /financial/pl and /financial/gl-summary,
+  // which are 100% iiko-only with no Poster branch — same gap as the
+  // Financial page's P&L tab. r14 (voids) is realtime_events/plugin-only.
+  const templates = isPoster ? REPORT_TEMPLATES.filter(r => !['r7', 'r8', 'r14'].includes(r.id)) : REPORT_TEMPLATES;
   const filtered = cat === 'all' ? templates : templates.filter(r => r.cat === cat);
 
   const BRAND = tr(lang, 'TRACE · Отчёты', 'TRACE · Reports', 'TRACE · Hisobotlar');
@@ -1125,10 +1128,15 @@ export const Reports: React.FC<{
       {/* Report templates */}
       <Card title={tr(lang, 'Шаблоны отчётов', 'Report Templates', 'Hisobot shablonlari')}>
         <p className="text-[10px] text-muted mb-4">
-          {tr(lang,
-            `Реальные данные из iiko · Excel (доли, итоги, автофильтр) или готовый PDF · период: ${rangeLabel}`,
-            `Real iiko data · Excel (shares, totals, auto-filter) or ready-to-send PDF · period: ${rangeLabel}`,
-            `iiko'dan haqiqiy ma'lumotlar · Excel (ulush, jami, avtofiltr) yoki tayyor PDF · davr: ${rangeLabel}`)}
+          {isPoster
+            ? tr(lang,
+                `Реальные данные · Excel (доли, итоги, автофильтр) или готовый PDF · период: ${rangeLabel}`,
+                `Real data · Excel (shares, totals, auto-filter) or ready-to-send PDF · period: ${rangeLabel}`,
+                `Haqiqiy ma'lumotlar · Excel (ulush, jami, avtofiltr) yoki tayyor PDF · davr: ${rangeLabel}`)
+            : tr(lang,
+                `Реальные данные из iiko · Excel (доли, итоги, автофильтр) или готовый PDF · период: ${rangeLabel}`,
+                `Real iiko data · Excel (shares, totals, auto-filter) or ready-to-send PDF · period: ${rangeLabel}`,
+                `iiko'dan haqiqiy ma'lumotlar · Excel (ulush, jami, avtofiltr) yoki tayyor PDF · davr: ${rangeLabel}`)}
         </p>
 
         <div className="flex items-center gap-px border border-border rounded-xl overflow-hidden bg-background w-fit mb-4">

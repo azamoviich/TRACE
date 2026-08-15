@@ -1385,14 +1385,16 @@ const TenantDrawer: React.FC<{
                       <Plus size={9} />
                       Add Hall
                     </button>
-                    <button
-                      onClick={() => tenant && fetchIikoSections(tenant.id)}
-                      disabled={sectionsLoading}
-                      className="text-[10px] px-2.5 py-1 rounded-lg border border-border text-muted hover:text-text hover:border-primary/50 transition-colors disabled:opacity-40 flex items-center gap-1.5"
-                    >
-                      <RefreshCw size={9} className={sectionsLoading ? 'animate-spin' : ''} />
-                      Sync iiko
-                    </button>
+                    {tenant?.pos_type !== 'poster' && (
+                      <button
+                        onClick={() => tenant && fetchIikoSections(tenant.id)}
+                        disabled={sectionsLoading}
+                        className="text-[10px] px-2.5 py-1 rounded-lg border border-border text-muted hover:text-text hover:border-primary/50 transition-colors disabled:opacity-40 flex items-center gap-1.5"
+                      >
+                        <RefreshCw size={9} className={sectionsLoading ? 'animate-spin' : ''} />
+                        Sync iiko
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1408,7 +1410,9 @@ const TenantDrawer: React.FC<{
                   </div>
                 ) : hallPlans.length === 0 ? (
                   <p className="text-[11px] text-muted py-2">
-                    No halls yet — click "Sync from iiko" to import sections.
+                    {tenant?.pos_type === 'poster'
+                      ? 'No halls yet — click "Add Hall" to create one.'
+                      : 'No halls yet — click "Sync from iiko" to import sections.'}
                   </p>
                 ) : (
                   <div className="space-y-1.5">

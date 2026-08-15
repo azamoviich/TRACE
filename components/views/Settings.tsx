@@ -53,6 +53,15 @@ export const Settings: React.FC<{
   const [telegramBusy, setTelegramBusy] = useState(false);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
 
+  // The "financial_summary" scheduled report calls computeDailyPL on the
+  // backend, which is 100% iiko-only — for Poster it returns null and the
+  // cron sender just logs a warning and skips silently (cron/reports.ts),
+  // so a Poster tenant subscribing to it would never get an error AND
+  // never get a report, forever. Hide the option until a Poster-backed
+  // financial summary exists.
+  const [isPoster, setIsPoster] = useState(false);
+  useEffect(() => { traceApi.sales.status().then(s => setIsPoster(!!s.poster)).catch(() => {}); }, []);
+
   // Merges freshly-fetched (persisted) subscriptions with any not-yet-saved
   // local rows, so refetching never wipes a subscription the user is still
   // filling in — a `focus` refetch used to blow away unsaved rows entirely.
@@ -421,7 +430,7 @@ export const Settings: React.FC<{
                         className="w-full bg-card border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         <option value="daily_summary">{t.daily_summary_label}</option>
-                        <option value="financial_summary">{t.financial_summary_label}</option>
+                        {!isPoster && <option value="financial_summary">{t.financial_summary_label}</option>}
                       </select>
                     </div>
                   </div>

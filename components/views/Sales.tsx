@@ -1564,6 +1564,13 @@ const METRIC_CFG: Record<ChartMetric, { color: string; gradId: string; gradColor
 export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type: 'success' | 'error' | 'info') => void; branch?: string | null; onContextReady?: (ctx: string) => void }> = ({ lang, onShowToast, branch, onContextReady }) => {
   const t = TRANSLATIONS[lang];
   const isBasePlan = getTenantPlan() === 'base';
+  // Price elasticity / combo suggestions / guest return are all 100%
+  // iiko OLAP-backed (ai.ts price-elasticity/combo-suggestions/guest-return
+  // all guard on tenant.iiko_server) — for Poster tenants they silently
+  // no-op (button click never populates a result) instead of being hidden.
+  // Building real Poster equivalents is separate, larger work; hide for now.
+  const [isPoster, setIsPoster] = useState(false);
+  useEffect(() => { traceApi.sales.status().then(s => setIsPoster(!!s.poster)).catch(() => {}); }, []);
   const [timeRange, setTimeRange] = useState<TimeRange>('today');
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -2122,7 +2129,7 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
       )}
 
       {/* ── AI INSIGHTS ── */}
-      {!isBasePlan && (
+      {!isBasePlan && !isPoster && (
       <>
       <div className="flex items-center gap-2 pt-2">
         <Sparkles size={13} className="text-primary" />

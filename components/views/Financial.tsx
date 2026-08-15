@@ -444,7 +444,19 @@ export const Financial: React.FC<{
   const t = TRANSLATIONS[lang];
   const [tab, setTab] = useState<Tab>('pl');
 
-  const TABS: { key: Tab; label: string }[] = [
+  // POS type — Poster tenants get different (or currently unsupported) data for several tabs below
+  const [isPoster, setIsPoster] = useState(false);
+  useEffect(() => {
+    traceApi.sales.status().then(s => setIsPoster(!!s.poster)).catch(() => {});
+  }, []);
+
+  // P&L has no Poster data source — GET /financial/pl is 100% iiko OLAP with
+  // no posterAdapter branch (unlike every other tab here), so it was
+  // rendering permanent dashes and a "demo data · loading from iiko" fallback
+  // for Poster tenants instead of either real data or being hidden. Hide the
+  // tab entirely until a real Poster-backed P&L exists — the "Учёт"/
+  // Accounting tab already covers GL categories for Poster.
+  const ALL_TABS: { key: Tab; label: string }[] = [
     { key: 'pl',         label: 'P&L' },
     { key: 'menu',       label: tr(lang, 'Анализ меню', 'Menu Analysis', 'Menyu tahlili') },
     { key: 'invoices',   label: t.invoices },
@@ -453,6 +465,8 @@ export const Financial: React.FC<{
     { key: 'cashshifts', label: tr(lang, 'Кассовые смены', 'Cash Shifts', 'Kassa smenalari') },
     { key: 'gl',         label: tr(lang, 'Учёт', 'Accounting', 'Hisob') },
   ];
+  const TABS = isPoster ? ALL_TABS.filter(x => x.key !== 'pl') : ALL_TABS;
+  useEffect(() => { if (isPoster && tab === 'pl') setTab('gl'); }, [isPoster, tab]);
 
 
   // Shared range for all tabs
@@ -502,12 +516,6 @@ export const Financial: React.FC<{
       targetMonth: (month ?? activeTargetMonth) ?? undefined,
     }).then(setForecast).catch(() => setForecast(null)).finally(() => setForecastLoading(false));
   };
-
-  // POS type — Poster tenants get different (or currently unsupported) data for several tabs below
-  const [isPoster, setIsPoster] = useState(false);
-  useEffect(() => {
-    traceApi.sales.status().then(s => setIsPoster(!!s.poster)).catch(() => {});
-  }, []);
 
   // Invoices
   const [invoices, setInvoices]             = useState<FinancialInvoiceRow[]>([]);

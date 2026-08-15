@@ -836,7 +836,7 @@ function paretoAbc<T>(items: T[], revenueOf: (it: T) => number): Map<T, 'A' | 'B
 // these used to be three separate cards (Эффективность персонала, ABC-анализ
 // официантов, Нарратив по команде) covering overlapping ground.
 function StaffPerfCard({
-  staffRows, staffLoading, lang, t, isBasePlan,
+  staffRows, staffLoading, lang, t, isBasePlan, isPoster,
   staffNarrative, staffNarrativeLoading, staffNarrativeError, fetchStaffNarrative,
 }: {
   staffRows: import('../../services/traceApi').StaffRow[];
@@ -844,6 +844,7 @@ function StaffPerfCard({
   lang: Language;
   t: typeof import('../../constants').TRANSLATIONS['ru'];
   isBasePlan: boolean;
+  isPoster: boolean;
   staffNarrative: string | null;
   staffNarrativeLoading: boolean;
   staffNarrativeError: string | null;
@@ -913,7 +914,9 @@ function StaffPerfCard({
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <p className="text-[10px] text-muted">
           {isToday
-            ? tr(lang, 'Сегодня · iiko OLAP · время из плагина', 'Today · iiko OLAP · time from plugin', 'Bugun · iiko OLAP · plagindan vaqt')
+            ? (isPoster
+                ? tr(lang, 'Сегодня · Poster', 'Today · Poster', 'Bugun · Poster')
+                : tr(lang, 'Сегодня · iiko OLAP · время из плагина', 'Today · iiko OLAP · time from plugin', 'Bugun · iiko OLAP · plagindan vaqt'))
             : tr(lang, 'ABC по выручке (Парето 70/90)', 'ABC by revenue (Pareto 70/90)', "Tushum bo'yicha ABC (Pareto 70/90)")}
         </p>
         <div className="relative flex items-center gap-1 bg-background border border-border rounded-lg p-0.5 flex-shrink-0">
@@ -1505,7 +1508,7 @@ export const Operations: React.FC<{
         </Card>
         )}
 
-        {/* Waste — from iiko OLAP writeoffs */}
+        {/* Waste — iiko OLAP writeoffs, or Poster's storage.getWastes for Poster tenants */}
         <Card className="stagger-item">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-danger/10 text-danger rounded-md flex-shrink-0"><Trash2 size={20} /></div>
@@ -1691,7 +1694,9 @@ export const Operations: React.FC<{
           {!stopLoading && stopItems.length > 0 && (
             <div className="mt-3 pt-3 border-t border-border">
               <p className="text-[10px] text-muted">
-                {tr(lang, `${stopItems.length} позиц. · iiko`, `${stopItems.length} items · iiko`, `${stopItems.length} ta · iiko`)}
+                {isPoster
+                  ? tr(lang, `${stopItems.length} позиц. · Poster`, `${stopItems.length} items · Poster`, `${stopItems.length} ta · Poster`)
+                  : tr(lang, `${stopItems.length} позиц. · iiko`, `${stopItems.length} items · iiko`, `${stopItems.length} ta · iiko`)}
               </p>
             </div>
           )}
@@ -1851,7 +1856,9 @@ export const Operations: React.FC<{
             ? tr(lang, `${displayOrders.length} активных · ${combinedOccupiedCount} столов занято · все филиалы`,
                         `${displayOrders.length} active · ${combinedOccupiedCount} tables occupied · all branches`,
                         `${displayOrders.length} ta faol · ${combinedOccupiedCount} stol band · barcha filiallar`)
-            : tr(lang, `${displayOrders.length} активных · Live · iikoFront`, `${displayOrders.length} active · Live · iikoFront`, `${displayOrders.length} ta faol · Live · iikoFront`)}
+            : isPoster
+              ? tr(lang, `${displayOrders.length} активных · Poster`, `${displayOrders.length} active · Poster`, `${displayOrders.length} ta faol · Poster`)
+              : tr(lang, `${displayOrders.length} активных · Live · iikoFront`, `${displayOrders.length} active · Live · iikoFront`, `${displayOrders.length} ta faol · Live · iikoFront`)}
         </p>
         </>
         )}
@@ -1921,7 +1928,7 @@ export const Operations: React.FC<{
       {/* ── STAFF (perf + ABC + narrative, merged) ── */}
       <StaffPerfCard
         staffRows={staffRows} staffLoading={staffLoading} lang={lang} t={t}
-        isBasePlan={isBasePlan}
+        isBasePlan={isBasePlan} isPoster={isPoster}
         staffNarrative={staffNarrative}
         staffNarrativeLoading={staffNarrativeLoading}
         staffNarrativeError={staffNarrativeError}
@@ -1969,7 +1976,7 @@ export const Operations: React.FC<{
           traceApi.ai.wasteRootCause(lang)
             .then(r => {
               if (r.fromAI) setWastePatterns(r);
-              else setWasteError(tr(lang, 'Не удалось получить анализ. Проверьте настройки iiko и попробуйте ещё раз.', 'Couldn\'t generate analysis. Check your iiko settings and try again.', 'Tahlil olinmadi. iiko sozlamalarini tekshirib, qayta urinib ko\'ring.'));
+              else setWasteError(tr(lang, 'Не удалось получить анализ. Проверьте настройки подключения POS и попробуйте ещё раз.', 'Couldn\'t generate analysis. Check your POS connection settings and try again.', 'Tahlil olinmadi. POS ulanish sozlamalarini tekshirib, qayta urinib ko\'ring.'));
             })
             .catch(() => setWasteError(tr(lang, 'Не удалось получить анализ. Попробуйте ещё раз.', 'Couldn\'t generate analysis. Try again.', 'Tahlil olinmadi. Qayta urinib ko\'ring.')))
             .finally(() => setWasteLoading(false));
@@ -2007,7 +2014,7 @@ export const Operations: React.FC<{
           traceApi.ai.shiftSchedule(lang)
             .then(r => {
               if (r.fromAI) setShiftSchedule(r);
-              else setShiftError(tr(lang, 'Не удалось получить рекомендации. Проверьте настройки iiko и попробуйте ещё раз.', 'Couldn\'t generate recommendations. Check your iiko settings and try again.', 'Tavsiyalar olinmadi. iiko sozlamalarini tekshirib, qayta urinib ko\'ring.'));
+              else setShiftError(tr(lang, 'Не удалось получить рекомендации. Проверьте настройки подключения POS и попробуйте ещё раз.', 'Couldn\'t generate recommendations. Check your POS connection settings and try again.', 'Tavsiyalar olinmadi. POS ulanish sozlamalarini tekshirib, qayta urinib ko\'ring.'));
             })
             .catch(() => setShiftError(tr(lang, 'Не удалось получить рекомендации. Попробуйте ещё раз.', 'Couldn\'t generate recommendations. Try again.', 'Tavsiyalar olinmadi. Qayta urinib ko\'ring.')))
             .finally(() => setShiftLoading(false));

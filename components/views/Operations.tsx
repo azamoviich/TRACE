@@ -1088,7 +1088,7 @@ export const Operations: React.FC<{
   // Whether the (single-branch) hall map has a real plan to show — default
   // true so the card doesn't flash visible-then-gone while HallMap's own
   // fetch is still in flight; HallMap reports the real answer once known.
-  const [hasHallPlan, setHasHallPlan] = useState(true);
+  const [hasHallPlan, setHasHallPlan] = useState(false);
   // Same idea per-branch for the "All branches" hall map view — each
   // branch's own HallMap instance reports whether it has a real plan.
   const [branchHasHallPlan, setBranchHasHallPlan] = useState<Map<string, boolean>>(new Map());
@@ -1585,7 +1585,7 @@ export const Operations: React.FC<{
 
       {/* ── HALL MAP ── */}
       {isAllBranches ? (
-        branches.some(b => branchHasHallPlan.get(b.id) !== false) && (
+        branches.some(b => branchHasHallPlan.get(b.id) === true) && (
         <Card title={
           <div className="flex items-center gap-2">
             <span>{t.hall_heatmap}</span>
@@ -1600,7 +1600,7 @@ export const Operations: React.FC<{
                      "Har bir filial alohida ko'rsatilgan — zal tartiblari filiallar bo'yicha har xil, shuning uchun bitta sxemaga birlashtirilmaydi.")}
           </p>
           <div className="space-y-6">
-            {branches.filter(b => branchHasHallPlan.get(b.id) !== false).map(b => {
+            {branches.filter(b => branchHasHallPlan.get(b.id) === true).map(b => {
               const occ = perBranchOccupancy.get(b.id);
               return (
                 <div key={b.id}>
@@ -1753,17 +1753,14 @@ export const Operations: React.FC<{
       {/* Poster only — incomingOrders.getReservations, no iiko-side equivalent anywhere in TRACE.
           Hidden entirely (not an empty state) once loaded with zero upcoming reservations —
           a permanent "nothing here" card is clutter, not information. */}
-      {isPoster && !isAllBranches && (reservationsLoading || reservations.length > 0) && (
+      {isPoster && !isAllBranches && !reservationsLoading && reservations.length > 0 && (
         <Card title={
           <div className="flex items-center gap-2">
             <CalendarClock size={14} />
             <span>{tr(lang, 'Бронирования', 'Reservations', 'Bronlar')}</span>
           </div>
         }>
-          {reservationsLoading ? (
-            <div className="h-16 bg-zinc-800/40 rounded animate-pulse" />
-          ) : (
-            <div className="overflow-x-auto">
+          <div className="overflow-x-auto">
               <table className="w-full text-left min-w-[480px]">
                 <thead>
                   <tr className="border-b border-border">
@@ -1801,7 +1798,6 @@ export const Operations: React.FC<{
                 </tbody>
               </table>
             </div>
-          )}
         </Card>
       )}
 

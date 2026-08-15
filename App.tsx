@@ -118,7 +118,7 @@ const DemoPosPicker: React.FC<{ lang: Language; onChoose: (p: 'iiko' | 'poster')
             onError={(e) => { e.currentTarget.style.display = 'none'; }} />
         </div>
         <span className="inline-block text-[11px] font-bold tracking-wide uppercase px-3 py-1 rounded-full mb-4" style={{ background: 'rgba(255,107,53,0.12)', color: '#ff6b35' }}>
-          {tr(lang, 'Это демо · вымышленные данные', 'This is a demo · fictional data', 'Bu demo · xayoliy maʼlumotlar')}
+          {tr(lang, 'Это демо · вымышленные данные', 'This is a demo · fictional data', 'Bu demo · demonstrativ maʼlumotlar')}
         </span>
         <h1 className="text-[20px] font-bold mb-2">
           {tr(lang, 'Какую POS-систему показать?', 'Which POS should we show?', "Qaysi POS ko'rsatilsin?")}

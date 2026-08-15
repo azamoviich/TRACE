@@ -113,7 +113,7 @@ export const TopNav: React.FC<TopNavProps> = ({
                 onClick={() => handleNav(id)}
                 onMouseEnter={() => setItemHover(i)}
                 onMouseLeave={() => setItemHover(null)}
-                className={`relative flex items-center h-8 rounded-2xl flex-shrink-0 outline-none
+                className={`relative flex items-center h-8 rounded-[10px] flex-shrink-0 outline-none
                   ${isActive
                     ? 'bg-primary text-white shadow-[0_2px_12px_rgba(255,107,53,0.35)]'
                     : isHov

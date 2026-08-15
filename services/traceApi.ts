@@ -937,8 +937,28 @@ export function demoActiveOrders(): DemoActiveOrder[] {
     { id: 'demo-ord-2', tableNum: 7,  waiter: 'Дмитрий В.', items: 5, openTime: new Date(now - 18 * 60_000).toISOString(), sum: 312000, number: 1042, status: 'New' },
     { id: 'demo-ord-3', tableNum: 9,  waiter: 'Лола К.',    items: 2, openTime: new Date(now - 4 * 60_000).toISOString(),  sum: 96000,  number: 1045, status: 'New' },
     { id: 'demo-ord-4', tableNum: 12, waiter: 'Maria S.',   items: 4, openTime: new Date(now - 24 * 60_000).toISOString(), sum: 244000, number: 1043, status: 'Bill' },
-    { id: 'demo-ord-5', tableNum: 16, waiter: 'Sardor T.',  items: 6, openTime: new Date(now - 11 * 60_000).toISOString(), sum: 398000, number: 1046, status: 'New' },
+    { id: 'demo-ord-5', tableNum: 6,  waiter: 'Sardor T.',  items: 6, openTime: new Date(now - 11 * 60_000).toISOString(), sum: 398000, number: 1046, status: 'New' },
   ];
+}
+
+// Same seed as demoActiveOrders(), reshaped to ActiveOrderRow — this is the
+// shape traceApi.operations.activeOrders() returns, which useOccupiedTables()
+// (hall heatmap) and the Active Orders card both read from.
+function demoActiveOrderRows(): ActiveOrderRow[] {
+  return demoActiveOrders().map(o => ({
+    id: o.id,
+    number: o.number,
+    table: `Стол ${o.tableNum}`,
+    tableNum: o.tableNum,
+    waiter: o.waiter,
+    items: o.items,
+    guests: null,
+    status: o.status,
+    kitchenStatus: getDemoPos() === 'poster' ? (o.status === 'Bill' ? 'ready' : 'preparing') : null,
+    openTime: o.openTime,
+    sum: o.sum,
+    ticketMin: Math.floor((Date.now() - new Date(o.openTime).getTime()) / 60000),
+  }));
 }
 
 export interface DemoLiveFeedEvent {
@@ -1599,7 +1619,7 @@ export const traceApi = {
     // independent of the globally active branch — used to fan out across
     // every branch when "All branches" is selected (see Operations.tsx).
     activeOrders: (branchIdOverride?: string): Promise<ActiveOrderRow[]> =>
-      isDemoTenant() ? Promise.resolve([]) : apiFetch(`/operations/active-orders`, {}, branchIdOverride).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+      isDemoTenant() ? Promise.resolve(demoActiveOrderRows()) : apiFetch(`/operations/active-orders`, {}, branchIdOverride).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     cashShift: (): Promise<CashShift> =>
       isDemoTenant() ? Promise.resolve(demoCashShift()) : apiFetch(`/operations/cash-shift`).then(r => r.json()),
     kpis: (): Promise<OpsKpis> =>

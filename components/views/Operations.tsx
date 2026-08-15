@@ -1233,7 +1233,7 @@ export const Operations: React.FC<{
   // Same source Dashboard's occupancy stat uses — the hall heatmap and the
   // "Загрузка зала" % always agree instead of drifting apart from separate
   // event-replay logic.
-  const { tables: occupiedTables, info: tableInfo } = useOccupiedTables(!demo);
+  const { tables: occupiedTables, info: tableInfo } = useOccupiedTables(true);
 
   const mergedActiveOrders = useMemo(() => {
     return Array.from(rtOrders.entries()).map(([id, o]) => ({

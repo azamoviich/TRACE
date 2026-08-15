@@ -1642,7 +1642,12 @@ export const traceApi = {
   },
   halls: {
     list: async (branchIdOverride?: string): Promise<HallPlan[]> => {
-      if (isDemoTenant()) return demoHalls();
+      // No demo tenant ever has a hall plan pre-configured — a real
+      // tenant only gets one after someone manually draws it in Settings.
+      // Showing a fully-populated heatmap here implied it works out of
+      // the box, which it doesn't for anyone. Empty list hides the whole
+      // card (Operations.tsx: `hasHallPlan &&`).
+      if (isDemoTenant()) return [];
       const r = await apiFetch(`/halls`, {}, branchIdOverride);
       if (!r.ok) throw new Error(`${r.status}`);
       return r.json();
@@ -1778,7 +1783,7 @@ export const traceApi = {
       isDemoTenant() ? Promise.resolve(demoDelivery()) : apiFetch(`/operations/delivery`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     // Poster only — no iiko-side equivalent anywhere in TRACE.
     reservations: (): Promise<ReservationRow[]> =>
-      isDemoTenant() ? Promise.resolve(demoReservations()) : apiFetch(`/operations/reservations`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+      isDemoTenant() ? Promise.resolve([]) : apiFetch(`/operations/reservations`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     tableTurns: (): Promise<TableTurnRow[]> =>
       isDemoTenant() ? Promise.resolve(demoTableTurns()) : apiFetch(`/operations/table-turns`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     peakPrep: (): Promise<PeakSlot[]> =>

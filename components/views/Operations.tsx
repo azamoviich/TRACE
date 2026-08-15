@@ -18,39 +18,6 @@ import { SlotText } from '../ui/SlotNumber';
 
 // ── Hall floor plan ───────────────────────────────────────────────────────
 
-type TableShape =
-  | { id: number; type: 'rect';  x: number; y: number; w: number; h: number; seats: number; label: string }
-  | { id: number; type: 'round'; cx: number; cy: number; r: number;           seats: number; label: string }
-  | { id: number; type: 'stool'; cx: number; cy: number; r: number;           seats: number; label: string };
-
-const HALL_TABLES: TableShape[] = [
-  // ── Window row (top wall) ──────────────────────────────
-  { id:  1, type: 'rect',  x: 28,  y: 38,  w: 62, h: 28, seats: 4, label: 'T1' },
-  { id:  2, type: 'rect',  x: 120, y: 38,  w: 62, h: 28, seats: 4, label: 'T2' },
-  { id:  3, type: 'rect',  x: 212, y: 38,  w: 62, h: 28, seats: 4, label: 'T3' },
-  { id:  4, type: 'round', cx: 322, cy: 52, r: 20, seats: 2, label: 'T4' },
-  { id:  5, type: 'round', cx: 385, cy: 52, r: 20, seats: 2, label: 'T5' },
-  // ── Center row 1 ─────────────────────────────────────
-  { id:  6, type: 'rect',  x: 20,  y: 126, w: 72, h: 30, seats: 6, label: 'T6' },
-  { id:  7, type: 'round', cx: 155, cy: 141, r: 25, seats: 4, label: 'T7' },
-  { id:  8, type: 'round', cx: 248, cy: 141, r: 25, seats: 4, label: 'T8' },
-  { id:  9, type: 'rect',  x: 315, y: 126, w: 72, h: 30, seats: 6, label: 'T9' },
-  // ── Center row 2 ─────────────────────────────────────
-  { id: 10, type: 'rect',  x: 20,  y: 206, w: 72, h: 30, seats: 6, label: 'T10' },
-  { id: 11, type: 'round', cx: 155, cy: 221, r: 25, seats: 4, label: 'T11' },
-  { id: 12, type: 'round', cx: 248, cy: 221, r: 25, seats: 4, label: 'T12' },
-  { id: 13, type: 'rect',  x: 315, y: 206, w: 56, h: 30, seats: 4, label: 'T13' },
-  // ── Entrance area ─────────────────────────────────────
-  { id: 14, type: 'round', cx: 74,  cy: 294, r: 20, seats: 2, label: 'T14' },
-  { id: 15, type: 'round', cx: 150, cy: 294, r: 20, seats: 2, label: 'T15' },
-  { id: 16, type: 'rect',  x: 232, y: 279, w: 80, h: 30, seats: 6, label: 'T16' },
-  // ── Bar stools ────────────────────────────────────────
-  { id: 17, type: 'stool', cx: 450, cy:  98, r: 9, seats: 1, label: 'B1' },
-  { id: 18, type: 'stool', cx: 450, cy: 134, r: 9, seats: 1, label: 'B2' },
-  { id: 19, type: 'stool', cx: 450, cy: 170, r: 9, seats: 1, label: 'B3' },
-  { id: 20, type: 'stool', cx: 450, cy: 206, r: 9, seats: 1, label: 'B4' },
-];
-
 // Hours between two "HH:00"-ish clock strings, wrapping past midnight if
 // end <= start (an overnight shift like 20:00-02:00).
 function hoursBetween(start: string, end: string): number {
@@ -172,100 +139,24 @@ async function downloadShiftSchedulePdfClientSide(
   doc.save(`TRACE-shift-schedule-${generatedAt}.pdf`);
 }
 
-function occColor(o: number) {
-  if (o < 0.15) return { fill: '#181818', stroke: '#2c2c2c', chair: '#2c2c2c', text: '#444' };
-  if (o < 0.40) return { fill: '#0c1e12', stroke: '#22c55e', chair: '#22c55e', text: '#22c55e' };
-  if (o < 0.65) return { fill: '#1c1400', stroke: '#f59e0b', chair: '#f59e0b', text: '#f59e0b' };
-  if (o < 0.85) return { fill: '#1e0e04', stroke: '#ff6b35', chair: '#ff6b35', text: '#ff6b35' };
-  return         { fill: '#1e0606', stroke: '#ef4444', chair: '#ef4444', text: '#ef4444' };
-}
-
-function Chairs({ table, occ }: { table: TableShape; occ: number }) {
-  const c = occColor(occ);
-  const dots: Array<{ x: number; y: number; rot: number }> = [];
-
-  if (table.type === 'rect') {
-    const { x, y, w, h, seats } = table;
-    const topN = seats <= 4 ? 2 : 3;
-    const botN = seats <= 4 ? 2 : 3;
-    for (let i = 0; i < topN; i++)
-      dots.push({ x: x + (w / (topN + 1)) * (i + 1), y: y - 9, rot: 0 });
-    for (let i = 0; i < botN; i++)
-      dots.push({ x: x + (w / (botN + 1)) * (i + 1), y: y + h + 9, rot: 0 });
-  } else if (table.type === 'round') {
-    const { cx, cy, r, seats } = table;
-    for (let i = 0; i < seats; i++) {
-      const a = (i / seats) * 2 * Math.PI - Math.PI / 2;
-      const d = r + 12;
-      dots.push({ x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d, rot: (a * 180) / Math.PI + 90 });
-    }
-  }
-
+// Previously rendered a fabricated 16-table restaurant layout (HALL_TABLES,
+// a hardcoded T1-T16 demo shape unrelated to any real tenant's floor plan)
+// colored with Math.random() when no real occupancy data existed — looked
+// identical to the real heatmap while being pure fiction. No hall plan
+// means no real data to show; an honest empty state pointing at the real
+// fix (draw the hall plan in Admin) replaces it.
+function HallMapFallback({ lang }: { lang: Language }) {
   return (
-    <>
-      {dots.map((d, i) => (
-        <rect
-          key={i}
-          x={d.x - 5} y={d.y - 3.5}
-          width={10} height={7}
-          rx={2}
-          fill={c.chair}
-          opacity={occ < 0.15 ? 0.3 : 0.65}
-          transform={`rotate(${d.rot}, ${d.x}, ${d.y})`}
-        />
-      ))}
-    </>
-  );
-}
-
-function HallMapFallback({ lang, occupiedTables }: { lang: Language; occupiedTables?: Set<number> }) {
-  const occs = useMemo(() => {
-    if (occupiedTables && occupiedTables.size > 0) {
-      return HALL_TABLES.map(table => occupiedTables.has(table.id) ? 0.8 : 0);
-    }
-    return HALL_TABLES.map(() => Math.random());
-  }, [occupiedTables]);
-
-  const W = 580, H = 355;
-
-  return (
-    <div className="relative w-full">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" style={{ maxHeight: 340 }}>
-        <rect x={0} y={0} width={W} height={H} fill="#0c0c0c" />
-        {Array.from({ length: 14 }, (_, i) => (
-          <line key={`gv${i}`} x1={(i + 1) * 40} y1={0} x2={(i + 1) * 40} y2={H} stroke="#141414" strokeWidth={1} />
-        ))}
-        {Array.from({ length: 8 }, (_, i) => (
-          <line key={`gh${i}`} x1={0} y1={(i + 1) * 40} x2={W} y2={(i + 1) * 40} stroke="#141414" strokeWidth={1} />
-        ))}
-        <rect x={8} y={8} width={W - 16} height={H - 16} fill="none" stroke="#2a2a2a" strokeWidth={2} rx={2} />
-        {HALL_TABLES.map((table, i) => {
-          const occ = occs[i];
-          const c = occColor(occ);
-          return (
-            <g key={table.id}>
-              <Chairs table={table} occ={occ} />
-              {table.type === 'rect' && (
-                <>
-                  <rect x={table.x} y={table.y} width={table.w} height={table.h} fill={c.fill} stroke={c.stroke} strokeWidth={1} rx={3} />
-                  <text x={table.x + table.w / 2} y={table.y + table.h / 2 + 4} textAnchor="middle" fill={c.text} fontSize={9} fontFamily="Epilogue" fontWeight={700}>{table.label}</text>
-                </>
-              )}
-              {table.type === 'round' && (
-                <>
-                  <circle cx={table.cx} cy={table.cy} r={table.r} fill={c.fill} stroke={c.stroke} strokeWidth={1} />
-                  <text x={table.cx} y={table.cy + 4} textAnchor="middle" fill={c.text} fontSize={9} fontFamily="Epilogue" fontWeight={700}>{table.label}</text>
-                </>
-              )}
-              {table.type === 'stool' && (
-                <circle cx={table.cx} cy={table.cy} r={table.r} fill={c.fill} stroke={c.stroke} strokeWidth={1} />
-              )}
-            </g>
-          );
-        })}
-      </svg>
-      <p className="text-[9px] text-muted text-center mt-2 uppercase tracking-[0.2em]">
-        {tr(lang, 'Схема по умолчанию', 'Default layout', 'Standart sxema')}
+    <div className="flex flex-col items-center justify-center py-14 text-center">
+      <Grid2x2 size={28} className="text-muted mb-3" strokeWidth={1.5} />
+      <p className="text-[13px] font-medium text-text">
+        {tr(lang, 'План зала не настроен', 'No hall plan configured', "Zal rejasi sozlanmagan")}
+      </p>
+      <p className="text-[11px] text-muted mt-1 max-w-xs">
+        {tr(lang,
+          'Тепловая карта появится после того, как администратор создаст план зала в разделе «Админ».',
+          'The heatmap will appear once an admin draws the hall plan in the Admin section.',
+          'Zal rejasi "Admin" bo\'limida yaratilgandan so\'ng issiqlik xaritasi ko\'rinadi.')}
       </p>
     </div>
   );
@@ -387,7 +278,7 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster 
   }
 
   if (plans.length === 0) {
-    return <HallMapFallback lang={lang} occupiedTables={occupiedTables} />;
+    return <HallMapFallback lang={lang} />;
   }
 
   const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');

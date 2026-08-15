@@ -16,7 +16,7 @@ import { Compare } from './components/views/Compare';
 import { Checklists } from './components/views/Checklists';
 import { Globe, Sun, Moon } from 'lucide-react';
 import { TRANSLATIONS, nextLang, tr } from './constants';
-import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost } from './services/traceApi';
+import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos } from './services/traceApi';
 import { ManagerPortal } from './components/ManagerPortal';
 import { ChecklistManagerPortal } from './components/ChecklistManagerPortal';
 import { EmployeeChecklistPortal } from './components/EmployeeChecklistPortal';
@@ -109,6 +109,48 @@ const Login: React.FC<{ onLogin: (remember: boolean) => void; lang: Language; se
   );
 };
 
+const DemoPosPicker: React.FC<{ lang: Language; onChoose: (p: 'iiko' | 'poster') => void }> = ({ lang, onChoose }) => {
+  return (
+    <div className="min-h-screen bg-background text-text flex items-center justify-center p-4">
+      <div className="w-full max-w-[420px] text-center animate-fade-in">
+        <div className="inline-flex w-14 h-14 rounded-[18px] glass overflow-hidden mb-6 shadow-[0_8px_32px_rgba(0,0,0,0.15)]">
+          <img src="/trace-logo.png" alt="TRACE" className="w-full h-full object-cover invert dark:invert-0"
+            onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+        </div>
+        <span className="inline-block text-[11px] font-bold tracking-wide uppercase px-3 py-1 rounded-full mb-4" style={{ background: 'rgba(255,107,53,0.12)', color: '#ff6b35' }}>
+          {tr(lang, 'Это демо · вымышленные данные', 'This is a demo · fictional data', 'Bu demo · xayoliy maʼlumotlar')}
+        </span>
+        <h1 className="text-[20px] font-bold mb-2">
+          {tr(lang, 'Какую POS-систему показать?', 'Which POS should we show?', "Qaysi POS ko'rsatilsin?")}
+        </h1>
+        <p className="text-[14px] text-muted mb-8">
+          {tr(lang, 'Демо адаптируется под вашу POS-систему', 'The demo adapts to match your POS', 'Demo sizning POS tizimingizga moslashadi')}
+        </p>
+        <div className="grid grid-cols-2 gap-4">
+          <button
+            onClick={() => onChoose('iiko')}
+            className="flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-border hover:border-primary bg-card transition-colors"
+          >
+            <div className="w-full h-16 rounded-xl flex items-center justify-center font-bold text-[15px]" style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', color: '#4ade80' }}>
+              iiko
+            </div>
+            <span className="text-[15px] font-semibold text-text">iiko</span>
+          </button>
+          <button
+            onClick={() => onChoose('poster')}
+            className="flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-border hover:border-primary bg-card transition-colors"
+          >
+            <div className="w-full h-16 rounded-xl flex items-center justify-center font-bold text-[15px]" style={{ background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.2)', color: '#F97316' }}>
+              Poster
+            </div>
+            <span className="text-[15px] font-semibold text-text">Poster POS</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ThemePicker: React.FC<{ lang: Language; onChoose: (t: 'light' | 'dark') => void }> = ({ lang, onChoose }) => {
   return (
     <div className="min-h-screen bg-background text-text flex items-center justify-center p-4">
@@ -173,6 +215,7 @@ export default function App() {
     return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
   const [themeChosen, setThemeChosen] = useState(() => localStorage.getItem('trace_theme') !== null);
+  const [demoPosChosen, setDemoPosChosen] = useState(() => !isDemoTenant() || localStorage.getItem('trace_demo_pos') !== null);
 
   const [navStyle, setNavStyleState] = useState<NavStyle>(loadNavStyle);
   const setNavStyle = (s: NavStyle) => { setNavStyleState(s); localStorage.setItem(NAV_STYLE_KEY, s); };
@@ -283,6 +326,10 @@ export default function App() {
       }}
       lang={lang} setLang={setLang}
     />;
+  }
+
+  if (!demoPosChosen) {
+    return <DemoPosPicker lang={lang} onChoose={(p) => { setDemoPos(p); setDemoPosChosen(true); }} />;
   }
 
   if (!themeChosen) {

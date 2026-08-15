@@ -101,6 +101,16 @@ export function isDemoTenant(): boolean {
   return getSubdomain() === 'demo';
 }
 
+// Which POS the demo pretends to run on — chosen once via the demo POS picker,
+// persisted so reloads stay on the same choice. Defaults to iiko.
+export function getDemoPos(): 'iiko' | 'poster' {
+  return localStorage.getItem('trace_demo_pos') === 'poster' ? 'poster' : 'iiko';
+}
+
+export function setDemoPos(pos: 'iiko' | 'poster'): void {
+  localStorage.setItem('trace_demo_pos', pos);
+}
+
 function demoBriefing(lang: Language): AIDailyBriefing {
   const ru = lang === 'ru';
   return {
@@ -535,6 +545,9 @@ function demoTopDishes(limit: number): DishRow[] {
 }
 
 function demoSalesStatus(): IntegrationStatus {
+  if (getDemoPos() === 'poster') {
+    return { poster: { ok: true, label: 'Demo Poster · подключено' } };
+  }
   return {
     iikoServer: { ok: true, label: 'Demo POS · подключено' },
     iikoCloud:  { ok: true, label: 'Demo Cloud · подключено' },
@@ -708,6 +721,15 @@ function demoAbcDaypart(dishName: string, lang: Language): DaypartData {
   }));
 
   return { byDow, byHour };
+}
+
+function demoReservations(): ReservationRow[] {
+  if (getDemoPos() !== 'poster') return [];
+  return [
+    { id: 'r1', guestName: 'Азиз Каримов', phone: '+998 90 123 45 67', partySize: 4, date: demoDateStr(0) + 'T19:30:00', durationMin: 90, status: 'accepted', comment: 'У окна' },
+    { id: 'r2', guestName: 'Мадина Юсупова', phone: '+998 91 234 56 78', partySize: 2, date: demoDateStr(0) + 'T20:00:00', durationMin: 60, status: 'new', comment: null },
+    { id: 'r3', guestName: 'Шерзод Ахмедов', phone: '+998 93 345 67 89', partySize: 6, date: demoDateStr(1) + 'T18:00:00', durationMin: 120, status: 'accepted', comment: 'День рождения' },
+  ];
 }
 
 function demoTableTurns(): TableTurnRow[] {
@@ -1008,6 +1030,25 @@ function demoInventory(): FinancialInventoryDoc[] {
   ];
 }
 
+function demoPosterInventory(): PosterInventoryItem[] {
+  return [
+    { id: 'p1', name: 'Говядина (вырезка)', unit: 'кг', qty: 14.2, unitCost: 180_000, totalValue: 2_556_000 },
+    { id: 'p2', name: 'Курица (филе)', unit: 'кг', qty: 22.0, unitCost: 85_000, totalValue: 1_870_000 },
+    { id: 'p3', name: 'Лосось охл.', unit: 'кг', qty: 5.4, unitCost: 320_000, totalValue: 1_728_000 },
+    { id: 'p4', name: 'Томаты', unit: 'кг', qty: 18.6, unitCost: 14_000, totalValue: 260_400 },
+    { id: 'p5', name: 'Сыр Моцарелла', unit: 'кг', qty: 9.1, unitCost: 92_000, totalValue: 837_200 },
+    { id: 'p6', name: 'Пиво разливное', unit: 'л', qty: 64.0, unitCost: 18_000, totalValue: 1_152_000 },
+    { id: 'p7', name: 'Молоко', unit: 'л', qty: 26.0, unitCost: 9_500, totalValue: 247_000 },
+  ];
+}
+
+function demoPosterInventoryDocs(): PosterInventoryDoc[] {
+  return [
+    { id: 'pd1', storageId: 'st1', storageName: 'Кухня', dateStart: demoDateStr(2), dateEnd: demoDateStr(2), sum: 24_300_000, status: 'PROCESSED' },
+    { id: 'pd2', storageId: 'st2', storageName: 'Бар', dateStart: demoDateStr(9), dateEnd: demoDateStr(9), sum: 9_120_000, status: 'PROCESSED' },
+  ];
+}
+
 function demoInventoryItems(docId: string): InventoryItem[] {
   const sets: Record<string, InventoryItem[]> = {
     'inv-doc-1': [
@@ -1034,6 +1075,15 @@ function demoInventoryItems(docId: string): InventoryItem[] {
       { productName: 'Оливковое масло', productCode: '00804', category: 'Масла', unit: 'л', bookQty: 6.0, actualQty: 6.5, diffQty: 0.5, price: 95_000, sum: 617_500 },
       { productName: 'Соевый соус', productCode: '00805', category: 'Соусы', unit: 'л', bookQty: 4.0, actualQty: 4.0, diffQty: 0, price: 45_000, sum: 180_000 },
       { productName: 'Пармезан', productCode: '00901', category: 'Сыры', unit: 'кг', bookQty: 3.0, actualQty: 3.1, diffQty: 0.1, price: 380_000, sum: 1_178_000 },
+    ],
+    'pd1': [
+      { productName: 'Говядина (вырезка)', productCode: '00142', category: 'Мясо', unit: 'кг', bookQty: 14.0, actualQty: 14.2, diffQty: 0.2, price: 180_000, sum: 2_556_000 },
+      { productName: 'Курица (филе)', productCode: '00143', category: 'Мясо', unit: 'кг', bookQty: 21.5, actualQty: 22.0, diffQty: 0.5, price: 85_000, sum: 1_870_000 },
+      { productName: 'Томаты', productCode: '00401', category: 'Овощи', unit: 'кг', bookQty: 18.0, actualQty: 18.6, diffQty: 0.6, price: 14_000, sum: 260_400 },
+    ],
+    'pd2': [
+      { productName: 'Пиво разливное', productCode: '00601', category: 'Крепкий алкоголь', unit: 'л', bookQty: 64.0, actualQty: 64.0, diffQty: 0, price: 18_000, sum: 1_152_000 },
+      { productName: 'Вино красное сухое', productCode: '00602', category: 'Вино', unit: 'бут', bookQty: 12.0, actualQty: 12.0, diffQty: 0, price: 220_000, sum: 2_640_000 },
     ],
   };
   return sets[docId] ?? [];
@@ -1103,6 +1153,20 @@ function demoGLSummary(): GLSummary {
       total: 412_000_000,
     },
   };
+}
+
+function demoGLCategories(): PosterGLCategory[] {
+  return [
+    { name: 'Выручка', level: 0, amount: 388_000_000 },
+    { name: 'Кухня', level: 1, amount: 248_000_000 },
+    { name: 'Бар', level: 1, amount: 124_000_000 },
+    { name: 'Кондитерская', level: 1, amount: 16_000_000 },
+    { name: 'Себестоимость', level: 0, amount: -134_600_000 },
+    { name: 'Продукты', level: 1, amount: -98_000_000 },
+    { name: 'Напитки', level: 1, amount: -36_600_000 },
+    { name: 'Зарплата', level: 0, amount: -98_880_000 },
+    { name: 'Списания', level: 0, amount: -6_400_000 },
+  ];
 }
 
 export interface DemoReviewRow {
@@ -1443,10 +1507,10 @@ export const traceApi = {
     invoices: (range: 'today' | '7days' | '30days' = '7days'): Promise<FinancialInvoiceRow[]> =>
       isDemoTenant() ? Promise.resolve(demoInvoices()) : apiFetch(`/financial/invoices?range=${range}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     inventory: (range: 'today' | '7days' | '30days' = '30days'): Promise<(FinancialInventoryDoc | PosterInventoryItem)[] | null> =>
-      isDemoTenant() ? Promise.resolve(demoInventory()) : apiFetch(`/financial/inventory?range=${range}`).then(r => r.json()).then(d => (Array.isArray(d) && d.length ? d : null)),
+      isDemoTenant() ? Promise.resolve(getDemoPos() === 'poster' ? demoPosterInventory() : demoInventory()) : apiFetch(`/financial/inventory?range=${range}`).then(r => r.json()).then(d => (Array.isArray(d) && d.length ? d : null)),
     // Poster only — doc-based stocktaking archive, a second view alongside inventory() above.
     inventoryDocs: (): Promise<PosterInventoryDoc[]> =>
-      isDemoTenant() ? Promise.resolve([]) : apiFetch(`/financial/inventory-docs`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+      isDemoTenant() ? Promise.resolve(getDemoPos() === 'poster' ? demoPosterInventoryDocs() : []) : apiFetch(`/financial/inventory-docs`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     inventoryItems: (docId: string, date: string, docNum?: string): Promise<InventoryItem[]> =>
       isDemoTenant() ? Promise.resolve(demoInventoryItems(docId)) : apiFetch(`/financial/inventory/items?docId=${encodeURIComponent(docId)}&date=${date}${docNum ? `&docNum=${encodeURIComponent(docNum)}` : ''}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     pl: (range: 'today' | '7days' | '30days' | 'custom' = '7days', customFrom?: string, customTo?: string): Promise<FinancialPL | null> => {
@@ -1461,7 +1525,7 @@ export const traceApi = {
     },
     // Poster only — see PosterGLCategory.
     glCategories: (range: 'today' | '7days' | '30days' | 'custom' = '7days', customFrom?: string, customTo?: string): Promise<PosterGLCategory[]> => {
-      if (isDemoTenant()) return Promise.resolve([]);
+      if (isDemoTenant()) return Promise.resolve(demoGLCategories());
       const q = range === 'custom' && customFrom && customTo ? `from=${customFrom}&to=${customTo}` : `range=${range}`;
       return apiFetch(`/financial/gl-categories?${q}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []);
     },
@@ -1564,7 +1628,7 @@ export const traceApi = {
       isDemoTenant() ? Promise.resolve(demoDelivery()) : apiFetch(`/operations/delivery`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     // Poster only — no iiko-side equivalent anywhere in TRACE.
     reservations: (): Promise<ReservationRow[]> =>
-      isDemoTenant() ? Promise.resolve([]) : apiFetch(`/operations/reservations`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+      isDemoTenant() ? Promise.resolve(demoReservations()) : apiFetch(`/operations/reservations`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     tableTurns: (): Promise<TableTurnRow[]> =>
       isDemoTenant() ? Promise.resolve(demoTableTurns()) : apiFetch(`/operations/table-turns`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     peakPrep: (): Promise<PeakSlot[]> =>

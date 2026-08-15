@@ -2040,7 +2040,9 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
             </ResponsiveContainer>
           </div>
           <p className="text-[10px] text-muted mt-2">
-            {tr(lang, 'Оранжевый — пиковые часы · iikoFront реальное время', 'Orange — peak hours · iikoFront real-time', "Apelsin rang — chuqqi soatlar · iikoFront real vaqt")}
+            {isPoster
+              ? tr(lang, 'Оранжевый — пиковые часы · Poster реальное время', 'Orange — peak hours · Poster real-time', "Apelsin rang — chuqqi soatlar · Poster real vaqt")
+              : tr(lang, 'Оранжевый — пиковые часы · iikoFront реальное время', 'Orange — peak hours · iikoFront real-time', "Apelsin rang — chuqqi soatlar · iikoFront real vaqt")}
           </p>
           </>
           )}

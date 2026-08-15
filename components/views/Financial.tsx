@@ -444,10 +444,17 @@ export const Financial: React.FC<{
   const t = TRANSLATIONS[lang];
   const [tab, setTab] = useState<Tab>('pl');
 
-  // POS type — Poster tenants get different (or currently unsupported) data for several tabs below
+  // POS type — Poster tenants get different (or currently unsupported) data
+  // for several tabs below. `isPoster` starts false (unknown) and only
+  // resolves after this async call — defaulting `tab` to 'pl' before that
+  // resolves meant every Poster tenant saw the P&L tab render for one
+  // frame, then get yanked to Accounting the instant the real answer came
+  // back. `posKnown` gates the tab bar/content so nothing renders (a brief
+  // skeleton instead) until the POS type is actually known — no flash.
   const [isPoster, setIsPoster] = useState(false);
+  const [posKnown, setPosKnown] = useState(false);
   useEffect(() => {
-    traceApi.sales.status().then(s => setIsPoster(!!s.poster)).catch(() => {});
+    traceApi.sales.status().then(s => setIsPoster(!!s.poster)).catch(() => {}).finally(() => setPosKnown(true));
   }, []);
 
   // P&L has no Poster data source — GET /financial/pl is 100% iiko OLAP with
@@ -465,8 +472,15 @@ export const Financial: React.FC<{
     { key: 'cashshifts', label: tr(lang, 'Кассовые смены', 'Cash Shifts', 'Kassa smenalari') },
     { key: 'gl',         label: tr(lang, 'Учёт', 'Accounting', 'Hisob') },
   ];
-  const TABS = isPoster ? ALL_TABS.filter(x => x.key !== 'pl') : ALL_TABS;
-  useEffect(() => { if (isPoster && tab === 'pl') setTab('gl'); }, [isPoster, tab]);
+  // Hide 'pl' until posKnown resolves, not just when isPoster is true —
+  // isPoster *starts* false (unknown), so gating on isPoster alone let the
+  // P&L tab render as active for one frame on every Poster tenant's load,
+  // then get yanked to Accounting the instant the real answer arrived.
+  // Withholding it until posKnown means iiko tenants see it appear once
+  // (a one-directional reveal, not a flash-then-switch), and Poster
+  // tenants never see it at all.
+  const TABS = (!posKnown || isPoster) ? ALL_TABS.filter(x => x.key !== 'pl') : ALL_TABS;
+  useEffect(() => { if (posKnown && isPoster && tab === 'pl') setTab('gl'); }, [posKnown, isPoster, tab]);
 
 
   // Shared range for all tabs
@@ -563,7 +577,7 @@ export const Financial: React.FC<{
 
 
   useEffect(() => {
-    if (tab === 'pl') {
+    if (tab === 'pl' && posKnown) {
       if (plRange === 'custom' && !plCustomRange) return;
       setPlLoading(true);
       traceApi.financial.pl(plRange, plCustomRange?.from, plCustomRange?.to)
@@ -590,7 +604,7 @@ export const Financial: React.FC<{
         }).catch(() => setPl(null))
         .finally(() => setPlLoading(false));
     }
-  }, [tab, plRange, plCustomRange, onContextReady]);
+  }, [tab, posKnown, plRange, plCustomRange, onContextReady]);
 
   useEffect(() => {
     if (tab === 'invoices') {
@@ -770,7 +784,7 @@ export const Financial: React.FC<{
             ))}
           </div>
         </div>
-        {tab === 'pl' ? (
+        {tab === 'pl' && posKnown ? (
           <PLRangeSelector
             value={plRange}
             onChange={r => { setPlRange(r); if (r !== 'custom') setPlCustomRange(null); }}
@@ -800,7 +814,7 @@ export const Financial: React.FC<{
       </div>
 
       {/* ── P&L TAB ── */}
-      {tab === 'pl' && (
+      {tab === 'pl' && posKnown && (
         <div className="space-y-5">
           {/* Top metric cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

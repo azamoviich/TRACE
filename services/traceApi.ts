@@ -1335,6 +1335,7 @@ export interface LoyaltyGuestRow {
   totalSpent: number;
   firstSeen: string | null; // null for Poster — clients.getClients has no join-date field
   lastSeen: string | null;
+  favoriteItem: string | null; // null for Poster — no per-client item history to derive it from
 }
 
 export interface LoyaltyVisit {
@@ -1378,6 +1379,7 @@ export function demoLoyaltySummary(): LoyaltySummary {
 export function demoLoyaltyGuests(): LoyaltyGuestRow[] {
   const isPoster = getDemoPos() === 'poster';
   const names = ['Aziza R.', 'Jasur T.', 'Kamola S.', 'Bekzod M.', 'Nilufar A.', 'Sherzod Q.', 'Madina K.', 'Dilshod P.'];
+  const dishes = ['Плов Узбекский', 'Шашлык из баранины', 'Лагман', 'Самса с мясом', 'Чай зелёный', 'Салат «Ачичук»'];
   return names.map((name, i) => ({
     phone: `+99890${(1234567 + i * 111).toString().slice(0, 7)}`,
     name,
@@ -1387,6 +1389,7 @@ export function demoLoyaltyGuests(): LoyaltyGuestRow[] {
     totalSpent: (12 - i) * (380000 - i * 9000),
     firstSeen: isPoster ? null : `${demoDateStr(120 - i * 6)}T12:00:00Z`,
     lastSeen: isPoster ? null : `${demoDateStr(i)}T19:00:00Z`,
+    favoriteItem: isPoster ? null : dishes[i % dishes.length],
   })).sort((a, b) => b.totalSpent - a.totalSpent);
 }
 

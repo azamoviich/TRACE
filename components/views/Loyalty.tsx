@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
-import { Users, TrendingUp, Wallet, Repeat, Search, X } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { Users, TrendingUp, Wallet, Repeat, Search, X, Heart, Download } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { ChartTooltip } from '../ui/ChartTooltip';
 import { Language } from '../../types';
@@ -170,11 +171,44 @@ export const Loyalty: React.FC<{ lang: Language }> = ({ lang }) => {
 
   const noData = !loading && (!summary || summary.totalMembers === 0);
 
+  const exportToExcel = () => {
+    const header = [
+      tr(lang, 'Гость', 'Guest', 'Mehmon'), tr(lang, 'Телефон', 'Phone', 'Telefon'),
+      tr(lang, 'Визиты', 'Visits', 'Tashriflar'), tr(lang, 'Потрачено (UZS)', 'Spent (UZS)', 'Sarflangan (UZS)'),
+      tr(lang, 'Любимое блюдо', 'Favorite item', 'Sevimli taom'),
+      tr(lang, 'Последний визит', 'Last visit', 'Oxirgi tashrif'),
+    ];
+    const rows = guests.map(g => [
+      g.name ?? tr(lang, 'Без имени', 'Unnamed', 'Ismsiz'),
+      g.phone,
+      g.visitCount,
+      g.totalSpent,
+      g.favoriteItem ?? '—',
+      fmtDate(lang, g.lastSeen),
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+    ws['!cols'] = [{ wch: 18 }, { wch: 16 }, { wch: 8 }, { wch: 14 }, { wch: 24 }, { wch: 14 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, tr(lang, 'Лояльность', 'Loyalty', 'Sadoqat'));
+    XLSX.writeFile(wb, `loyalty-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
   return (
     <div className="space-y-5 pb-24 animate-fade-in">
-      <div>
-        <h2 className="text-[18px] font-bold text-text">{tr(lang, 'Программа лояльности', 'Loyalty program', 'Sadoqat dasturi')}</h2>
-        <p className="text-[13px] text-muted mt-0.5">{tr(lang, 'Гости, идентифицированные по номеру телефона на кассе', 'Guests identified by phone at checkout', "Kassada telefon raqami orqali aniqlangan mehmonlar")}</p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="text-[18px] font-bold text-text">{tr(lang, 'Программа лояльности', 'Loyalty program', 'Sadoqat dasturi')}</h2>
+          <p className="text-[13px] text-muted mt-0.5">{tr(lang, 'Гости, идентифицированные по номеру телефона на кассе', 'Guests identified by phone at checkout', "Kassada telefon raqami orqali aniqlangan mehmonlar")}</p>
+        </div>
+        {!noData && guests.length > 0 && (
+          <button
+            onClick={exportToExcel}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded-lg bg-card border border-border text-text hover:bg-card-hover transition-colors flex-shrink-0"
+          >
+            <Download size={13} />
+            {tr(lang, 'Скачать Excel', 'Download Excel', 'Excel yuklab olish')}
+          </button>
+        )}
       </div>
 
       {/* Manual lookup — works via iiko's Cloud API directly, for any phone
@@ -307,6 +341,12 @@ export const Loyalty: React.FC<{ lang: Language }> = ({ lang }) => {
                           <td className="py-2.5 pr-4">
                             <p className="text-[13px] font-medium text-text">{g.name ?? tr(lang, 'Без имени', 'Unnamed', 'Ismsiz')}</p>
                             <p className="text-[11px] text-muted">{g.phone}</p>
+                            {g.favoriteItem && (
+                              <p className="text-[11px] text-primary flex items-center gap-1 mt-0.5">
+                                <Heart size={10} className="flex-shrink-0" fill="currentColor" />
+                                <span className="truncate">{g.favoriteItem}</span>
+                              </p>
+                            )}
                           </td>
                           <td className="py-2.5 pr-4 text-[13px] text-text metric-number">{g.visitCount}</td>
                           <td className="py-2.5 pr-4 text-[13px] text-text metric-number">{fmtSum(g.totalSpent)}</td>

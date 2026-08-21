@@ -10,6 +10,35 @@ const BRANCH_LABEL: Record<string, string> = {
   'benedict-nukus': 'Nukus',
 };
 
+// The QR endpoint is cross-origin in prod (VITE_API_URL points at Railway's
+// raw domain), so a plain <a download> is silently ignored by the browser —
+// it just navigates to the image instead of saving it. Fetch it as a blob,
+// convert PNG -> JPEG on a canvas (white background, since JPEG has no
+// alpha), and trigger the save from an object URL instead.
+async function downloadQrAsJpg(url: string, filename: string) {
+  const res = await fetch(url);
+  const pngBlob = await res.blob();
+  const bitmap = await createImageBitmap(pngBlob);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, 0, 0);
+  const jpgBlob: Blob = await new Promise((resolve, reject) =>
+    canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.95)
+  );
+  const blobUrl = URL.createObjectURL(jpgBlob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(blobUrl);
+}
+
 export const Waiters: React.FC<{ lang: Language }> = ({ lang }) => {
   const [waiters, setWaiters] = useState<WaiterRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -112,13 +141,13 @@ export const Waiters: React.FC<{ lang: Language }> = ({ lang }) => {
                         <p className="font-medium">{BRANCH_LABEL[b.subdomain] ?? b.branch_name}</p>
                         <p className="text-muted">{b.scan_count} {tr(lang, 'сканов', 'scans', 'skan')}</p>
                       </div>
-                      <a
-                        href={traceApi.waiters.qrUrl(b.code)}
-                        download={`${w.name}-${b.subdomain}.png`}
+                      <button
+                        type="button"
+                        onClick={() => downloadQrAsJpg(traceApi.waiters.qrUrl(b.code), `${w.name}-${BRANCH_LABEL[b.subdomain] ?? b.subdomain}.jpg`)}
                         className="text-muted hover:text-primary transition-colors ml-1"
                       >
                         <Download size={13} />
-                      </a>
+                      </button>
                     </div>
                   ))}
                 </div>

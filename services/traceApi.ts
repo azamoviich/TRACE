@@ -1844,7 +1844,7 @@ export const traceApi = {
       }).then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); }),
     remove: (id: string): Promise<void> =>
       apiFetch(`/waiters/${id}`, { method: 'DELETE' }).then(() => undefined),
-    qrUrl: (code: string): string => `${BASE}/waiters/qr/${code}.png`,
+    qrUrl: (code: string): string => `${BASE}/waiters/qr/${code}.png?tenant=${encodeURIComponent(getSubdomain())}`,
   },
 };
 

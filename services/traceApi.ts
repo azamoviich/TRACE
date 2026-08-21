@@ -1833,7 +1833,35 @@ export const traceApi = {
     remove: (id: string): Promise<void> =>
       apiFetch(`/shift-reports/${id}`, { method: 'DELETE' }).then(() => undefined),
   },
+  waiters: {
+    list: (): Promise<WaiterRow[]> =>
+      apiFetch(`/waiters`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+    create: (name: string): Promise<{ id: string; name: string; active: boolean }> =>
+      apiFetch(`/waiters`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      }).then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); }),
+    remove: (id: string): Promise<void> =>
+      apiFetch(`/waiters/${id}`, { method: 'DELETE' }).then(() => undefined),
+    qrUrl: (code: string): string => `${BASE}/waiters/qr/${code}.png`,
+  },
 };
+
+export interface WaiterBranch {
+  tenant_id: string;
+  subdomain: string;
+  branch_name: string;
+  code: string;
+  scan_count: number;
+}
+
+export interface WaiterRow {
+  id: string;
+  name: string;
+  active: boolean;
+  branches: WaiterBranch[];
+}
 
 
 export interface CashShift {

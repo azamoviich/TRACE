@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Star, MessageSquare, RefreshCw, Sparkles, TrendingUp, Copy, Check, ClipboardList, Calendar as CalendarIcon, X } from 'lucide-react';
+import { Star, MessageSquare, RefreshCw, Sparkles, TrendingUp, Copy, Check, ClipboardList, QrCode, Calendar as CalendarIcon, X } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Language } from '../../types';
 import { traceApi, getSubdomain, isDemoTenant, getTenantPlan, demoReviewRows, demoReviewStats, branchHeaders } from '../../services/traceApi';
 import { ShiftReports } from './ShiftReports';
+import { Waiters } from './Waiters';
 import { ProLock } from '../ui/ProLock';
 import { DateRangePicker } from '../ui/DateRangePicker';
 
@@ -58,9 +59,10 @@ export const Reviews: React.FC<{ lang: Language; onContextReady?: (ctx: string) 
   const isUz = lang === 'uz';
   const sub = getSubdomain();
   const isBenedict = sub === 'benedict' || sub === 'benedict-nukus';
-  const [mainTab, setMainTab] = useState<'reviews' | 'shifts'>(() =>
-    new URLSearchParams(window.location.search).get('tab') === 'shifts' ? 'shifts' : 'reviews'
-  );
+  const [mainTab, setMainTab] = useState<'reviews' | 'shifts' | 'waiters'>(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    return t === 'shifts' || t === 'waiters' ? t : 'reviews';
+  });
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   // Unfiltered snapshot (always the "all platforms" fetch) — used for the
   // platform filter buttons and the sidebar breakdown, which both need to
@@ -240,13 +242,23 @@ export const Reviews: React.FC<{ lang: Language; onContextReady?: (ctx: string) 
             <ClipboardList size={13} />
             {ru ? 'Отчёты смен' : isUz ? 'Smena hisobotlari' : 'Shift Reports'}
           </button>
+          <button
+            onClick={() => setMainTab('waiters')}
+            className={`px-3 py-2 text-[13px] rounded-lg transition-colors font-medium flex items-center gap-1.5 ${mainTab === 'waiters' ? 'bg-primary text-white' : 'bg-card border border-border text-muted hover:text-text'}`}
+          >
+            <QrCode size={13} />
+            {ru ? 'QR официантов' : isUz ? 'Ofitsiant QR' : 'Waiter QR'}
+          </button>
         </div>
       )}
 
       {/* Shift reports panel (Benedict only) */}
       {isBenedict && mainTab === 'shifts' && <ShiftReports lang={lang} />}
 
-      {/* Guest reviews — hidden when shift tab active */}
+      {/* Waiter QR codes panel (Benedict only) */}
+      {isBenedict && mainTab === 'waiters' && <Waiters lang={lang} />}
+
+      {/* Guest reviews — hidden when shift/waiters tab active */}
       {(!isBenedict || mainTab === 'reviews') && <>
 
       {/* ── REVIEW TREND ANALYSIS ── */}

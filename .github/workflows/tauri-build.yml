@@ -20,12 +20,25 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install frontend deps
         run: npm install
-      - uses: tauri-apps/tauri-action@v0
+      - name: Build Tauri app
+        run: npx tauri build
+      - name: Locate built installer
+        id: find_exe
+        shell: bash
+        run: |
+          EXE=$(find src-tauri/target/release/bundle/nsis -name "*.exe" | head -n 1)
+          echo "path=$EXE" >> "$GITHUB_OUTPUT"
+      - name: Push installer to backend repo
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: trace-desktop-v__VERSION__
-          releaseName: 'TRACE Desktop v__VERSION__'
-          releaseBody: 'TRACE desktop app for Windows.'
-          releaseDraft: false
-          prerelease: false
+          BACKEND_DEPLOY_TOKEN: ${{ secrets.BACKEND_DEPLOY_TOKEN }}
+        run: |
+          git clone https://x-access-token:${BACKEND_DEPLOY_TOKEN}@github.com/azamoviich/TRACE-BACKEND.git backend-repo
+          mkdir -p backend-repo/public/downloads
+          cp "${{ steps.find_exe.outputs.path }}" backend-repo/public/downloads/TRACE-Setup.exe
+          cd backend-repo
+          git config user.name "trace-ci"
+          git config user.email "ci@trace-os.uz"
+          git add public/downloads/TRACE-Setup.exe
+          git diff --cached --quiet && echo "No changes" || git commit -m "chore: update TRACE-Setup.exe from CI build"
+          git push origin main

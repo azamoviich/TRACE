@@ -49,8 +49,23 @@
       window.location.href = `https://${sub}.trace-os.uz/`;
     }
 
-    const saved = localStorage.getItem(KEY);
-    if (saved) launch(saved);
+    async function init() {
+      const saved = localStorage.getItem(KEY);
+      if (saved) { launch(saved); return; }
+
+      try {
+        const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+        if (invoke) {
+          const preset = await invoke('get_preset_tenant');
+          if (preset) {
+            localStorage.setItem(KEY, preset);
+            launch(preset);
+            return;
+          }
+        }
+      } catch (e) {}
+    }
+    init();
 
     go.addEventListener('click', () => {
       const sub = normalize(input.value);

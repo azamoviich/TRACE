@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TRACE</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #1a1a1d; color: #f0eee9; font-family: system-ui, sans-serif;
+  }
+  .box { width: 320px; text-align: center; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  p { font-size: 13px; color: #9a9a9a; margin: 0 0 20px; }
+  input {
+    width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #303036;
+    background: #222226; color: #f0eee9; font-size: 14px; margin-bottom: 12px;
+  }
+  button {
+    width: 100%; padding: 10px; border-radius: 10px; border: none;
+    background: #ff6b35; color: white; font-weight: 600; font-size: 14px; cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .hint { font-size: 11px; color: #6b6b6b; margin-top: 10px; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <h1>TRACE</h1>
+    <p>Enter your restaurant's TRACE address to continue</p>
+    <input id="subdomain" placeholder="e.g. benedict" autofocus />
+    <button id="go">Continue</button>
+    <div class="hint">You only need to do this once on this computer.</div>
+  </div>
+  <script>
+    const KEY = 'trace_desktop_tenant';
+    const input = document.getElementById('subdomain');
+    const go = document.getElementById('go');
+
+    function normalize(v) {
+      v = v.trim().toLowerCase();
+      v = v.replace(/^https?:\/\//, '').replace(/\.trace-os\.uz.*$/, '').replace(/\/.*$/, '');
+      return v;
+    }
+
+    function launch(sub) {
+      window.location.href = `https://${sub}.trace-os.uz/`;
+    }
+
+    const saved = localStorage.getItem(KEY);
+    if (saved) launch(saved);
+
+    go.addEventListener('click', () => {
+      const sub = normalize(input.value);
+      if (!sub) return;
+      localStorage.setItem(KEY, sub);
+      launch(sub);
+    });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go.click(); });
+  </script>
+</body>
+</html>

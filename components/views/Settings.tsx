@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card } from '../ui/Card';
 import { Language, ViewState } from '../../types';
-import { Mail, Loader2, Plus, Trash2, Send, Sun, Moon, Link2, PanelLeft, PanelTop, Rows3, PanelBottom, Eye, EyeOff, Palette, Check, ImagePlus, X, Home } from 'lucide-react';
+import { Mail, Loader2, Plus, Trash2, Send, Sun, Moon, Link2, PanelLeft, PanelTop, Rows3, PanelBottom, Eye, EyeOff, Palette, Check, ImagePlus, X, Home, Download } from 'lucide-react';
 import { traceApi, isDemoTenant, ReportSubscription, ReportType, ReportChannel, TelegramStatus, uploadPhoto, getSubdomain } from '../../services/traceApi';
 import { TRANSLATIONS } from '../../constants';
 import { NAV_ITEMS, HIDEABLE_PAGE_IDS, DEFAULT_PAGE_CHOICES, ACCENT_SWATCHES, NavStyle, MobileNavStyle } from '../navConfig';
@@ -536,6 +536,28 @@ export const Settings: React.FC<{
             <Plus size={13} />
             {t.add_subscription}
           </button>
+      </Card>
+
+      <Card className="p-5 sm:p-6">
+        <h3 className="text-[14px] font-semibold text-text mb-1">
+          {ru ? 'Приложение для Windows' : isUz ? 'Windows uchun ilova' : 'Windows App'}
+        </h3>
+        <p className="text-[12px] text-muted mb-4">
+          {ru
+            ? 'Установите TRACE как приложение на компьютер — без открытия браузера каждый день.'
+            : isUz
+            ? 'TRACE dasturini kompyuteringizga o‘rnating — har kuni brauzer ochmasdan.'
+            : "Install TRACE as a desktop app — no need to open the browser every day."}
+        </p>
+        <a
+          href="https://github.com/azamoviich/TRACE/releases/latest"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex px-5 py-2 bg-primary text-white text-[12px] font-semibold rounded-lg hover:bg-primary/90 transition-colors items-center gap-2"
+        >
+          <Download size={13} />
+          {ru ? 'Скачать для Windows' : isUz ? 'Windows uchun yuklab olish' : 'Download for Windows'}
+        </a>
       </Card>
     </div>
   );

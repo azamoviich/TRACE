@@ -1,0 +1,31 @@
+name: Build Windows App
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'launcher/**'
+      - 'src-tauri/**'
+      - '.github/workflows/tauri-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install frontend deps
+        run: npm install
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: trace-desktop-v__VERSION__
+          releaseName: 'TRACE Desktop v__VERSION__'
+          releaseBody: 'TRACE desktop app for Windows.'
+          releaseDraft: false
+          prerelease: false

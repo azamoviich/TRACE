@@ -94,7 +94,16 @@ export const Waiters: React.FC<{ lang: Language }> = ({ lang }) => {
     setError('');
     try {
       const rows = await traceApi.waiters.report();
-      const header = ['Waiter', 'Branch', 'Scanned at', 'Review at', 'Minutes after scan', 'Author', 'Rating', 'Review text'];
+      const header = [
+        tr(lang, 'Официант', 'Waiter', 'Ofitsiant'),
+        tr(lang, 'Филиал', 'Branch', 'Filial'),
+        tr(lang, 'Скан в', 'Scanned at', 'Skan vaqti'),
+        tr(lang, 'Отзыв в', 'Review at', 'Sharh vaqti'),
+        tr(lang, 'Минут после скана', 'Minutes after scan', 'Skandan keyin daqiqa'),
+        tr(lang, 'Автор', 'Author', 'Muallif'),
+        tr(lang, 'Оценка', 'Rating', 'Baho'),
+        tr(lang, 'Текст отзыва', 'Review text', 'Sharh matni'),
+      ];
       const body = rows.map(r => [
         r.waiter_name,
         r.branch_name,
@@ -108,7 +117,7 @@ export const Waiters: React.FC<{ lang: Language }> = ({ lang }) => {
       const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
       ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: body.length, c: header.length - 1 } }) };
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Waiter reviews');
+      XLSX.utils.book_append_sheet(wb, ws, tr(lang, 'Отзывы официантов', 'Waiter reviews', 'Ofitsiant sharhlari'));
       XLSX.writeFile(wb, `waiter-reviews-${new Date().toISOString().slice(0, 10)}.xlsx`);
     } catch {
       setError(tr(lang, 'Не удалось выгрузить отчёт', 'Could not export report', "Hisobotni yuklab bo'lmadi"));

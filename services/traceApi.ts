@@ -1845,6 +1845,10 @@ export const traceApi = {
     remove: (id: string): Promise<void> =>
       apiFetch(`/waiters/${id}`, { method: 'DELETE' }).then(() => undefined),
     qrUrl: (code: string): string => `${BASE}/waiters/qr/${code}.png?tenant=${encodeURIComponent(getSubdomain())}`,
+    report: (): Promise<WaiterReportRow[]> =>
+      apiFetch(`/waiters/report`).then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); }),
+    summary: (): Promise<WaiterSummaryRow[]> =>
+      apiFetch(`/waiters/summary`).then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); }),
   },
 };
 
@@ -1861,6 +1865,27 @@ export interface WaiterRow {
   name: string;
   active: boolean;
   branches: WaiterBranch[];
+}
+
+export interface WaiterSummaryRow {
+  id: string;
+  name: string;
+  total_scans: number;
+  reviews_yesterday: number;
+  reviews_today: number;
+  delta: number;
+}
+
+export interface WaiterReportRow {
+  waiter_name: string;
+  branch_name: string;
+  subdomain: string;
+  scanned_at: string;
+  author: string;
+  rating: number | null;
+  text: string;
+  review_date: string;
+  minutes_after_scan: number;
 }
 
 

@@ -422,7 +422,9 @@ export const TenantDrawer: React.FC<{
     setNotifyMsg('');
     try {
       const r = await traceApi.admin.notifyExistingReviews(token, tenant.id);
-      setNotifyMsg(`Sent ${r.sent} notification${r.sent === 1 ? '' : 's'}.`);
+      setNotifyMsg(r.ok
+        ? `Sent ${r.sent} notification${r.sent === 1 ? '' : 's'}.`
+        : 'Nothing was sent — check the Telegram bot token and that the bot is in the chat.');
     } catch (ex: any) {
       setNotifyMsg(`Failed: ${ex.message}`);
     } finally {

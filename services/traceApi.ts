@@ -1773,6 +1773,11 @@ export const traceApi = {
       const q = range === 'custom' && customFrom && customTo ? `from=${customFrom}&to=${customTo}` : `range=${range}`;
       return apiFetch(`/operations/staff-abc?${q}`).then(r => r.json());
     },
+    // Whether TRACEPLUGIN actually has a live websocket open at the
+    // restaurant right now — distinct from the frontend's own browser
+    // websocket to the backend, which is up as long as our server is up.
+    pluginStatus: (): Promise<{ connected: boolean; connectedSince: string | null }> =>
+      isDemoTenant() ? Promise.resolve({ connected: true, connectedSince: null }) : apiFetch(`/operations/plugin-status`).then(r => r.json()),
     alerts: (lang: Language = 'ru'): Promise<OpsAlert[]> =>
       isDemoTenant() ? Promise.resolve(demoOpsAlerts()) : apiFetch(`/operations/alerts?lang=${lang}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     voidTracker: (range: 'today' | '7days' | '30days' | 'custom' = 'today', customFrom?: string, customTo?: string): Promise<VoidRow[]> => {

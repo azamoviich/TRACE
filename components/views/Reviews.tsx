@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Star, MessageSquare, RefreshCw, Sparkles, TrendingUp, Copy, Check, ClipboardList, QrCode, Calendar as CalendarIcon, X } from 'lucide-react';
+import { Star, MessageSquare, RefreshCw, Sparkles, TrendingUp, Copy, Check, ClipboardList, QrCode, Calendar as CalendarIcon, X, ChevronDown, SlidersHorizontal } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Language } from '../../types';
 import { traceApi, getSubdomain, isDemoTenant, getTenantPlan, demoReviewRows, demoReviewStats, branchHeaders } from '../../services/traceApi';
@@ -357,95 +357,110 @@ export const Reviews: React.FC<{ lang: Language; onContextReady?: (ctx: string) 
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-3">
-          <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center justify-between">
             <h3 className="text-[13px] font-semibold text-text">
               {ru ? 'Отзывы' : isUz ? 'Sharhlar' : 'Reviews'}
               {filtered.length > 0 && <span className="text-muted font-normal ml-2">({filtered.length})</span>}
             </h3>
-            <div className="flex gap-1.5 items-center flex-wrap">
-              <button onClick={load} className="text-muted hover:text-text transition-colors p-1">
-                <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-              </button>
-              <div className="flex gap-1 flex-wrap">
-                <button
-                  onClick={() => setFilter('all')}
-                  className={`px-3 py-1.5 text-[13px] rounded-lg transition-colors ${filter === 'all' ? 'bg-primary text-white' : 'bg-card text-muted hover:text-text border border-border'}`}
-                >
-                  {ru ? 'Все' : isUz ? 'Barchasi' : 'All'}
-                </button>
-                {platforms.map(p => (
-                  <button
-                    key={p}
-                    onClick={() => setFilter(p)}
-                    className={`px-3 py-1.5 text-[13px] rounded-lg transition-colors ${filter === p ? 'bg-primary text-white' : 'bg-card text-muted hover:text-text border border-border'}`}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <button onClick={load} className="text-muted hover:text-text transition-colors p-1.5 -mr-1.5 rounded-md hover:bg-card-hover">
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            </button>
           </div>
 
-          {/* Second row: sentiment, sort, date range */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <div className="flex gap-1 flex-wrap">
-              {([
-                ['all', ru ? 'Все' : isUz ? 'Barchasi' : 'All'],
-                ['positive', ru ? 'Позитивные' : isUz ? 'Ijobiy' : 'Positive'],
-                ['negative', ru ? 'Негативные' : isUz ? 'Salbiy' : 'Negative'],
-                ['neutral', ru ? 'Нейтральные' : isUz ? 'Neytral' : 'Neutral'],
-              ] as const).map(([key, label]) => (
+          {/* Filter toolbar */}
+          <Card className="!p-3 space-y-2.5">
+            {/* Platform segmented control */}
+            <div className="flex gap-1 p-0.5 bg-bg rounded-lg overflow-x-auto">
+              <button
+                onClick={() => setFilter('all')}
+                className={`px-3 h-7 text-[12px] font-medium rounded-md transition-colors whitespace-nowrap ${filter === 'all' ? 'bg-primary text-white shadow-sm' : 'text-muted hover:text-text hover:bg-card-hover'}`}
+              >
+                {ru ? 'Все платформы' : isUz ? 'Barcha platformalar' : 'All platforms'}
+              </button>
+              {platforms.map(p => (
                 <button
-                  key={key}
-                  onClick={() => setSentimentFilter(key)}
-                  className={`px-2.5 py-1 text-[11px] rounded-md transition-colors ${sentimentFilter === key ? 'bg-primary text-white' : 'bg-card text-muted hover:text-text border border-border'}`}
+                  key={p}
+                  onClick={() => setFilter(p)}
+                  className={`px-3 h-7 text-[12px] font-medium rounded-md transition-colors whitespace-nowrap ${filter === p ? 'bg-primary text-white shadow-sm' : 'text-muted hover:text-text hover:bg-card-hover'}`}
                 >
-                  {label}
+                  {p}
                 </button>
               ))}
             </div>
 
-            <select
-              value={sortMode}
-              onChange={e => setSortMode(e.target.value as typeof sortMode)}
-              className="px-2.5 py-1 text-[11px] rounded-md bg-card text-muted hover:text-text border border-border transition-colors cursor-pointer"
-            >
-              <option value="newest">{ru ? 'Сначала новые' : isUz ? 'Avval yangi' : 'Newest first'}</option>
-              <option value="oldest">{ru ? 'Сначала старые' : isUz ? 'Avval eski' : 'Oldest first'}</option>
-              <option value="rating_desc">{ru ? 'Рейтинг ↓' : isUz ? 'Reyting ↓' : 'Rating ↓'}</option>
-              <option value="rating_asc">{ru ? 'Рейтинг ↑' : isUz ? 'Reyting ↑' : 'Rating ↑'}</option>
-            </select>
+            {/* Sentiment + sort + date row */}
+            <div className="flex items-center gap-2 flex-wrap pt-0.5 border-t border-border/60">
+              <div className="flex items-center gap-1.5 text-muted/60 pl-0.5 pt-2.5">
+                <SlidersHorizontal size={11} />
+              </div>
+              <div className="flex gap-1 p-0.5 bg-bg rounded-lg mt-2.5">
+                {([
+                  ['all', ru ? 'Все' : isUz ? 'Barchasi' : 'All'],
+                  ['positive', ru ? 'Позитивные' : isUz ? 'Ijobiy' : 'Positive'],
+                  ['negative', ru ? 'Негативные' : isUz ? 'Salbiy' : 'Negative'],
+                  ['neutral', ru ? 'Нейтральные' : isUz ? 'Neytral' : 'Neutral'],
+                ] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    onClick={() => setSentimentFilter(key)}
+                    className={`px-2.5 h-7 text-[12px] font-medium rounded-md transition-colors whitespace-nowrap ${
+                      sentimentFilter === key
+                        ? key === 'positive' ? 'bg-success/15 text-success' : key === 'negative' ? 'bg-danger/15 text-danger' : 'bg-primary text-white'
+                        : 'text-muted hover:text-text hover:bg-card-hover'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
 
-            <button
-              ref={calendarBtnRef}
-              onClick={() => setCalendarOpen(o => !o)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] rounded-md border transition-colors ${
-                dateRange ? 'border-primary text-primary bg-primary/5' : 'border-border text-muted hover:text-text bg-card'
-              }`}
-            >
-              <CalendarIcon size={11} />
-              {dateRange ? `${dateRange.from.slice(5)} – ${dateRange.to.slice(5)}` : (ru ? 'Дата' : isUz ? 'Sana' : 'Date')}
-            </button>
-            <DateRangePicker
-              lang={lang}
-              value={dateRange}
-              isOpen={calendarOpen}
-              onClose={() => setCalendarOpen(false)}
-              anchorRef={calendarBtnRef}
-              onApply={r => { setDateRange(r); setCalendarOpen(false); }}
-              onClear={() => { setDateRange(null); setCalendarOpen(false); }}
-            />
+              <div className="w-px h-6 bg-border mt-2.5" />
 
-            {hasActiveFilters && (
+              <div className="relative mt-2.5">
+                <select
+                  value={sortMode}
+                  onChange={e => setSortMode(e.target.value as typeof sortMode)}
+                  className="appearance-none pl-2.5 pr-7 h-7 text-[12px] font-medium rounded-md bg-bg text-muted hover:text-text border border-transparent hover:border-border transition-colors cursor-pointer focus:outline-none focus:border-primary/40"
+                >
+                  <option value="newest">{ru ? 'Сначала новые' : isUz ? 'Avval yangi' : 'Newest first'}</option>
+                  <option value="oldest">{ru ? 'Сначала старые' : isUz ? 'Avval eski' : 'Oldest first'}</option>
+                  <option value="rating_desc">{ru ? 'Рейтинг ↓' : isUz ? 'Reyting ↓' : 'Rating ↓'}</option>
+                  <option value="rating_asc">{ru ? 'Рейтинг ↑' : isUz ? 'Reyting ↑' : 'Rating ↑'}</option>
+                </select>
+                <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted/60" />
+              </div>
+
               <button
-                onClick={resetFilters}
-                className="flex items-center gap-1 px-2.5 py-1 text-[11px] rounded-md text-muted hover:text-danger transition-colors"
+                ref={calendarBtnRef}
+                onClick={() => setCalendarOpen(o => !o)}
+                className={`flex items-center gap-1.5 px-2.5 h-7 text-[12px] font-medium rounded-md border transition-colors mt-2.5 ${
+                  dateRange ? 'border-primary/40 text-primary bg-primary/5' : 'border-transparent text-muted hover:text-text hover:border-border bg-bg'
+                }`}
               >
-                <X size={11} />
-                {ru ? 'Сбросить' : isUz ? 'Tozalash' : 'Clear'}
+                <CalendarIcon size={12} />
+                {dateRange ? `${dateRange.from.slice(5)} – ${dateRange.to.slice(5)}` : (ru ? 'Дата' : isUz ? 'Sana' : 'Date')}
               </button>
-            )}
-          </div>
+              <DateRangePicker
+                lang={lang}
+                value={dateRange}
+                isOpen={calendarOpen}
+                onClose={() => setCalendarOpen(false)}
+                anchorRef={calendarBtnRef}
+                onApply={r => { setDateRange(r); setCalendarOpen(false); }}
+                onClear={() => { setDateRange(null); setCalendarOpen(false); }}
+              />
+
+              {hasActiveFilters && (
+                <button
+                  onClick={resetFilters}
+                  className="flex items-center gap-1 px-2 h-7 text-[12px] font-medium rounded-md text-muted hover:text-danger hover:bg-danger/10 transition-colors mt-2.5 ml-auto"
+                >
+                  <X size={12} />
+                  {ru ? 'Сбросить' : isUz ? 'Tozalash' : 'Clear'}
+                </button>
+              )}
+            </div>
+          </Card>
 
           {loading && (
             <div className="space-y-3">

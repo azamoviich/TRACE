@@ -1231,7 +1231,22 @@ export const Operations: React.FC<{
       }
     }, []),
   });
-  const pluginConnected = !isPoster && (demo || rtConnected);
+  // rtConnected only proves the BROWSER's own websocket reached our
+  // always-on backend — it says nothing about whether TRACEPLUGIN (the
+  // iiko-side agent running at the restaurant) was ever installed or is
+  // actually online. Poll the backend's real per-tenant plugin registry
+  // (ws/handler.ts's pluginClients) so the badge — and everything gated on
+  // it, including the hall heatmap — reflects the plugin, not our uptime.
+  const [pluginLiveConnected, setPluginLiveConnected] = useState(false);
+  useEffect(() => {
+    if (demo || isPoster) return;
+    let cancelled = false;
+    const poll = () => traceApi.operations.pluginStatus().then(s => { if (!cancelled) setPluginLiveConnected(s.connected); }).catch(() => {});
+    poll();
+    const id = setInterval(poll, 15_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [demo, isPoster]);
+  const pluginConnected = !isPoster && (demo || (rtConnected && pluginLiveConnected));
 
   // Same source Dashboard's occupancy stat uses — the hall heatmap and the
   // "Загрузка зала" % always agree instead of drifting apart from separate

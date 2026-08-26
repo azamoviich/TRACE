@@ -261,7 +261,17 @@ export default function App() {
   const [selectedBranch] = useState<string | null>(null);
 
   const [branches, setBranches] = useState<BranchSummary[]>([]);
-  const [activeBranchId, setActiveBranchId] = useState<string | null>(getActiveBranchId());
+  // A deep link (e.g. a Telegram review notification) can carry ?branch=<id>
+  // to force the right sibling branch open — sessionStorage's saved
+  // selection is per-origin, not per-link, so without this a manager who'd
+  // previously switched to viewing a different branch on this same
+  // subdomain would land back on that stale branch instead of the one the
+  // notification was actually about.
+  const [activeBranchId, setActiveBranchId] = useState<string | null>(() => {
+    const linked = new URLSearchParams(window.location.search).get('branch');
+    if (linked) { setActiveBranch(linked); return linked; }
+    return getActiveBranchId();
+  });
   const [hasChainServer, setHasChainServer] = useState(false);
 
   // Verify saved token on startup — kicks user out only if password explicitly changed

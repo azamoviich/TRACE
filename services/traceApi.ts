@@ -1500,7 +1500,11 @@ export const traceApi = {
     tenantEvents: (token: string, id: string, limit = 20) =>
       authedGet<RealtimeEvent[]>(`/admin/tenants/${id}/events?limit=${limit}`, token),
     testConnection: (token: string, id: string) =>
-      post<Record<string, { ok: boolean; error?: string }>>(`/admin/tenants/${id}/test-connection`, {}, token),
+      post<ConnectionTestResults>(`/admin/tenants/${id}/test-connection`, {}, token),
+    // Same checks, against raw creds — no tenant needs to exist yet. Used by
+    // the onboarding wizard to validate POS/1C credentials before saving.
+    testConnectionDraft: (token: string, creds: Partial<Tenant>) =>
+      post<ConnectionTestResults>('/admin/test-connection', creds, token),
     iikoSections: (token: string, tenantId: string) =>
       authedGet<IikoSection[]>(`/admin/tenants/${tenantId}/iiko-sections`, token),
     hallPlans: (token: string, tenantId: string) =>
@@ -1510,9 +1514,23 @@ export const traceApi = {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(plan),
-      }).then(r => r.json() as Promise<HallPlan>),
+      }).then(r => {
+        if (!r.ok) throw new Error(`Save failed (${r.status})`);
+        return r.json() as Promise<HallPlan>;
+      }),
     deleteHallPlan: (token: string, tenantId: string, planId: string) =>
       del(`/admin/tenants/${tenantId}/hall-plans/${planId}`, token),
+    // Manually kick a review pull for one tenant outside the daily cron —
+    // useful right after onboarding to confirm scraping actually works.
+    // Backend fires this async and returns immediately, so the result only
+    // means "started", not "succeeded" — it can still fail silently server-side.
+    pullReviews: (token: string, id: string, fields?: string[]) =>
+      post<{ ok: boolean }>(`/admin/tenants/${id}/pull-reviews`, fields ? { fields } : {}, token),
+    // Re-sends Telegram notifications for every review already stored for
+    // this tenant — no "already notified" filter, so calling this twice
+    // double-notifies the tenant's Telegram group. Confirm before calling.
+    notifyExistingReviews: (token: string, id: string, platforms?: string[]) =>
+      post<{ ok: boolean; sent: number }>(`/admin/tenants/${id}/notify-existing-reviews`, platforms ? { platforms } : {}, token),
   },
   sales: {
     revenue: (range: 'today' | '7days' | '30days' | 'custom', customFrom?: string, customTo?: string, revenueType?: RevenueType): Promise<RevenueRow[]> => {
@@ -2243,6 +2261,18 @@ export interface Tenant {
   onec_base_url: string | null;
   onec_login: string | null;
   onec_password: string | null;
+  // Writable via PATCH /admin/tenants/:id (app_password/manager_pin are
+  // hashed server-side into app_password_hash/manager_pin_hash — never
+  // returned back, so these only ever appear as outgoing write-only fields).
+  app_login?: string | null;
+  app_password?: string;
+  manager_pin?: string;
+}
+
+export interface ConnectionTestResults {
+  cloud_api?: { ok: boolean; error?: string };
+  server?: { ok: boolean; error?: string };
+  onec?: { ok: boolean; error?: string; entitySets?: string[] };
 }
 
 export interface AIDailyBriefing {

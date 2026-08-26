@@ -158,7 +158,7 @@ export const Waiters: React.FC<{ lang: Language }> = ({ lang }) => {
             onChange={e => setNewName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleAdd()}
             placeholder={tr(lang, 'Имя официанта', 'Waiter name', 'Ofitsiant ismi')}
-            className="flex-1 bg-bg border border-border rounded-lg px-3 py-2 text-[13px] outline-none focus:border-primary"
+            className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-[13px] outline-none focus:border-primary"
           />
           <button
             onClick={handleAdd}
@@ -216,7 +216,7 @@ export const Waiters: React.FC<{ lang: Language }> = ({ lang }) => {
                 </div>
                 <div className="flex flex-wrap gap-3">
                   {w.branches.map(b => (
-                    <div key={b.tenant_id} className="flex items-center gap-2 bg-bg border border-border rounded-lg px-2.5 py-1.5">
+                    <div key={b.tenant_id} className="flex items-center gap-2 bg-background border border-border rounded-lg px-2.5 py-1.5">
                       <img src={traceApi.waiters.qrUrl(b.code)} alt={b.subdomain} className="w-10 h-10 rounded bg-white" />
                       <div className="text-[11px]">
                         <p className="font-medium">{BRANCH_LABEL[b.subdomain] ?? b.branch_name}</p>

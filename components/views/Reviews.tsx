@@ -370,7 +370,7 @@ export const Reviews: React.FC<{ lang: Language; onContextReady?: (ctx: string) 
           {/* Filter toolbar */}
           <Card className="!p-3 space-y-2.5">
             {/* Platform segmented control */}
-            <div className="flex gap-1 p-0.5 bg-bg rounded-lg overflow-x-auto">
+            <div className="flex gap-1 p-0.5 bg-background rounded-lg overflow-x-auto">
               <button
                 onClick={() => setFilter('all')}
                 className={`px-3 h-7 text-[12px] font-medium rounded-md transition-colors whitespace-nowrap ${filter === 'all' ? 'bg-primary text-white shadow-sm' : 'text-muted hover:text-text hover:bg-card-hover'}`}
@@ -393,7 +393,7 @@ export const Reviews: React.FC<{ lang: Language; onContextReady?: (ctx: string) 
               <div className="flex items-center gap-1.5 text-muted/60 pl-0.5 pt-2.5">
                 <SlidersHorizontal size={11} />
               </div>
-              <div className="flex gap-1 p-0.5 bg-bg rounded-lg mt-2.5">
+              <div className="flex gap-1 p-0.5 bg-background rounded-lg mt-2.5">
                 {([
                   ['all', ru ? 'Все' : isUz ? 'Barchasi' : 'All'],
                   ['positive', ru ? 'Позитивные' : isUz ? 'Ijobiy' : 'Positive'],
@@ -420,7 +420,7 @@ export const Reviews: React.FC<{ lang: Language; onContextReady?: (ctx: string) 
                 <select
                   value={sortMode}
                   onChange={e => setSortMode(e.target.value as typeof sortMode)}
-                  className="appearance-none pl-2.5 pr-7 h-7 text-[12px] font-medium rounded-md bg-bg text-muted hover:text-text border border-transparent hover:border-border transition-colors cursor-pointer focus:outline-none focus:border-primary/40"
+                  className="appearance-none pl-2.5 pr-7 h-7 text-[12px] font-medium rounded-md bg-background text-muted hover:text-text border border-transparent hover:border-border transition-colors cursor-pointer focus:outline-none focus:border-primary/40"
                 >
                   <option value="newest">{ru ? 'Сначала новые' : isUz ? 'Avval yangi' : 'Newest first'}</option>
                   <option value="oldest">{ru ? 'Сначала старые' : isUz ? 'Avval eski' : 'Oldest first'}</option>
@@ -434,7 +434,7 @@ export const Reviews: React.FC<{ lang: Language; onContextReady?: (ctx: string) 
                 ref={calendarBtnRef}
                 onClick={() => setCalendarOpen(o => !o)}
                 className={`flex items-center gap-1.5 px-2.5 h-7 text-[12px] font-medium rounded-md border transition-colors mt-2.5 ${
-                  dateRange ? 'border-primary/40 text-primary bg-primary/5' : 'border-transparent text-muted hover:text-text hover:border-border bg-bg'
+                  dateRange ? 'border-primary/40 text-primary bg-primary/5' : 'border-transparent text-muted hover:text-text hover:border-border bg-background'
                 }`}
               >
                 <CalendarIcon size={12} />

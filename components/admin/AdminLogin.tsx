@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { traceApi } from '../../services/traceApi';
+import { FieldLabel, inputBase } from './primitives';
 
 export const AdminLogin: React.FC<{ onLogin: (token: string) => void }> = ({ onLogin }) => {
   const [password, setPassword] = useState('');
@@ -34,15 +35,13 @@ export const AdminLogin: React.FC<{ onLogin: (token: string) => void }> = ({ onL
         </div>
         <form onSubmit={submit} className="bg-card border border-border rounded-xl p-6 space-y-4">
           <div>
-            <label className="block text-[10px] uppercase tracking-[0.18em] text-muted mb-2 font-medium">
-              Password
-            </label>
+            <FieldLabel>Password</FieldLabel>
             <input
               type="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
               autoFocus
-              className="w-full bg-background border border-border rounded-lg px-3.5 py-2.5 text-text text-[14px] focus:border-primary focus:outline-none transition-colors"
+              className={inputBase}
             />
           </div>
           {err && <p className="text-danger text-[11px]">{err}</p>}

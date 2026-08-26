@@ -149,10 +149,17 @@ export const Admin: React.FC = () => {
     setSelectedTenant(null);
   };
 
+  // Tells TenantDrawer a plan was actually persisted, so it can clear the
+  // plan's local "_isNew" flag — otherwise a hall created via "Add Hall" or
+  // "Sync iiko" stays permanently un-renameable/un-reorderable/un-deletable
+  // via the API even after HallEditor successfully saved it here.
+  const [justSavedPlan, setJustSavedPlan] = useState<{ tenantId: string; plan: HallPlan } | null>(null);
+
   const handleSavePlan = useCallback(async (updated: HallPlan) => {
     if (!editingPlan) return;
     await traceApi.admin.saveHallPlan(token, editingPlan.tenantId, updated);
     setEditingPlan(prev => prev ? { ...prev, plan: updated } : null);
+    setJustSavedPlan({ tenantId: editingPlan.tenantId, plan: updated });
   }, [token, editingPlan]);
 
   const filtered = tenants.filter(t => {
@@ -292,7 +299,11 @@ export const Admin: React.FC = () => {
                 key={t.id}
                 tenant={t}
                 status={statuses[t.id]}
-                selected={selectedTenant?.id === t.id}
+                // collapseByOrg only ever shows the org's earliest-created
+                // tenant as this row — without the org-membership check,
+                // selecting a *sibling* branch from the drawer's Branches
+                // section left no row highlighted at all.
+                selected={selectedTenant?.id === t.id || (!!t.organization_id && t.organization_id === selectedTenant?.organization_id)}
                 branchCount={t.organization_id ? (orgCounts[t.organization_id] ?? 1) : 1}
                 onClick={() => setSelectedTenant(prev => prev?.id === t.id ? null : t)}
               />
@@ -316,6 +327,7 @@ export const Admin: React.FC = () => {
         onOpenEditor={(plan, section) => setEditingPlan({ plan, section, tenantId: selectedTenant!.id })}
         onBranchAdded={handleBranchAdded}
         onSelectBranch={setSelectedTenant}
+        justSavedPlan={justSavedPlan}
       />
 
       {creating && (

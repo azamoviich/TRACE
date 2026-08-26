@@ -35,3 +35,12 @@ export function subdomainSlug(raw: string): string {
 export function isValidSubdomain(s: string): boolean {
   return /^[a-z0-9-]{3,30}$/.test(s);
 }
+
+// Shared by the drawer's Health section and the onboarding wizard's
+// connection-test step so a Poster/1C result key isn't silently dropped by
+// a label map that only knew about iiko's keys.
+export const TEST_KEY_LABELS: Record<string, string> = {
+  cloud_api: 'Cloud API',
+  server: 'iiko Server',
+  onec: '1C',
+};

@@ -3,19 +3,9 @@ import { Building2, Plus, Check, Loader2 } from 'lucide-react';
 import { traceApi, Tenant, ConnectionTestResults } from '../../services/traceApi';
 import { SectionHeading } from './primitives';
 import { IdentityFields, PosCredentialFields, ModalShell, TenantFormState, emptyTenantForm, tenantFormToPayload } from './TenantForm';
-import { isValidSubdomain } from './helpers';
+import { isValidSubdomain, TEST_KEY_LABELS, DOMAIN } from './helpers';
 
 const STEPS = ['Identity', 'POS connection', 'Review'] as const;
-
-function TestResultLine({ label, result }: { label: string; result?: { ok: boolean; error?: string } }) {
-  if (!result) return null;
-  return (
-    <div className="flex items-center justify-between text-[11px]">
-      <span className="text-muted">{label}</span>
-      <span className={result.ok ? 'text-success' : 'text-danger'}>{result.ok ? '✓ OK' : `✗ ${result.error ?? 'Failed'}`}</span>
-    </div>
-  );
-}
 
 // Replaces the old one-shot CreateModal. Three steps so the two required
 // decisions (identity, whether/how to connect a POS) aren't buried in a
@@ -111,10 +101,21 @@ export const OnboardTenant: React.FC<{
                 {testing ? <Loader2 size={12} className="animate-spin" /> : <span className="w-1.5 h-1.5 rounded-full bg-current" />}
                 {testing ? 'Testing…' : 'Test connection'}
               </button>
-              {testResult && (
+              {testResult && form.pos_type === 'poster' && (
+                // The backend's connection-test check doesn't cover Poster
+                // creds yet — showing the iiko-labeled cloud_api/server
+                // results here would misleadingly read as "iiko failed"
+                // for a tenant that isn't iiko at all.
+                <p className="text-[10px] text-muted mt-3">Poster credentials aren't verified by this test yet — they'll be used as entered.</p>
+              )}
+              {testResult && form.pos_type === 'iiko' && (
                 <div className="mt-3 space-y-1.5">
-                  <TestResultLine label="Cloud API" result={testResult.cloud_api} />
-                  <TestResultLine label="iiko Server" result={testResult.server} />
+                  {Object.entries(testResult).map(([key, val]) => val && (
+                    <div key={key} className="flex items-center justify-between text-[11px]">
+                      <span className="text-muted">{TEST_KEY_LABELS[key] ?? key}</span>
+                      <span className={val.ok ? 'text-success' : 'text-danger'}>{val.ok ? '✓ OK' : `✗ ${val.error ?? 'Failed'}`}</span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -127,7 +128,7 @@ export const OnboardTenant: React.FC<{
               <SectionHeading icon={<Building2 size={12} />} title="Review" />
               <div className="text-[12px] text-text space-y-1.5">
                 <p><span className="text-muted">Name:</span> {form.name}</p>
-                <p className="font-mono"><span className="text-muted font-sans">Subdomain:</span> {form.subdomain}.trace-os.uz</p>
+                <p className="font-mono"><span className="text-muted font-sans">Subdomain:</span> {form.subdomain}.{DOMAIN}</p>
                 <p><span className="text-muted">POS:</span> {form.pos_type === 'iiko' ? (form.iiko_server_host ? 'iiko — configured' : 'iiko — not configured') : (form.poster_account_name ? 'Poster — configured' : 'Poster — not configured')}</p>
               </div>
             </div>

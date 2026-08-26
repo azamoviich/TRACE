@@ -1,5 +1,5 @@
 import React from 'react';
-import { Building2, Server, X } from 'lucide-react';
+import { Server, X } from 'lucide-react';
 import { Field, FieldLabel, PasswordField, ServerField, SectionHeading, PillToggle, inputBase } from './primitives';
 import { DOMAIN, subdomainSlug } from './helpers';
 
@@ -123,5 +123,3 @@ export const ModalShell: React.FC<{
     </div>
   </div>
 );
-
-export { Building2 };

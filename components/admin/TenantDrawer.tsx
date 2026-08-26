@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Plus, X, Check, ChevronRight, Copy, ExternalLink, Globe,
   Building2, Activity, LayoutGrid, Pencil, Settings2, KeyRound,
@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { traceApi, Tenant, LiveStatus, RealtimeEvent, HallPlan, IikoSection, Organization, ConnectionTestResults } from '../../services/traceApi';
 import { Field, PasswordField, ServerField, SectionHeading, ReadRow, FieldLabel, Empty, PillToggle, inputBase } from './primitives';
-import { DOMAIN, tenantUrl, relativeTime, mask, copyToClipboard, BENEDICT_ORG_ID_MANAGER_PORTAL } from './helpers';
+import { DOMAIN, tenantUrl, relativeTime, mask, copyToClipboard, BENEDICT_ORG_ID_MANAGER_PORTAL, TEST_KEY_LABELS } from './helpers';
 import { computeHealth } from './health';
 import { AddBranchModal } from './OnboardTenant';
 
@@ -28,12 +28,6 @@ const EVENT_TYPE_COLORS: Record<string, string> = {
   cashier_session_opened: 'text-secondary',
   cashier_session_closed: 'text-secondary',
   stop_list_added: 'text-primary',
-};
-
-const TEST_KEY_LABELS: Record<string, string> = {
-  cloud_api: 'Cloud API',
-  server: 'iiko Server',
-  onec: '1C',
 };
 
 // A section id + its nav-rail label. Anchors, not tabs — every section is
@@ -101,7 +95,13 @@ export const TenantDrawer: React.FC<{
   onOpenEditor: (plan: HallPlan, section?: IikoSection) => void;
   onBranchAdded: (t: Tenant) => void;
   onSelectBranch: (t: Tenant) => void;
-}> = ({ tenant, tenants, token, status, events, eventsLoading, testCache, onTestCached, onClose, onUpdated, onDeleted, onOpenEditor, onBranchAdded, onSelectBranch }) => {
+  // Set by the parent whenever the (separately-rendered) HallEditor
+  // actually persists a plan — including ones that started as client-only
+  // stubs (from "Add Hall" or "Sync iiko"). Without this, `_isNew` never
+  // clears for such a plan even after it's live on the backend, so its
+  // rename/reorder/delete-via-API stay silently broken from then on.
+  justSavedPlan: { tenantId: string; plan: HallPlan } | null;
+}> = ({ tenant, tenants, token, status, events, eventsLoading, testCache, onTestCached, onClose, onUpdated, onDeleted, onOpenEditor, onBranchAdded, onSelectBranch, justSavedPlan }) => {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<EditForm | null>(null);
   const [serverProto, setServerProto] = useState<'http' | 'https'>('http');
@@ -135,11 +135,18 @@ export const TenantDrawer: React.FC<{
 
   const testResult = tenant ? testCache[tenant.id] : undefined;
 
+  // Guards the async loads below against a fast tenant-A → tenant-B switch:
+  // without this, tenant A's slower response could land after B's drawer
+  // is already showing, silently overwriting B's data with A's.
+  const activeTenantIdRef = useRef<string | null>(null);
+  const renameOriginalRef = useRef<Record<string, string>>({});
+
   const loadBranches = useCallback(async (tenantId: string) => {
     try {
-      setSiblingBranches(await traceApi.admin.branches(token, tenantId));
+      const branches = await traceApi.admin.branches(token, tenantId);
+      if (activeTenantIdRef.current === tenantId) setSiblingBranches(branches);
     } catch {
-      setSiblingBranches([]);
+      if (activeTenantIdRef.current === tenantId) setSiblingBranches([]);
     }
   }, [token]);
 
@@ -147,11 +154,12 @@ export const TenantDrawer: React.FC<{
     setHallPlansLoading(true);
     setHallPlansErr('');
     try {
-      setHallPlans(await traceApi.admin.hallPlans(token, tenantId));
+      const plans = await traceApi.admin.hallPlans(token, tenantId);
+      if (activeTenantIdRef.current === tenantId) setHallPlans(plans);
     } catch (e: any) {
-      setHallPlansErr(e.message ?? 'Could not load floor plans');
+      if (activeTenantIdRef.current === tenantId) setHallPlansErr(e.message ?? 'Could not load floor plans');
     } finally {
-      setHallPlansLoading(false);
+      if (activeTenantIdRef.current === tenantId) setHallPlansLoading(false);
     }
   }, [token]);
 
@@ -160,7 +168,8 @@ export const TenantDrawer: React.FC<{
   // silently generating new plans just because the drawer was opened.
   const loadIikoSectionsReadOnly = useCallback(async (tenantId: string) => {
     try {
-      setIikoSections(await traceApi.admin.iikoSections(token, tenantId));
+      const sections = await traceApi.admin.iikoSections(token, tenantId);
+      if (activeTenantIdRef.current === tenantId) setIikoSections(sections);
     } catch {
       // best-effort — "Sync iiko" surfaces a real error if this matters
     }
@@ -210,7 +219,14 @@ export const TenantDrawer: React.FC<{
 
   useEffect(() => {
     if (!tenant) return;
+    activeTenantIdRef.current = tenant.id;
     setForm(formFromTenant(tenant, null));
+    // formFromTenant strips the scheme off iiko_server/iiko_chain_server —
+    // without re-deriving the proto toggle here it silently stayed at
+    // whatever it was left on (including from a *previous* tenant), and
+    // saving would rewrite the URL with the wrong/stale scheme.
+    setServerProto((tenant.iiko_server ?? '').startsWith('https://') ? 'https' : 'http');
+    setChainProto('http'); // corrected below once/if the org loads with its own server
     setEditing(false);
     setSaveErr('');
     setToggleErr('');
@@ -232,20 +248,50 @@ export const TenantDrawer: React.FC<{
     loadBranches(tenant.id);
     if (tenant.pos_type !== 'poster') loadIikoSectionsReadOnly(tenant.id);
     if (tenant.organization_id) {
+      const tenantIdAtFetch = tenant.id;
       traceApi.admin.organization(token, tenant.id)
-        .then(org => { setOrganization(org); if (org) setForm(f => f ? formFromTenant(tenant, org) : f); })
-        .catch(() => setOrganization(null));
+        .then(org => {
+          if (activeTenantIdRef.current !== tenantIdAtFetch) return; // switched tenants while this was in flight
+          setOrganization(org);
+          if (org) {
+            // Merge only the chain fields into whatever form state already
+            // exists instead of rebuilding the whole form — rebuilding would
+            // silently discard any edit the admin started typing before
+            // this (slower, org-scoped) request resolved.
+            const chainRaw = org.iiko_chain_server ?? '';
+            setChainProto(chainRaw.startsWith('https://') ? 'https' : 'http');
+            setForm(f => f ? {
+              ...f,
+              iiko_chain_server_host: chainRaw.replace(/^https?:\/\//, ''),
+              iiko_chain_login: org.iiko_chain_login ?? '',
+              iiko_chain_password: org.iiko_chain_password ?? '',
+            } : f);
+          }
+        })
+        .catch(() => { if (activeTenantIdRef.current === tenantIdAtFetch) setOrganization(null); });
     }
   }, [tenant?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Merge in a plan HallEditor just saved (via the parent's handleSavePlan)
+  // — clears _isNew now that it's actually persisted, and picks up the
+  // drawn elements without a full reload.
+  useEffect(() => {
+    if (!tenant || !justSavedPlan || justSavedPlan.tenantId !== tenant.id) return;
+    setHallPlans(prev => prev.some(p => p.id === justSavedPlan.plan.id)
+      ? prev.map(p => p.id === justSavedPlan.plan.id ? { ...justSavedPlan.plan, _isNew: false } : p)
+      : [...prev, { ...justSavedPlan.plan, _isNew: false }]);
+  }, [justSavedPlan, tenant?.id]);
 
   const handleSave = async () => {
     if (!tenant || !form) return;
     setSaving(true);
     setSaveErr('');
+
+    let updated: Tenant;
     try {
       const iiko_server = form.iiko_server_host ? `${serverProto}://${form.iiko_server_host}` : null;
       const parseCount = (v: string) => v.trim() === '' ? null : Math.max(1, Math.min(50, parseInt(v, 10) || 0));
-      const updated = await traceApi.admin.update(token, tenant.id, {
+      updated = await traceApi.admin.update(token, tenant.id, {
         name: form.name,
         pos_type: form.pos_type,
         iiko_login: form.pos_type === 'iiko' ? (form.iiko_login || null) : null,
@@ -274,10 +320,21 @@ export const TenantDrawer: React.FC<{
         ...(form.app_password ? { app_password: form.app_password } : {}),
         ...(form.manager_pin ? { manager_pin: form.manager_pin } : {}),
       });
+    } catch (ex: any) {
+      setSaveErr(ex.message);
+      setSaving(false);
+      return;
+    }
 
-      // Chain/org fields live in the same edit/save model now (Phase 3) —
-      // save them alongside the tenant instead of via a separate control.
-      if (organization) {
+    // Tenant save succeeded — commit it regardless of what happens to the
+    // chain/org save below. A failed chain save must not make it look like
+    // the whole save (including the fields the admin actually came here to
+    // change) silently failed.
+    onUpdated(updated);
+    setEditing(false);
+
+    if (organization) {
+      try {
         const iiko_chain_server = form.iiko_chain_server_host ? `${chainProto}://${form.iiko_chain_server_host}` : null;
         const updatedOrg = await traceApi.admin.updateOrganization(token, organization.id, {
           iiko_chain_server,
@@ -285,15 +342,12 @@ export const TenantDrawer: React.FC<{
           iiko_chain_password: form.iiko_chain_password || null,
         });
         setOrganization(updatedOrg);
+      } catch (ex: any) {
+        setSaveErr(`Saved, but the iikoChain server settings failed: ${ex.message}`);
       }
-
-      onUpdated(updated);
-      setEditing(false);
-    } catch (ex: any) {
-      setSaveErr(ex.message);
-    } finally {
-      setSaving(false);
     }
+
+    setSaving(false);
   };
 
   const handleToggle = async () => {
@@ -334,7 +388,13 @@ export const TenantDrawer: React.FC<{
       const result = await traceApi.admin.testConnection(token, tenant.id);
       onTestCached(tenant.id, result);
     } catch {
-      onTestCached(tenant.id, { server: { ok: false, error: 'Request failed' } });
+      // The request itself failed (network/exception), not one specific
+      // check — report every relevant key as failed rather than just
+      // "server", so a full outage doesn't read as "only iiko Server broke".
+      onTestCached(tenant.id, {
+        cloud_api: { ok: false, error: 'Request failed' },
+        server: { ok: false, error: 'Request failed' },
+      });
     } finally {
       setTesting(false);
     }
@@ -435,7 +495,7 @@ export const TenantDrawer: React.FC<{
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0 ml-3">
                   <button
-                    onClick={() => { setEditing(e => !e); setSaveErr(''); }}
+                    onClick={() => { setEditing(e => !e); setSaveErr(''); setConfirmDelete(false); setDeleteTypedSubdomain(''); }}
                     className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors flex items-center gap-1.5
                       ${editing ? 'border-primary/50 text-primary' : 'border-border text-muted hover:text-text hover:border-primary/50'}`}
                   >
@@ -467,9 +527,12 @@ export const TenantDrawer: React.FC<{
                     {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
                     Save all changes
                   </button>
-                  {saveErr && <p className="text-danger text-[10px]">{saveErr}</p>}
                 </div>
               )}
+              {/* Outside the `editing` block on purpose — a chain/org save
+                  can fail (and report here) after the tenant save already
+                  succeeded and closed edit mode. */}
+              {saveErr && <p className="text-danger text-[10px] px-5 pt-2">{saveErr}</p>}
 
               {/* Scrollable body */}
               <div className="flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom)] [&>section]:scroll-mt-4">
@@ -834,9 +897,17 @@ export const TenantDrawer: React.FC<{
                               <div className="min-w-0 flex-1">
                                 <input
                                   value={plan.name}
+                                  onFocus={() => { renameOriginalRef.current[plan.id] = plan.name; }}
                                   onChange={e => setHallPlans(prev => prev.map(p => p.id === plan.id ? { ...p, name: e.target.value } : p))}
                                   onBlur={async e => {
-                                    if (e.target.value === plan.name || plan._isNew) return;
+                                    // The input is controlled, so `plan.name` is already
+                                    // e.target.value by the time blur fires — comparing
+                                    // against it here always looked "unchanged" and this
+                                    // save never ran. Compare against the value captured
+                                    // on focus instead.
+                                    const original = renameOriginalRef.current[plan.id];
+                                    delete renameOriginalRef.current[plan.id];
+                                    if (original === undefined || e.target.value === original || plan._isNew) return;
                                     try {
                                       await traceApi.admin.saveHallPlan(token, tenant.id, { ...plan, name: e.target.value });
                                     } catch (err: any) {

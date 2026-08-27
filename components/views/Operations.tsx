@@ -1088,7 +1088,7 @@ export const Operations: React.FC<{
   // Whether the (single-branch) hall map has a real plan to show — default
   // true so the card doesn't flash visible-then-gone while HallMap's own
   // fetch is still in flight; HallMap reports the real answer once known.
-  const [hasHallPlan, setHasHallPlan] = useState(false);
+  const [hasHallPlan, setHasHallPlan] = useState(true);
   // Same idea per-branch for the "All branches" hall map view — each
   // branch's own HallMap instance reports whether it has a real plan.
   const [branchHasHallPlan, setBranchHasHallPlan] = useState<Map<string, boolean>>(new Map());

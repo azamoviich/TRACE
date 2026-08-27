@@ -55,6 +55,8 @@ type EditForm = {
   telegram_chat_id: string;
   review_refresh_google: string; review_refresh_yandex: string; review_refresh_2gis: string; review_refresh_tripadvisor: string;
   iiko_chain_server_host: string; iiko_chain_login: string; iiko_chain_password: string;
+  billing_status: 'trial' | 'active' | 'past_due' | 'canceled';
+  trial_ends_at: string; next_payment_due_at: string; last_payment_at: string; monthly_price: string;
 };
 
 function formFromTenant(tenant: Tenant, org: Organization | null): EditForm {
@@ -77,7 +79,15 @@ function formFromTenant(tenant: Tenant, org: Organization | null): EditForm {
     review_refresh_2gis: tenant.review_refresh_2gis != null ? String(tenant.review_refresh_2gis) : '',
     review_refresh_tripadvisor: tenant.review_refresh_tripadvisor != null ? String(tenant.review_refresh_tripadvisor) : '',
     iiko_chain_server_host: chainRaw.replace(/^https?:\/\//, ''), iiko_chain_login: org?.iiko_chain_login ?? '', iiko_chain_password: org?.iiko_chain_password ?? '',
+    billing_status: tenant.billing_status ?? 'trial',
+    trial_ends_at: toDateInput(tenant.trial_ends_at), next_payment_due_at: toDateInput(tenant.next_payment_due_at),
+    last_payment_at: toDateInput(tenant.last_payment_at), monthly_price: tenant.monthly_price != null ? String(tenant.monthly_price) : '',
   };
+}
+
+// ISO timestamp -> yyyy-mm-dd for <input type="date">; '' when unset.
+function toDateInput(iso: string | null): string {
+  return iso ? iso.slice(0, 10) : '';
 }
 
 export const TenantDrawer: React.FC<{
@@ -312,6 +322,11 @@ export const TenantDrawer: React.FC<{
         twogis_url: form.twogis_url || null,
         telegram_chat_id: form.telegram_chat_id || null,
         plan: form.plan,
+        billing_status: form.billing_status,
+        trial_ends_at: form.trial_ends_at ? new Date(form.trial_ends_at).toISOString() : null,
+        next_payment_due_at: form.next_payment_due_at ? new Date(form.next_payment_due_at).toISOString() : null,
+        last_payment_at: form.last_payment_at ? new Date(form.last_payment_at).toISOString() : null,
+        monthly_price: form.monthly_price.trim() === '' ? null : parseFloat(form.monthly_price),
         review_refresh_google: parseCount(form.review_refresh_google),
         review_refresh_yandex: parseCount(form.review_refresh_yandex),
         review_refresh_2gis: parseCount(form.review_refresh_2gis),
@@ -602,6 +617,16 @@ export const TenantDrawer: React.FC<{
                           {form.plan === 'base' ? 'AI chat limited to 5 msgs / 2h, Daily Briefing only — other AI features locked' : 'Full access to all AI features'}
                         </p>
                       </div>
+                      <div>
+                        <FieldLabel>Billing status</FieldLabel>
+                        <PillToggle options={['trial', 'active', 'past_due', 'canceled'] as const} value={form.billing_status} onChange={v => setForm(f => f && ({ ...f, billing_status: v }))} />
+                      </div>
+                      {form.billing_status === 'trial' && (
+                        <Field label="Trial ends" type="date" value={form.trial_ends_at} onChange={v => setForm(f => f && ({ ...f, trial_ends_at: v }))} />
+                      )}
+                      <Field label="Next payment due" type="date" value={form.next_payment_due_at} onChange={v => setForm(f => f && ({ ...f, next_payment_due_at: v }))} />
+                      <Field label="Last payment received" type="date" value={form.last_payment_at} onChange={v => setForm(f => f && ({ ...f, last_payment_at: v }))} />
+                      <Field label="Monthly price" mono value={form.monthly_price} onChange={v => setForm(f => f && ({ ...f, monthly_price: v }))} />
                     </div>
                   ) : (
                     <div className="space-y-2.5 mb-5">
@@ -611,6 +636,22 @@ export const TenantDrawer: React.FC<{
                           {tenant.plan === 'base' ? 'Base' : 'Pro'}
                         </span>
                       </ReadRow>
+                      <ReadRow label="Billing status">
+                        <span className={`text-[10px] font-semibold uppercase tracking-[0.1em] px-2 py-0.5 rounded ${
+                          tenant.billing_status === 'active' ? 'bg-success/15 text-success'
+                          : tenant.billing_status === 'past_due' ? 'bg-danger/15 text-danger'
+                          : tenant.billing_status === 'canceled' ? 'bg-muted/15 text-muted'
+                          : 'bg-primary/15 text-primary'
+                        }`}>
+                          {tenant.billing_status}
+                        </span>
+                      </ReadRow>
+                      {tenant.billing_status === 'trial' && (
+                        <ReadRow label="Trial ends">{tenant.trial_ends_at ? new Date(tenant.trial_ends_at).toLocaleDateString() : '—'}</ReadRow>
+                      )}
+                      <ReadRow label="Next payment due">{tenant.next_payment_due_at ? new Date(tenant.next_payment_due_at).toLocaleDateString() : '—'}</ReadRow>
+                      <ReadRow label="Last payment received">{tenant.last_payment_at ? new Date(tenant.last_payment_at).toLocaleDateString() : '—'}</ReadRow>
+                      <ReadRow label="Monthly price">{tenant.monthly_price != null ? tenant.monthly_price.toLocaleString() : '—'}</ReadRow>
                     </div>
                   )}
 

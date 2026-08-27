@@ -4,6 +4,43 @@ import { Tenant, LiveStatus } from '../../services/traceApi';
 import { DOMAIN, relativeTime } from './helpers';
 import { computeHealth } from './health';
 
+// Billing badge: only surfaces when something needs attention — trial
+// ending soon/expired, or a payment overdue. Silent otherwise so the list
+// doesn't get noisy for tenants that are just fine.
+const BILLING_WARN_DAYS = 3;
+
+const BillingBadge: React.FC<{ tenant: Tenant }> = ({ tenant }) => {
+  const now = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+
+  if (tenant.billing_status === 'trial' && tenant.trial_ends_at) {
+    const daysLeft = Math.ceil((new Date(tenant.trial_ends_at).getTime() - now) / dayMs);
+    if (daysLeft < 0) {
+      return <span className="text-[9px] font-semibold uppercase tracking-wider text-danger bg-danger/10 rounded-full px-1.5 py-0.5 flex-shrink-0">Trial expired</span>;
+    }
+    if (daysLeft <= BILLING_WARN_DAYS) {
+      return <span className="text-[9px] font-semibold uppercase tracking-wider text-amber-500 bg-amber-500/10 rounded-full px-1.5 py-0.5 flex-shrink-0">Trial: {daysLeft}d left</span>;
+    }
+    return null;
+  }
+
+  if (tenant.billing_status === 'past_due') {
+    return <span className="text-[9px] font-semibold uppercase tracking-wider text-danger bg-danger/10 rounded-full px-1.5 py-0.5 flex-shrink-0">Past due</span>;
+  }
+
+  if (tenant.billing_status === 'active' && tenant.next_payment_due_at) {
+    const daysLeft = Math.ceil((new Date(tenant.next_payment_due_at).getTime() - now) / dayMs);
+    if (daysLeft < 0) {
+      return <span className="text-[9px] font-semibold uppercase tracking-wider text-danger bg-danger/10 rounded-full px-1.5 py-0.5 flex-shrink-0">Payment overdue</span>;
+    }
+    if (daysLeft <= BILLING_WARN_DAYS) {
+      return <span className="text-[9px] font-semibold uppercase tracking-wider text-amber-500 bg-amber-500/10 rounded-full px-1.5 py-0.5 flex-shrink-0">Due in {daysLeft}d</span>;
+    }
+  }
+
+  return null;
+};
+
 // One health check, rendered as a small dot. Deliberately terse — the
 // drawer's HealthPanel gives the full explanation, this just needs to
 // distinguish "fine" from "not configured" from "not knowable yet" at a
@@ -65,6 +102,7 @@ export const TenantItem: React.FC<{
               Disabled
             </span>
           )}
+          <BillingBadge tenant={tenant} />
         </div>
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           <span className="text-[10px] text-muted font-mono truncate">{tenant.subdomain}.{DOMAIN}</span>

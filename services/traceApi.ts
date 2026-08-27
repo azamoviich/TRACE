@@ -2267,6 +2267,11 @@ export interface Tenant {
   app_login?: string | null;
   app_password?: string;
   manager_pin?: string;
+  billing_status: 'trial' | 'active' | 'past_due' | 'canceled';
+  trial_ends_at: string | null;
+  next_payment_due_at: string | null;
+  last_payment_at: string | null;
+  monthly_price: number | null;
 }
 
 export interface ConnectionTestResults {

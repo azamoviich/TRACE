@@ -1093,6 +1093,18 @@ export const Operations: React.FC<{
   // branch's own HallMap instance reports whether it has a real plan.
   const [branchHasHallPlan, setBranchHasHallPlan] = useState<Map<string, boolean>>(new Map());
 
+  // Seeds branchHasHallPlan independently of HallMap mounting — the render
+  // below only mounts HallMap for branches already marked true in this map,
+  // so without this fetch nothing would ever set that flag and the whole
+  // multi-branch card would stay hidden forever.
+  useEffect(() => {
+    if (!isAllBranches || branches.length === 0) return;
+    let cancelled = false;
+    Promise.all(branches.map(b => traceApi.halls.list(b.id).then(p => [b.id, p.length > 0] as const).catch(() => [b.id, false] as const)))
+      .then(entries => { if (!cancelled) setBranchHasHallPlan(new Map(entries)); });
+    return () => { cancelled = true; };
+  }, [isAllBranches, branches]);
+
   useEffect(() => {
     if (demo) return;
     traceApi.settings.telegramStatus().then(s => setTelegramConnected(!!s.connected)).catch(() => {});

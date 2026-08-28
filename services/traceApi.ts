@@ -1597,6 +1597,8 @@ export const traceApi = {
       isDemoTenant() ? Promise.resolve(demoAbcHistory(dishName, lang)) : apiFetch(`/sales/abc/history?dishName=${encodeURIComponent(dishName)}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     abcDaypart: (dishName: string, range = '30days', lang: Language = 'ru'): Promise<DaypartData> =>
       isDemoTenant() ? Promise.resolve(demoAbcDaypart(dishName, lang)) : apiFetch(`/sales/abc/daypart?dishName=${encodeURIComponent(dishName)}&range=${range}`).then(r => r.json()).then(d => (d && !d.error) ? d : { byDow: [], byHour: [] }),
+    dishIngredients: (dishName: string): Promise<{ found: boolean; ingredients?: { name: string; usedInOtherDishes: number }[] }> =>
+      isDemoTenant() ? Promise.resolve({ found: false }) : apiFetch(`/sales/dish-ingredients?dishName=${encodeURIComponent(dishName)}`).then(r => r.json()).catch(() => ({ found: false })),
   },
   ai: {
     briefing: (lang: Language, force = false): Promise<AIDailyBriefing> =>

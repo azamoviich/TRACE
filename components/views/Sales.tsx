@@ -76,7 +76,10 @@ const DishDetailModal: React.FC<{
       .finally(() => setDaypartLoading(false));
   }, [tab, item.name, daypart, timeRange]);
 
-  // Generate AI insight when AI tab selected (once)
+  // Generate AI insight when AI tab selected (once). Fetches TTK ingredient
+  // cross-use data first (cheap REST, not an AI call) and folds it into the
+  // same prompt context — doesn't add a second AI call, just enriches the
+  // one this effect already sends.
   useEffect(() => {
     if (tab !== 'ai' || aiDone || isBasePlan) return;
     setAiDone(true);
@@ -108,7 +111,18 @@ const DishDetailModal: React.FC<{
       ? 'Дай 3-4 конкретных рекомендации менеджеру по этому блюду. Что с ним делать?'
       : 'Give 3-4 specific actionable recommendations for the manager about this dish.';
 
-    traceApi.ai.chat(ctx, [{ role: 'user', text: prompt }], lang)
+    traceApi.sales.dishIngredients(item.name)
+      .then(({ found, ingredients }) => {
+        if (!found || !ingredients || ingredients.length === 0) return '';
+        const lines = ingredients.map(i => ru
+          ? `  ${i.name} — используется в ${i.usedInOtherDishes} других блюдах`
+          : `  ${i.name} — used in ${i.usedInOtherDishes} other dishes`);
+        return ru
+          ? `\nСостав (ТТК):\n${lines.join('\n')}`
+          : `\nIngredients (TTK):\n${lines.join('\n')}`;
+      })
+      .catch(() => '')
+      .then(ingredientCtx => traceApi.ai.chat(ctx + ingredientCtx, [{ role: 'user', text: prompt }], lang))
       .then(({ text }) => setAiText(text))
       .catch(() => setAiText(ru ? 'Ошибка AI. Проверьте ANTHROPIC_API_KEY.' : isUz ? 'AI xatosi. ANTHROPIC_API_KEY tekshiring.' : 'AI error. Check ANTHROPIC_API_KEY.'))
       .finally(() => setAiLoading(false));

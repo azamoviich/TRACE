@@ -1899,8 +1899,7 @@ export interface WaiterSummaryRow {
   scans_yesterday: number;
   scans_today: number;
   delta: number;
-  reviews_yesterday: number;
-  reviews_today: number;
+  total_reviews: number;
 }
 
 export interface WaiterReportRow {

@@ -181,7 +181,9 @@ export const Waiters: React.FC<{ lang: Language }> = ({ lang }) => {
                   <th className="text-right font-medium px-3 py-2">{tr(lang, 'Сканов', 'Scans', 'Skan')}</th>
                   <th className="text-right font-medium px-3 py-2">{tr(lang, 'Вчера', 'Yesterday', 'Kecha')}</th>
                   <th className="text-right font-medium px-3 py-2">{tr(lang, 'Сегодня', 'Today', 'Bugun')}</th>
-                  <th className="text-right font-medium px-3 py-2">Δ</th>
+                  <th className="text-right font-medium px-3 py-2" title={tr(lang, 'Сегодня минус вчера (сканы)', 'Today minus yesterday (scans)', 'Bugun minus kecha (skanlar)')}>
+                    {tr(lang, 'Изм.', 'Change', "O'zgarish")}
+                  </th>
                   <th className="text-right font-medium px-3 py-2">{tr(lang, 'Отзывов', 'Reviews', 'Sharhlar')}</th>
                 </tr>
               </thead>
@@ -195,7 +197,7 @@ export const Waiters: React.FC<{ lang: Language }> = ({ lang }) => {
                     <td className={`px-3 py-2 text-right font-medium ${s.delta > 0 ? 'text-success' : s.delta < 0 ? 'text-danger' : 'text-muted'}`}>
                       {s.delta > 0 ? '+' : ''}{s.delta}
                     </td>
-                    <td className="px-3 py-2 text-right text-muted">{s.reviews_yesterday} / {s.reviews_today}</td>
+                    <td className="px-3 py-2 text-right text-muted">{s.total_reviews}</td>
                   </tr>
                 ))}
               </tbody>

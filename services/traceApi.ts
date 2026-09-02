@@ -1896,9 +1896,11 @@ export interface WaiterSummaryRow {
   id: string;
   name: string;
   total_scans: number;
+  scans_yesterday: number;
+  scans_today: number;
+  delta: number;
   reviews_yesterday: number;
   reviews_today: number;
-  delta: number;
 }
 
 export interface WaiterReportRow {

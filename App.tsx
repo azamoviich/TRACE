@@ -39,9 +39,10 @@ const Login: React.FC<{ onLogin: (remember: boolean) => void; lang: Language; se
     e.preventDefault();
     setLoading(true);
     setError('');
+    const trimmedLogin = loginVal.trim();
     const ok = isDemoTenant()
-      ? (loginVal === 'admin' && passwordVal === '123')
-      : await tenantAuth(loginVal, passwordVal);
+      ? (trimmedLogin === 'admin' && passwordVal === '123')
+      : await tenantAuth(trimmedLogin, passwordVal);
     setLoading(false);
     if (ok) onLogin(rememberMe);
     else setError(tr(lang, 'Неверный логин или пароль', 'Invalid login or password', 'Login yoki parol noto\'g\'ri'));
@@ -74,6 +75,7 @@ const Login: React.FC<{ onLogin: (remember: boolean) => void; lang: Language; se
             <div>
               <label className="block text-[10px] uppercase tracking-[0.18em] text-muted mb-2 font-medium">{t.login}</label>
               <input type="text" value={loginVal} onChange={e => setLoginVal(e.target.value)} autoComplete="username"
+                autoCapitalize="none" autoCorrect="off" spellCheck={false}
                 className="w-full bg-white/[0.03] border border-white/[0.08] rounded-2xl px-4 py-3 text-text text-[14px] focus:border-primary/60 focus:bg-white/[0.05] focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all" />
             </div>
             <div>

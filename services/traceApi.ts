@@ -2509,6 +2509,12 @@ export async function verifyTenantToken(): Promise<boolean | null> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token }),
     });
+    // A non-2xx here means the server itself failed (DB hiccup, cold start,
+    // 5xx) rather than actually evaluating the token — treat exactly like a
+    // network error (below) so a "remember me" login is never wiped out by
+    // a transient backend blip. Only a 2xx { ok: false } is the server
+    // having actually checked the token and rejected it.
+    if (!r.ok) return null;
     const json = await r.json();
     if (json.ok === true) {
       sessionStorage.setItem(TENANT_PLAN_KEY, json.plan ?? 'pro');

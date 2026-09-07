@@ -5,6 +5,14 @@ const BASE = import.meta.env.VITE_API_URL || '/api';
 
 export const LIVE_MODE = window.location.hostname !== 'localhost';
 
+// A relative "/downloads/..." link only resolves when the page is served
+// same-origin with the backend — true for every tenant subdomain, but not
+// for the marketing site (trace-os.uz apex), which is its own Vercel
+// deployment with no /downloads of its own. Absolute, so it works from both.
+export function downloadUrl(path: string): string {
+  return `https://trace-backend-production-cbce.up.railway.app${path}`;
+}
+
 // ── Branch switcher: re-points all tenant-scoped requests at a sibling branch
 // in the same organization via the X-Branch-Id header (see tenantMiddleware).
 const ACTIVE_BRANCH_KEY = 'trace_active_branch_id';

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card } from '../ui/Card';
 import { Language, ViewState } from '../../types';
 import { Mail, Loader2, Plus, Trash2, Send, Sun, Moon, Link2, PanelLeft, PanelTop, Rows3, PanelBottom, Eye, EyeOff, Palette, Check, ImagePlus, X, Home, Download } from 'lucide-react';
-import { traceApi, isDemoTenant, ReportSubscription, ReportType, ReportChannel, TelegramStatus, uploadPhoto, getSubdomain } from '../../services/traceApi';
+import { traceApi, isDemoTenant, ReportSubscription, ReportType, ReportChannel, TelegramStatus, uploadPhoto, getSubdomain, downloadUrl } from '../../services/traceApi';
 import { TRANSLATIONS } from '../../constants';
 import { NAV_ITEMS, HIDEABLE_PAGE_IDS, DEFAULT_PAGE_CHOICES, ACCENT_SWATCHES, NavStyle, MobileNavStyle } from '../navConfig';
 
@@ -550,7 +550,7 @@ export const Settings: React.FC<{
             : "Install TRACE as a desktop app — no need to open the browser every day."}
         </p>
         <a
-          href="/downloads/TRACE-Setup.exe"
+          href={downloadUrl('/downloads/TRACE-Setup.exe')}
           download={`TRACE-Setup-${getSubdomain()}.exe`}
           className="inline-flex px-5 py-2 bg-primary text-white text-[12px] font-semibold rounded-lg hover:bg-primary/90 transition-colors items-center gap-2"
         >

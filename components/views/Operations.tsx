@@ -1298,27 +1298,45 @@ export const Operations: React.FC<{
     return m;
   });
 
-  // Seed active orders from backend on mount — the WS stream only carries
-  // events that happen after page load, so orders opened earlier were invisible.
+  // Seed active orders from backend on mount (WS only carries events after
+  // page load, so orders opened earlier were invisible), then keep
+  // reconciling against the same REST snapshot every 30s. rtOrders is
+  // otherwise a pure WS event replay — a single dropped order_closed/
+  // order_removed send (reconnect storm, missed frame) leaves a closed
+  // order stuck "active" forever with no self-correction. useOccupiedTables
+  // already guards the heatmap/dashboard this same way; this list needs the
+  // same resync so a lost close event heals itself within 30s instead of
+  // requiring a page reload.
   useEffect(() => {
     if (demo) return;
-    traceApi.operations.activeOrders()
-      .then(rows => {
-        setRtOrders(prev => {
-          const m = new Map(prev);
-          for (const o of rows) {
-            if (!m.has(o.id)) {
+    let cancelled = false;
+    const resync = () => {
+      traceApi.operations.activeOrders()
+        .then(rows => {
+          if (cancelled) return;
+          // Full replace from the authoritative REST snapshot — same
+          // pattern useOccupiedTables uses. A WS bill_printed push is more
+          // current than REST's status field (which only reflects the last
+          // poll), so preserve that one field off the existing entry.
+          setRtOrders(prev => {
+            const m = new Map<string, { tableNum?: number; waiter?: string; items: number; guests?: number | null; openTime: string; sum: number; number?: number; status: string }>();
+            for (const o of rows) {
+              const existing = prev.get(o.id);
               m.set(o.id, {
                 tableNum: o.tableNum ?? undefined, waiter: o.waiter, items: o.items,
                 guests: o.guests ?? null,
-                openTime: o.openTime, sum: o.sum, number: o.number, status: o.status,
+                openTime: o.openTime, sum: o.sum, number: o.number,
+                status: existing?.status === 'Bill' ? existing.status : o.status,
               });
             }
-          }
-          return m;
-        });
-      })
-      .catch(() => {});
+            return m;
+          });
+        })
+        .catch(() => {});
+    };
+    resync();
+    const id = setInterval(resync, 30_000);
+    return () => { cancelled = true; clearInterval(id); };
   }, [demo]);
 
   const wsUrl = import.meta.env.VITE_BACKEND_WS_URL as string | undefined;

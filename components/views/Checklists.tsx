@@ -1091,6 +1091,7 @@ export function ChecklistEditor({ lang, roles, checklistId, onDone, onShowToast,
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [items, setItems] = useState<DraftItem[]>([{ text: '', requiresPhoto: false, itemType: 'checkbox', options: ['', ''] }]);
+  const [requiredForClose, setRequiredForClose] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // `roles` often arrives async after this component's first render (e.g.
@@ -1110,6 +1111,7 @@ export function ChecklistEditor({ lang, roles, checklistId, onDone, onShowToast,
       setRoleId(checklist.role_id);
       setName(checklist.name);
       setDescription(checklist.description);
+      setRequiredForClose(!!(checklist as any).required_for_close);
       setItems(existing.length ? existing.map(i => ({ text: i.text, requiresPhoto: i.requires_photo, itemType: i.item_type ?? 'checkbox', options: i.options && i.options.length ? i.options : ['', ''] })) : [{ text: '', requiresPhoto: false, itemType: 'checkbox', options: ['', ''] }]);
       setLoaded(true);
     }).catch(() => {
@@ -1132,7 +1134,7 @@ export function ChecklistEditor({ lang, roles, checklistId, onDone, onShowToast,
     }));
     setBusy(true);
     try {
-      const data = { roleId, name: name.trim(), description, items: cleanItems };
+      const data = { roleId, name: name.trim(), description, requiredForClose, items: cleanItems };
       if (manager) {
         await manager.onSave(data, checklistId);
       } else if (checklistId) {
@@ -1180,6 +1182,23 @@ export function ChecklistEditor({ lang, roles, checklistId, onDone, onShowToast,
             {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
         </div>
+
+        <button
+          onClick={() => setRequiredForClose(v => !v)}
+          className="w-full flex items-center justify-between gap-3 p-2.5 rounded-lg border border-border bg-background/50"
+        >
+          <div className="text-left">
+            <div className="text-[13px] font-medium text-text">
+              {tr(lang, 'Требуется для закрытия смены', 'Required to close shift', 'Smenani yopish uchun talab qilinadi')}
+            </div>
+            <div className="text-[11px] text-muted mt-0.5">
+              {tr(lang, 'Сотрудник не сможет закрыть смену, пока все пункты не выполнены', "Employee can't close their shift until every item here is done", "Barcha bandlar bajarilmaguncha xodim smenani yopa olmaydi")}
+            </div>
+          </div>
+          <span className={`shrink-0 w-11 h-6 rounded-full transition-colors relative ${requiredForClose ? 'bg-primary' : 'bg-card-hover'}`}>
+            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${requiredForClose ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+          </span>
+        </button>
 
         <div>
           <label className="text-[12px] text-muted mb-1.5 block">{tr(lang, 'Пункты', 'Items', 'Bandlar')}</label>

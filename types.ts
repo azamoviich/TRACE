@@ -146,6 +146,7 @@ export interface Checklist {
   created_by: string;
   active: boolean;
   created_at: string;
+  required_for_close: boolean;
 }
 
 export interface ChecklistWithItems {

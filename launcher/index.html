@@ -37,6 +37,10 @@
   button:hover { background: #E85A1F; }
   button:disabled { opacity: 0.6; cursor: default; }
   .error { font-size: 12px; color: #DC2626; margin: -8px 0 16px; }
+  .manual-toggle { font-size: 11px; color: #5F5F5F; text-align: center; margin: 14px 0 0; }
+  .manual-toggle a { color: #FF6B35; text-decoration: none; }
+  .manual-toggle a:hover { text-decoration: underline; }
+  #manualForm { margin-top: 14px; padding-top: 14px; border-top: 1px solid #E5E2DD; }
   .qr-title { font-size: 9px; text-transform: uppercase; letter-spacing: 0.18em; color: #5F5F5F; font-weight: 500; margin: 0 0 16px; }
   .qr-box {
     width: 168px; height: 168px; border-radius: 8px; border: 1px solid #E5E2DD;
@@ -76,6 +80,14 @@
           <p class="error" id="loginError" style="display:none"></p>
           <button type="submit" id="loginBtn">Sign In</button>
         </form>
+        <p class="manual-toggle" id="manualToggle">Know your restaurant's TRACE address? <a href="#" id="manualLink">Enter it directly</a></p>
+        <form id="manualForm" style="display:none">
+          <div class="field">
+            <label>TRACE address</label>
+            <input type="text" id="manualAddress" placeholder="e.g. benedict" autocapitalize="none" autocorrect="off" spellcheck="false" />
+          </div>
+          <button type="submit">Continue</button>
+        </form>
       </div>
       <div class="card qr">
         <p class="qr-title">Sign in via TRACEMOB</p>
@@ -89,9 +101,9 @@
     const BASE = 'https://trace-backend-production-cbce.up.railway.app';
     const KEY = 'trace_desktop_tenant';
 
-    function goToTenant(subdomain, token, plan) {
+    function goToTenant(subdomain, token, plan, remember) {
       localStorage.setItem(KEY, subdomain);
-      const params = new URLSearchParams({ bootstrapToken: token, bootstrapRemember: '1', bootstrapPlan: plan || 'pro' });
+      const params = new URLSearchParams({ bootstrapToken: token, bootstrapRemember: remember ? '1' : '0', bootstrapPlan: plan || 'pro' });
       window.location.href = `https://${subdomain}.trace-os.uz/?${params.toString()}`;
     }
 
@@ -103,6 +115,7 @@
       e.preventDefault();
       const login = document.getElementById('login').value.trim();
       const password = document.getElementById('password').value;
+      const remember = document.getElementById('remember').checked;
       if (!login || !password) return;
       loginBtn.disabled = true;
       loginError.style.display = 'none';
@@ -114,10 +127,13 @@
         });
         const json = await r.json();
         if (json.ok && json.subdomain && json.token) {
-          goToTenant(json.subdomain, json.token, json.plan);
+          goToTenant(json.subdomain, json.token, json.plan, remember);
           return;
         }
-        loginError.textContent = 'Invalid login or password';
+        // /admin/login can't tell a wrong password apart from "this login
+        // isn't unique across tenants" (e.g. two restaurants both still on
+        // the admin/123 default) — point at the manual fallback either way.
+        loginError.innerHTML = 'Invalid login or password — or use "Enter it directly" below';
         loginError.style.display = 'block';
       } catch (e) {
         loginError.textContent = 'Could not reach the server — try again';
@@ -157,7 +173,7 @@
         if (json.status === 'confirmed' && json.token && json.subdomain) {
           clearInterval(qrPollId);
           qrHint.textContent = 'Signed in';
-          goToTenant(json.subdomain, json.token, json.plan);
+          goToTenant(json.subdomain, json.token, json.plan, true); // scanning a phone is trust enough to remember this device
         } else if (json.status === 'expired') {
           clearInterval(qrPollId);
           qrHint.textContent = 'Code expired — refreshing...';
@@ -168,6 +184,24 @@
         // network blip — keep polling, don't flash "expired"
       }
     }
+
+    // ── Manual address fallback — for the rare login that /admin/login
+    // can't resolve to a single tenant (e.g. two restaurants still both on
+    // the admin/123 default with no custom login set) ──
+    const manualLink = document.getElementById('manualLink');
+    const manualForm = document.getElementById('manualForm');
+    manualLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      manualForm.style.display = manualForm.style.display === 'none' ? 'block' : 'none';
+    });
+    manualForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      let address = document.getElementById('manualAddress').value.trim().toLowerCase();
+      address = address.replace(/^https?:\/\//, '').replace(/\.trace-os\.uz.*$/, '').replace(/\/.*$/, '');
+      if (!address) return;
+      localStorage.setItem(KEY, address);
+      window.location.href = `https://${address}.trace-os.uz/`;
+    });
 
     // ── Boot: skip straight to a known tenant, otherwise show login + QR ──
     async function init() {

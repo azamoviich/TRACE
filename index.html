@@ -210,6 +210,11 @@
   }
 }
 </script>
+<!-- TRACE Employee's GeofenceTab (Workforce settings) branch/radius picker.
+     leaflet itself is a real npm dep (Vite/rollup bundles it); only its CSS
+     needs a CDN link since it ships plain stylesheet + image assets.
+     No Google Maps key required — OSM tiles are free and keyless. -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="/index.css">
 </head>
   <body>

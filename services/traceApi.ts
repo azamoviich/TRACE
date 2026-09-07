@@ -1758,6 +1758,14 @@ export const traceApi = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }).then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); }),
+    geofence: (): Promise<WorkforceGeofenceSettings> =>
+      isDemoTenant() ? Promise.resolve(demoGeofenceSettings()) : apiFetch(`/settings/geofence`).then(r => r.json()),
+    saveGeofence: (data: Partial<WorkforceGeofenceSettings>): Promise<WorkforceGeofenceSettings> =>
+      apiFetch(`/settings/geofence`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }).then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); }),
     alertThresholds: (): Promise<AlertThresholds> =>
       isDemoTenant() ? Promise.resolve(demoAlertThresholds()) : apiFetch(`/settings/alert-thresholds`).then(r => r.json()),
     saveAlertThresholds: (data: AlertThresholds): Promise<AlertThresholds> =>
@@ -2023,6 +2031,35 @@ export interface AlertThresholds {
 
 function demoAlertThresholds(): AlertThresholds {
   return { lowStockQty: 5, negativeMarginPct: 0, highWriteoffPct: 5, staleOpenTableMin: 180 };
+}
+
+// TRACE Employee — per-branch clock-in geofence + attendance/payroll policy.
+// Mirrors backend routes/settings.ts GET|PUT /settings/geofence exactly
+// (same field names, same "settings as tenant columns" shape as business
+// hours above).
+export interface WorkforceGeofenceSettings {
+  geofenceLat: number | null;
+  geofenceLng: number | null;
+  geofenceRadiusM: number;
+  geofenceEnabled: boolean;
+  attendanceGraceMin: number;
+  faceMatchThreshold: number;
+  faceFailPolicy: 'allow_flagged' | 'block';
+  mockLocationPolicy: 'block' | 'flag_only';
+  maxShiftMinutes: number;
+  payrollPeriodType: 'monthly' | 'semi_monthly' | 'weekly';
+  payrollWeekStart: number;
+  payrollCurrency: string;
+  employeeAppEnabled: boolean;
+}
+
+function demoGeofenceSettings(): WorkforceGeofenceSettings {
+  return {
+    geofenceLat: null, geofenceLng: null, geofenceRadiusM: 150, geofenceEnabled: false,
+    attendanceGraceMin: 5, faceMatchThreshold: 80, faceFailPolicy: 'allow_flagged',
+    mockLocationPolicy: 'block', maxShiftMinutes: 960, payrollPeriodType: 'monthly',
+    payrollWeekStart: 1, payrollCurrency: 'UZS', employeeAppEnabled: false,
+  };
 }
 
 export interface CashShiftDoc {
@@ -2785,6 +2822,8 @@ export const checklistApi = {
     posPreview: () => checkedFetch<{ groups: { posRoleName: string; names: string[] }[] }>('/checklist/employees/pos-preview'),
     import: (roleId: string, names: string[]) =>
       post<{ created: { name: string; pin: string }[] }>('/checklist/employees/import', { roleId, names }),
+    invite: (name: string, roleId: string, contact: { email?: string; phone?: string }) =>
+      post<ChecklistEmployee>('/checklist/employees/invite', { name, roleId, ...contact }),
   },
   managers: {
     list: () => checkedFetch<ChecklistManager[]>('/checklist/managers'),
@@ -2853,6 +2892,8 @@ export const checklistManagerApi = {
       scopedFetch<{ groups: { posRoleName: string; names: string[] }[] }>('/checklist-manager/employees/pos-preview', tenantSubdomain, token),
     import: (tenantSubdomain: string, token: string, roleId: string, names: string[]) =>
       scopedFetch<{ created: { name: string; pin: string }[] }>('/checklist-manager/employees/import', tenantSubdomain, token, { method: 'POST', body: JSON.stringify({ roleId, names }) }),
+    invite: (tenantSubdomain: string, token: string, name: string, roleId: string, contact: { email?: string; phone?: string }) =>
+      scopedFetch<ChecklistEmployee>('/checklist-manager/employees/invite', tenantSubdomain, token, { method: 'POST', body: JSON.stringify({ name, roleId, ...contact }) }),
   },
   stats: (tenantSubdomain: string, token: string, params: { roleId?: string; from?: string; to?: string } = {}) => {
     const q = new URLSearchParams(params as Record<string, string>).toString();

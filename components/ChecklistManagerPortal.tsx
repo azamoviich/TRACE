@@ -147,6 +147,7 @@ function Builder({ lang, session, onSwitchBranch, onLogout }: {
     remove: (id) => checklistManagerApi.employees.remove(branch, session.token, id),
     posPreview: () => checklistManagerApi.employees.posPreview(branch, session.token),
     import: (roleId, names) => checklistManagerApi.employees.import(branch, session.token, roleId, names),
+    invite: (name, roleId, contact) => checklistManagerApi.employees.invite(branch, session.token, name, roleId, contact),
   };
 
   const tabs: { id: Tab; label: string }[] = [

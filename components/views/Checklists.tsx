@@ -444,6 +444,7 @@ export interface EmployeesApi {
   remove: (id: string) => Promise<void>;
   posPreview: () => Promise<{ groups: { posRoleName: string; names: string[] }[] }>;
   import: (roleId: string, names: string[]) => Promise<{ created: { name: string; pin: string }[] }>;
+  invite: (name: string, roleId: string, contact: { email?: string; phone?: string }) => Promise<ChecklistEmployee>;
 }
 
 // ── POS import ───────────────────────────────────────────────────────────
@@ -539,6 +540,12 @@ export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.empl
   const [busy, setBusy] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  const [inviteName, setInviteName] = useState('');
+  const [inviteRoleId, setInviteRoleId] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [invitePhone, setInvitePhone] = useState('');
+  const [inviteBusy, setInviteBusy] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editPin, setEditPin] = useState('');
@@ -547,6 +554,26 @@ export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.empl
   const load = () => api.list().then(setEmployees).catch(() => {});
   useEffect(() => { load(); }, []);
   useEffect(() => { if (!roleId && roles[0]) setRoleId(roles[0].id); }, [roles]);
+  useEffect(() => { if (!inviteRoleId && roles[0]) setInviteRoleId(roles[0].id); }, [roles]);
+
+  const invite = async () => {
+    if (!inviteName.trim() || !inviteRoleId || (!inviteEmail.trim() && !invitePhone.trim())) {
+      onShowToast(tr(lang, 'Укажите имя, роль и email или телефон', 'Enter name, role and an email or phone', "Ism, rol va email yoki telefon kiriting"), 'error');
+      return;
+    }
+    setInviteBusy(true);
+    try {
+      await api.invite(inviteName.trim(), inviteRoleId, {
+        email: inviteEmail.trim() || undefined,
+        phone: invitePhone.trim() || undefined,
+      });
+      setInviteName(''); setInviteEmail(''); setInvitePhone('');
+      setShowInvite(false);
+      onShowToast(tr(lang, 'Приглашение отправлено', 'Invite sent', 'Taklifnoma yuborildi'), 'success');
+      load();
+    } catch { onShowToast(tr(lang, 'Не удалось отправить приглашение', 'Failed to send invite', "Taklifnomani yuborib bo'lmadi"), 'error'); }
+    finally { setInviteBusy(false); }
+  };
 
   const startEdit = (e: ChecklistEmployee) => { setEditingId(e.id); setEditName(e.name); setEditPin(''); };
 
@@ -593,17 +620,47 @@ export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.empl
             <Download size={14} /> <span className="hidden sm:inline">{tr(lang, 'Загрузить из POS', 'Load from POS', "POS'dan yuklash")}</span>
           </button>
           <button
-            onClick={() => { setShowAdd(v => !v); setShowImport(false); }}
+            onClick={() => { setShowAdd(v => !v); setShowImport(false); setShowInvite(false); }}
+            className="px-3 py-1.5 rounded-lg bg-card border border-border text-[12px] font-semibold flex items-center gap-1.5 text-text"
+          >
+            <Plus size={14} /> <span className="hidden sm:inline">{tr(lang, 'PIN-вход', 'PIN login', 'PIN kirish')}</span>
+          </button>
+          <button
+            onClick={() => { setShowInvite(v => !v); setShowAdd(false); setShowImport(false); }}
             className="px-3 py-1.5 rounded-lg bg-primary text-white text-[12px] font-semibold flex items-center gap-1.5"
           >
-            <Plus size={14} /> {tr(lang, 'Добавить', 'Add', "Qo'shish")}
+            <Plus size={14} /> {tr(lang, 'Пригласить сотрудника', 'Invite an Employee', "Xodimni taklif qilish")}
           </button>
         </div>
       </div>
-      <p className="text-[13px] text-muted mb-4">{tr(lang, 'Имя и PIN для входа на своей странице', 'Name and PIN to log into their own page', "O'z sahifasiga kirish uchun ism va PIN")}</p>
+      <p className="text-[13px] text-muted mb-4">{tr(lang, 'Имя и PIN для входа на своей странице, либо приглашение по email/телефону в мобильное приложение', 'Name and PIN for the web page, or an email/phone invite to the mobile app', "O'z sahifasiga kirish uchun ism va PIN, yoki mobil ilovaga email/telefon orqali taklifnoma")}</p>
 
       {showImport && (
         <PosImportPanel lang={lang} roles={roles} onShowToast={onShowToast} onImported={() => { setShowImport(false); load(); }} api={api} />
+      )}
+
+      {showInvite && (
+        <div className="mb-4 p-3.5 rounded-xl border border-border bg-background space-y-2">
+          <div className="grid sm:grid-cols-2 gap-2">
+            <select value={inviteRoleId} onChange={e => setInviteRoleId(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text">
+              {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+            <input value={inviteName} onChange={e => setInviteName(e.target.value)} placeholder={tr(lang, 'Имя', 'Name', 'Ism')} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
+          </div>
+          <div className="grid sm:grid-cols-2 gap-2">
+            <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder={tr(lang, 'Email (необязательно)', 'Email (optional)', 'Email (ixtiyoriy)')} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
+            <input value={invitePhone} onChange={e => setInvitePhone(e.target.value)} placeholder={tr(lang, 'Телефон (необязательно)', 'Phone (optional)', 'Telefon (ixtiyoriy)')} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
+          </div>
+          <p className="text-[11px] text-muted">{tr(lang, 'TRACE отправит логин и временный пароль на указанный контакт', 'TRACE will send a login and temporary password to the contact you provide', "TRACE ko'rsatilgan kontaktga login va vaqtinchalik parol yuboradi")}</p>
+          <div className="flex items-center gap-2 pt-1">
+            <button onClick={invite} disabled={inviteBusy} className="px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold disabled:opacity-50">
+              {tr(lang, 'Отправить приглашение', 'Send invite', 'Taklifnoma yuborish')}
+            </button>
+            <button onClick={() => setShowInvite(false)} className="px-3.5 py-2 rounded-lg bg-card border border-border text-muted text-[13px] font-medium">
+              {tr(lang, 'Отмена', 'Cancel', 'Bekor qilish')}
+            </button>
+          </div>
+        </div>
       )}
 
       {showAdd && (

@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, TrendingUp, Activity, DollarSign,
-  Star, Heart, FileText, Settings2, ClipboardCheck,
+  Star, Heart, FileText, Settings2, ClipboardCheck, Users,
 } from 'lucide-react';
 import { ViewState } from '../types';
 
@@ -19,6 +19,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'reviews', icon: Star },
   { id: 'loyalty', icon: Heart },
   { id: 'checklists', icon: ClipboardCheck },
+  { id: 'workforce', icon: Users },
   { id: 'reports', icon: FileText },
   { id: 'settings', icon: Settings2 },
 ];
@@ -26,7 +27,7 @@ export const NAV_ITEMS: NavItem[] = [
 // Pages the user is allowed to hide from Settings. Dashboard and Settings
 // stay pinned so there's always a way in and a way back to this screen.
 export const HIDEABLE_PAGE_IDS: ViewState[] = [
-  'sales', 'operations', 'financial', 'reviews', 'loyalty', 'reports', 'checklists',
+  'sales', 'operations', 'financial', 'reviews', 'loyalty', 'reports', 'checklists', 'workforce',
 ];
 
 export const NAV_STYLE_KEY = 'trace_nav_style';

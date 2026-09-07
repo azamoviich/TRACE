@@ -1773,6 +1773,11 @@ export const traceApi = {
       const qs = range ? `from=${range.from}&to=${range.to}` : `days=${days}`;
       return apiFetch(`/operations/table-revenue?${qs}`, {}, branchIdOverride).then(r => r.json()).then(d => Array.isArray(d) ? d : []);
     },
+    tableDurations: (days = 30, range?: { from: string; to: string }, branchIdOverride?: string): Promise<{ table: number; avgMin: number; visits: number }[]> => {
+      if (isDemoTenant()) return Promise.resolve([]);
+      const qs = range ? `from=${range.from}&to=${range.to}` : `days=${days}`;
+      return apiFetch(`/operations/table-durations?${qs}`, {}, branchIdOverride).then(r => r.json()).then(d => Array.isArray(d) ? d : []);
+    },
     // branchIdOverride: force this call at a specific sibling branch,
     // independent of the globally active branch — used to fan out across
     // every branch when "All branches" is selected (see Operations.tsx).

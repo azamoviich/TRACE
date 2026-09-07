@@ -5,53 +5,174 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>TRACE</title>
 <style>
-  :root { color-scheme: dark; }
+  :root { color-scheme: light; }
   * { box-sizing: border-box; }
   body {
-    margin: 0; height: 100vh; display: flex; align-items: center; justify-content: center;
-    background: #1a1a1d; color: #f0eee9; font-family: system-ui, sans-serif;
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #F7F5F2; color: #1A1A1A; font-family: system-ui, sans-serif; padding: 16px;
   }
-  .box { width: 320px; text-align: center; visibility: hidden; }
-  h1 { font-size: 20px; margin: 0 0 6px; }
-  p { font-size: 13px; color: #9a9a9a; margin: 0 0 20px; }
-  input {
-    width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #303036;
-    background: #222226; color: #f0eee9; font-size: 14px; margin-bottom: 12px;
+  .wrap { width: 100%; max-width: 640px; visibility: hidden; }
+  .header { text-align: center; margin-bottom: 32px; }
+  .header h1 { font-size: 24px; font-weight: 900; letter-spacing: 0.25em; margin: 0; }
+  .header p { font-size: 9px; text-transform: uppercase; letter-spacing: 0.3em; color: #5F5F5F; margin: 8px 0 0; }
+  .row { display: flex; flex-wrap: wrap; justify-content: center; gap: 24px; }
+  .card {
+    background: #FFFFFF; border: 1px solid #E5E2DD; border-radius: 12px; padding: 24px;
+    width: 100%; max-width: 320px;
   }
+  .card.qr { max-width: 260px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+  label { display: block; font-size: 9px; text-transform: uppercase; letter-spacing: 0.18em; color: #5F5F5F; margin-bottom: 6px; font-weight: 500; }
+  .field { margin-bottom: 16px; }
+  input[type="text"], input[type="password"] {
+    width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #E5E2DD;
+    background: #F7F5F2; color: #1A1A1A; font-size: 13px; font-family: inherit;
+  }
+  input[type="text"]:focus, input[type="password"]:focus { outline: none; border-color: #FF6B35; }
+  .remember { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; cursor: pointer; user-select: none; }
+  .remember span { font-size: 12px; color: #5F5F5F; }
   button {
-    width: 100%; padding: 10px; border-radius: 10px; border: none;
-    background: #ff6b35; color: white; font-weight: 600; font-size: 14px; cursor: pointer;
+    width: 100%; padding: 11px; border-radius: 8px; border: none;
+    background: #FF6B35; color: white; font-weight: 600; font-size: 13px; cursor: pointer; font-family: inherit;
   }
-  button:disabled { opacity: 0.5; cursor: default; }
-  .hint { font-size: 11px; color: #6b6b6b; margin-top: 10px; }
+  button:hover { background: #E85A1F; }
+  button:disabled { opacity: 0.6; cursor: default; }
+  .error { font-size: 12px; color: #DC2626; margin: -8px 0 16px; }
+  .qr-title { font-size: 9px; text-transform: uppercase; letter-spacing: 0.18em; color: #5F5F5F; font-weight: 500; margin: 0 0 16px; }
+  .qr-box {
+    width: 168px; height: 168px; border-radius: 8px; border: 1px solid #E5E2DD;
+    display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; flex-shrink: 0;
+  }
+  .qr-box img { width: 100%; height: 100%; object-fit: contain; }
+  .qr-hint { font-size: 11px; color: #5F5F5F; margin: 16px 0 0; line-height: 1.5; }
+  .spinner {
+    width: 22px; height: 22px; border: 2px solid rgba(0,0,0,0.1); border-top-color: rgba(0,0,0,0.4);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .hint { text-align: center; font-size: 11px; color: #9a9a9a; margin-top: 20px; }
 </style>
 </head>
 <body>
-  <div class="box">
-    <h1>TRACE</h1>
-    <p>Enter your restaurant's TRACE address to continue</p>
-    <input id="subdomain" placeholder="e.g. benedict" autofocus />
-    <button id="go">Continue</button>
-    <div class="hint">You only need to do this once on this computer.</div>
+  <div class="wrap" id="wrap">
+    <div class="header">
+      <h1>TRACE</h1>
+      <p>Restaurant OS</p>
+    </div>
+    <div class="row">
+      <div class="card">
+        <form id="loginForm">
+          <div class="field">
+            <label>Login</label>
+            <input type="text" id="login" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" />
+          </div>
+          <div class="field">
+            <label>Password</label>
+            <input type="password" id="password" autocomplete="current-password" />
+          </div>
+          <label class="remember">
+            <input type="checkbox" id="remember" checked />
+            <span>Remember me</span>
+          </label>
+          <p class="error" id="loginError" style="display:none"></p>
+          <button type="submit" id="loginBtn">Sign In</button>
+        </form>
+      </div>
+      <div class="card qr">
+        <p class="qr-title">Sign in via TRACEMOB</p>
+        <div class="qr-box" id="qrBox"><div class="spinner"></div></div>
+        <p class="qr-hint" id="qrHint">Open TRACEMOB on your phone and scan the code</p>
+      </div>
+    </div>
+    <p class="hint">You only need to do this once on this computer.</p>
   </div>
   <script>
+    const BASE = 'https://trace-backend-production-cbce.up.railway.app';
     const KEY = 'trace_desktop_tenant';
-    const input = document.getElementById('subdomain');
-    const go = document.getElementById('go');
 
-    function normalize(v) {
-      v = v.trim().toLowerCase();
-      v = v.replace(/^https?:\/\//, '').replace(/\.trace-os\.uz.*$/, '').replace(/\/.*$/, '');
-      return v;
+    function goToTenant(subdomain, token, plan) {
+      localStorage.setItem(KEY, subdomain);
+      const params = new URLSearchParams({ bootstrapToken: token, bootstrapRemember: '1', bootstrapPlan: plan || 'pro' });
+      window.location.href = `https://${subdomain}.trace-os.uz/?${params.toString()}`;
     }
 
-    function launch(sub) {
-      window.location.href = `https://${sub}.trace-os.uz/`;
+    // ── Password login ──
+    const loginForm = document.getElementById('loginForm');
+    const loginBtn = document.getElementById('loginBtn');
+    const loginError = document.getElementById('loginError');
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const login = document.getElementById('login').value.trim();
+      const password = document.getElementById('password').value;
+      if (!login || !password) return;
+      loginBtn.disabled = true;
+      loginError.style.display = 'none';
+      try {
+        const r = await fetch(`${BASE}/admin/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ login, password }),
+        });
+        const json = await r.json();
+        if (json.ok && json.subdomain && json.token) {
+          goToTenant(json.subdomain, json.token, json.plan);
+          return;
+        }
+        loginError.textContent = 'Invalid login or password';
+        loginError.style.display = 'block';
+      } catch (e) {
+        loginError.textContent = 'Could not reach the server — try again';
+        loginError.style.display = 'block';
+      } finally {
+        loginBtn.disabled = false;
+      }
+    });
+
+    // ── QR login ──
+    const qrBox = document.getElementById('qrBox');
+    const qrHint = document.getElementById('qrHint');
+    let qrPollId = null;
+
+    async function startQrSession() {
+      qrHint.textContent = 'Open TRACEMOB on your phone and scan the code';
+      try {
+        const r = await fetch(`${BASE}/admin/qr-session/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const json = await r.json();
+        if (!json.ok) { setTimeout(startQrSession, 3000); return; }
+        qrBox.innerHTML = `<img src="${json.qrDataUrl}" alt="QR" />`;
+        if (qrPollId) clearInterval(qrPollId);
+        qrPollId = setInterval(() => pollQrSession(json.sessionId), 2000);
+      } catch (e) {
+        setTimeout(startQrSession, 3000);
+      }
     }
 
+    async function pollQrSession(sessionId) {
+      try {
+        const r = await fetch(`${BASE}/admin/qr-session/status?sessionId=${encodeURIComponent(sessionId)}`);
+        const json = await r.json();
+        if (json.status === 'confirmed' && json.token && json.subdomain) {
+          clearInterval(qrPollId);
+          qrHint.textContent = 'Signed in';
+          goToTenant(json.subdomain, json.token, json.plan);
+        } else if (json.status === 'expired') {
+          clearInterval(qrPollId);
+          qrHint.textContent = 'Code expired — refreshing...';
+          qrBox.innerHTML = '<div class="spinner"></div>';
+          setTimeout(startQrSession, 1200);
+        }
+      } catch (e) {
+        // network blip — keep polling, don't flash "expired"
+      }
+    }
+
+    // ── Boot: skip straight to a known tenant, otherwise show login + QR ──
     async function init() {
       const saved = localStorage.getItem(KEY);
-      if (saved) { launch(saved); return; }
+      if (saved) { window.location.href = `https://${saved}.trace-os.uz/`; return; }
 
       try {
         const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
@@ -59,24 +180,18 @@
           const preset = await invoke('get_preset_tenant');
           if (preset) {
             localStorage.setItem(KEY, preset);
-            launch(preset);
+            window.location.href = `https://${preset}.trace-os.uz/`;
             return;
           }
         }
       } catch (e) {}
 
-      // No saved/preset tenant found — only now reveal the manual entry form.
-      document.querySelector('.box').style.visibility = 'visible';
+      // No saved/preset tenant — this device hasn't signed in before. Show
+      // login + QR and let the credentials themselves determine the tenant.
+      document.getElementById('wrap').style.visibility = 'visible';
+      startQrSession();
     }
     init();
-
-    go.addEventListener('click', () => {
-      const sub = normalize(input.value);
-      if (!sub) return;
-      localStorage.setItem(KEY, sub);
-      launch(sub);
-    });
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go.click(); });
   </script>
 </body>
 </html>

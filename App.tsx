@@ -16,7 +16,7 @@ import { Compare } from './components/views/Compare';
 import { Checklists } from './components/views/Checklists';
 import { Globe, Sun, Moon } from 'lucide-react';
 import { TRANSLATIONS, nextLang, tr } from './constants';
-import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos, createQrSession, pollQrSession, QrSession, isTauriApp } from './services/traceApi';
+import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos, createQrSession, pollQrSession, QrSession, isTauriApp, consumeBootstrapToken } from './services/traceApi';
 import { ManagerPortal } from './components/ManagerPortal';
 import { ChecklistManagerPortal } from './components/ChecklistManagerPortal';
 import { EmployeeChecklistPortal } from './components/EmployeeChecklistPortal';
@@ -327,8 +327,14 @@ export default function App() {
   const employeeChecklistHost = parseEmployeeChecklistHost();
   if (employeeChecklistHost) return <EmployeeChecklistPortal roleSlug={employeeChecklistHost.roleSlug} tenantSubdomain={employeeChecklistHost.tenantSubdomain} />;
 
-  const [isLoggedIn, setIsLoggedIn] = useState(() => isDemoTenant());
-  const [authChecking, setAuthChecking] = useState(() => !isDemoTenant() && localStorage.getItem('trace_remember') === '1');
+  // Handed off by the exe's launcher after a first-run login/QR there (see
+  // consumeBootstrapToken) — must run before isLoggedIn/authChecking read
+  // localStorage below, and only once (StrictMode double-invokes lazy
+  // initializers, but the second run finds no ?bootstrapToken= left to consume).
+  const [bootstrapped] = useState(consumeBootstrapToken);
+
+  const [isLoggedIn, setIsLoggedIn] = useState(() => isDemoTenant() || bootstrapped);
+  const [authChecking, setAuthChecking] = useState(() => !isDemoTenant() && !bootstrapped && localStorage.getItem('trace_remember') === '1');
   const [currentView, setCurrentView] = useState<ViewState>(() => {
     const v = new URLSearchParams(window.location.search).get('view');
     const valid: ViewState[] = ['dashboard', 'sales', 'operations', 'financial', 'reviews', 'loyalty', 'reports', 'settings', 'compare', 'checklists'];

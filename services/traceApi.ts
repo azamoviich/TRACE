@@ -2538,6 +2538,34 @@ export function clearTenantToken() {
   sessionStorage.removeItem(TENANT_TOKEN_KEY);
 }
 
+// The exe's launcher (launcher/index.html) now handles first-run login/QR
+// itself — a plain static page with no tenant subdomain to be same-origin
+// with, so it can't just write into this page's localStorage. Instead it
+// hands the freshly minted token off via a one-time query param on the
+// redirect it does once login succeeds; this picks that up on boot, stores
+// it exactly like a normal login would, and scrubs the URL. Call once,
+// synchronously, before anything reads isLoggedIn.
+export function consumeBootstrapToken(): boolean {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('bootstrapToken');
+  if (!token) return false;
+  const remember = params.get('bootstrapRemember') === '1';
+  const plan = params.get('bootstrapPlan') ?? 'pro';
+  if (remember) {
+    localStorage.setItem('trace_remember', '1');
+    localStorage.setItem(TENANT_TOKEN_KEY, token);
+  } else {
+    sessionStorage.setItem(TENANT_TOKEN_KEY, token);
+  }
+  sessionStorage.setItem(TENANT_PLAN_KEY, plan);
+  params.delete('bootstrapToken');
+  params.delete('bootstrapRemember');
+  params.delete('bootstrapPlan');
+  const qs = params.toString();
+  window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
+  return true;
+}
+
 // ── QR login (desktop app only) ─────────────────────────────────────────
 // Pairs this window with an already-signed-in TRACEMOB phone, the way
 // Discord/WhatsApp Web do it — scan once instead of typing the tenant

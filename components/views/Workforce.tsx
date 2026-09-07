@@ -8,7 +8,8 @@ import { MapPin, Locate, ShieldCheck, ShieldAlert, Save, Plus, Send, Check, X, C
 import { Card } from '../ui/Card';
 import { Wallet } from 'lucide-react';
 import { Language, ChecklistRole, ChecklistEmployee } from '../../types';
-import { traceApi, WorkforceGeofenceSettings, checklistApi, RosterShift, SwapRequest, PayProfile, PayrollPeriod, Payslip } from '../../services/traceApi';
+import { Lock, ShieldQuestion } from 'lucide-react';
+import { traceApi, WorkforceGeofenceSettings, checklistApi, RosterShift, SwapRequest, PayProfile, PayrollPeriod, Payslip, PayrollRule } from '../../services/traceApi';
 
 function tr(lang: Language, ru: string, en: string, uz: string) {
   return lang === 'ru' ? ru : lang === 'uz' ? uz : en;
@@ -60,17 +61,45 @@ function PayrollTab({ lang, onShowToast }: { lang: Language; onShowToast: Props[
   const [periods, setPeriods] = useState<PayrollPeriod[]>([]);
   const [selectedPeriodId, setSelectedPeriodId] = useState('');
   const [payslips, setPayslips] = useState<Payslip[]>([]);
+  const [rules, setRules] = useState<PayrollRule[]>([]);
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
+  const [locking, setLocking] = useState(false);
+
+  const loadPeriods = () => checklistApi.payroll.periods().then(ps => { setPeriods(ps); if (!selectedPeriodId && ps[0]) setSelectedPeriodId(ps[0].id); }).catch(() => {});
 
   useEffect(() => {
     checklistApi.employees.list().then(setEmployees).catch(() => {});
     checklistApi.roles.list().then(setRoles).catch(() => {});
-    checklistApi.payroll.periods().then(ps => { setPeriods(ps); if (ps[0]) setSelectedPeriodId(ps[0].id); }).catch(() => {});
+    checklistApi.payroll.rules().then(setRules).catch(() => {});
+    loadPeriods();
   }, []);
 
   useEffect(() => {
     if (selectedPeriodId) checklistApi.payroll.payslips(selectedPeriodId).then(setPayslips).catch(() => {});
   }, [selectedPeriodId]);
+
+  const toggleRule = async (type: 'late_penalty' | 'missed_checklist_penalty', amount: number) => {
+    const existing = rules.find(r => r.type === type);
+    if (existing) {
+      const updated = await checklistApi.payroll.updateRule(existing.id, { active: !existing.active });
+      setRules(prev => prev.map(r => r.id === updated.id ? updated : r));
+    } else {
+      const created = await checklistApi.payroll.createRule({ type, amount });
+      setRules(prev => [...prev, created]);
+    }
+  };
+
+  const lockPeriod = async () => {
+    if (!selectedPeriodId) return;
+    if (!confirm(tr(lang, 'Заблокировать период? Это заморозит все расчёты.', 'Lock this period? This freezes every payslip in it.', 'Bu davrni bloklaysizmi? Bu barcha hisob-kitoblarni muzlatadi.'))) return;
+    setLocking(true);
+    try {
+      await checklistApi.payroll.lockPeriod(selectedPeriodId);
+      await Promise.all([loadPeriods(), checklistApi.payroll.payslips(selectedPeriodId).then(setPayslips)]);
+      onShowToast(tr(lang, 'Период заблокирован', 'Period locked', 'Davr bloklandi'), 'success');
+    } catch { onShowToast(tr(lang, 'Не удалось заблокировать', 'Failed to lock', "Bloklab bo'lmadi"), 'error'); }
+    finally { setLocking(false); }
+  };
 
   const roleName = (id: string) => roles.find(r => r.id === id)?.name ?? '—';
   const selectedPeriod = periods.find(p => p.id === selectedPeriodId);
@@ -88,8 +117,37 @@ function PayrollTab({ lang, onShowToast }: { lang: Language; onShowToast: Props[
     );
   }
 
+  const lateRule = rules.find(r => r.type === 'late_penalty');
+  const missedRule = rules.find(r => r.type === 'missed_checklist_penalty');
+
   return (
     <div className="space-y-5">
+      <Card>
+        <h3 className="text-[15px] font-semibold text-text tracking-tight mb-3 flex items-center gap-2">
+          <ShieldQuestion size={16} /> {tr(lang, 'Автоматические штрафы', 'Automatic penalties', 'Avtomatik jarimalar')}
+        </h3>
+        <div className="space-y-2">
+          <button onClick={() => toggleRule('late_penalty', 10000)} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg bg-background border border-border text-left">
+            <div>
+              <p className="text-[13px] font-medium text-text">{tr(lang, 'Опоздание', 'Lateness', 'Kechikish')}</p>
+              <p className="text-[11px] text-muted mt-0.5">{tr(lang, 'Штраф за опоздание относительно расписания', 'Penalty for clocking in late against the roster', "Jadvalga nisbatan kechikish uchun jarima")}</p>
+            </div>
+            <span className={`shrink-0 w-11 h-6 rounded-full transition-colors relative ${lateRule?.active ? 'bg-primary' : 'bg-card-hover'}`}>
+              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${lateRule?.active ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+            </span>
+          </button>
+          <button onClick={() => toggleRule('missed_checklist_penalty', 25000)} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg bg-background border border-border text-left">
+            <div>
+              <p className="text-[13px] font-medium text-text">{tr(lang, 'Незавершённый чек-лист', 'Missed checklist', "Bajarilmagan cheklist")}</p>
+              <p className="text-[11px] text-muted mt-0.5">{tr(lang, 'Если менеджер закрыл смену вручную с невыполненным чек-листом', "If a manager closes a shift with a required checklist incomplete", "Agar menejer talab qilingan cheklist bajarilmagan holda smenani yopsa")}</p>
+            </div>
+            <span className={`shrink-0 w-11 h-6 rounded-full transition-colors relative ${missedRule?.active ? 'bg-primary' : 'bg-card-hover'}`}>
+              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${missedRule?.active ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+            </span>
+          </button>
+        </div>
+      </Card>
+
       <Card>
         <h3 className="text-[15px] font-semibold text-text tracking-tight mb-3 flex items-center gap-2">
           <Wallet size={16} /> {tr(lang, 'Ставки сотрудников', 'Employee pay rates', "Xodimlar ish haqi")}
@@ -125,9 +183,20 @@ function PayrollTab({ lang, onShowToast }: { lang: Language; onShowToast: Props[
           <p className="text-[13px] text-muted">{tr(lang, 'Периодов пока нет — появятся после первой закрытой смены', 'No periods yet — one appears after the first closed shift', "Hozircha davr yo'q — birinchi yopilgan smenadan keyin paydo bo'ladi")}</p>
         ) : (
           <>
-            <div className="flex items-baseline justify-between mb-3">
-              <span className="text-[13px] text-muted">{tr(lang, 'Итого за период', 'Period total', "Davr uchun jami")}</span>
-              <span className="text-[22px] font-display font-bold text-text tabular-nums">{totalForPeriod.toLocaleString()} {payslips[0]?.currency ?? ''}</span>
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+              <div>
+                <span className="text-[13px] text-muted block">{tr(lang, 'Итого за период', 'Period total', "Davr uchun jami")}</span>
+                <span className="text-[22px] font-display font-bold text-text tabular-nums">{totalForPeriod.toLocaleString()} {payslips[0]?.currency ?? ''}</span>
+              </div>
+              {selectedPeriod.status === 'locked' ? (
+                <span className="px-3 py-1.5 rounded-lg bg-card-hover text-[12px] font-semibold text-muted flex items-center gap-1.5">
+                  <Lock size={13} /> {tr(lang, 'Заблокирован', 'Locked', 'Bloklangan')}
+                </span>
+              ) : (
+                <button onClick={lockPeriod} disabled={locking || payslips.length === 0} className="px-3 py-1.5 rounded-lg bg-card border border-border text-[12px] font-semibold flex items-center gap-1.5 text-text disabled:opacity-50">
+                  <Lock size={13} /> {locking ? tr(lang, 'Блокировка…', 'Locking…', 'Bloklanmoqda…') : tr(lang, 'Заблокировать период', 'Lock period', 'Davrni bloklash')}
+                </button>
+              )}
             </div>
             <div className="space-y-1.5">
               {payslips.map(p => (
@@ -158,6 +227,10 @@ function PayProfileEditor({ lang, employee, onShowToast, onDone }: {
   }>({ monthlyAmount: 0, dailyAmount: 0, perShiftAmount: 0, hourlyRate: 0, overtimeMultiplier: 1.5, overtimeAfterMinutes: 480, unpaidBreakMinutes: 0, minShiftMinutes: 0 });
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [adjKind, setAdjKind] = useState<'bonus' | 'penalty'>('bonus');
+  const [adjAmount, setAdjAmount] = useState(0);
+  const [adjReason, setAdjReason] = useState('');
+  const [adjBusy, setAdjBusy] = useState(false);
 
   useEffect(() => {
     checklistApi.payroll.getPayProfile(employee.id).then(p => {
@@ -190,6 +263,17 @@ function PayProfileEditor({ lang, employee, onShowToast, onDone }: {
     finally { setBusy(false); }
   };
 
+  const addAdjustment = async () => {
+    if (!adjAmount || adjAmount <= 0) return;
+    setAdjBusy(true);
+    try {
+      await checklistApi.payroll.addAdjustment(employee.id, { kind: adjKind, amount: adjAmount, reason: adjReason.trim() || undefined });
+      setAdjAmount(0); setAdjReason('');
+      onShowToast(tr(lang, 'Начисление добавлено', 'Adjustment added', "Hisoblash qo'shildi"), 'success');
+    } catch { onShowToast(tr(lang, 'Не удалось добавить (возможно, период заблокирован)', 'Failed to add (period may be locked)', "Qo'shib bo'lmadi (davr bloklangan bo'lishi mumkin)"), 'error'); }
+    finally { setAdjBusy(false); }
+  };
+
   if (!loaded) return <Card><p className="text-[13px] text-muted">{tr(lang, 'Загрузка...', 'Loading...', 'Yuklanmoqda...')}</p></Card>;
 
   return (
@@ -219,6 +303,21 @@ function PayProfileEditor({ lang, employee, onShowToast, onDone }: {
       <button onClick={save} disabled={busy} className="w-full mt-4 px-3.5 py-2.5 rounded-lg bg-primary text-white text-[13px] font-semibold disabled:opacity-50">
         {busy ? tr(lang, 'Сохранение…', 'Saving…', 'Saqlanmoqda…') : tr(lang, 'Сохранить', 'Save', 'Saqlash')}
       </button>
+
+      <div className="mt-6 pt-4 border-t border-border">
+        <h4 className="text-[13px] font-semibold text-text mb-2">{tr(lang, 'Разовое начисление', 'One-off adjustment', "Bir martalik hisoblash")}</h4>
+        <div className="grid sm:grid-cols-2 gap-2 mb-2">
+          <select value={adjKind} onChange={e => setAdjKind(e.target.value as 'bonus' | 'penalty')} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text">
+            <option value="bonus">{tr(lang, 'Бонус', 'Bonus', 'Bonus')}</option>
+            <option value="penalty">{tr(lang, 'Штраф', 'Penalty', 'Jarima')}</option>
+          </select>
+          <input type="number" value={adjAmount || ''} onChange={e => setAdjAmount(Number(e.target.value) || 0)} placeholder={tr(lang, 'Сумма', 'Amount', "Summa")} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text" />
+        </div>
+        <input value={adjReason} onChange={e => setAdjReason(e.target.value)} placeholder={tr(lang, 'Причина', 'Reason', 'Sabab')} className="w-full px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text mb-2" />
+        <button onClick={addAdjustment} disabled={adjBusy || !adjAmount} className="px-3.5 py-2 rounded-lg bg-card border border-border text-[13px] font-semibold text-text disabled:opacity-50">
+          {adjBusy ? tr(lang, 'Добавление…', 'Adding…', "Qo'shilmoqda…") : tr(lang, 'Добавить', 'Add', "Qo'shish")}
+        </button>
+      </div>
     </Card>
   );
 }

@@ -2883,6 +2883,13 @@ export const checklistApi = {
     recompute: (employeeId: string) => post(`/checklist/payroll/employees/${employeeId}/recompute`, {}),
     periods: () => checkedFetch<PayrollPeriod[]>('/checklist/payroll/periods'),
     payslips: (periodId: string) => checkedFetch<Payslip[]>(`/checklist/payroll/periods/${periodId}/payslips`),
+    lockPeriod: (periodId: string) => post<{ locked: boolean; payslipCount: number }>(`/checklist/payroll/periods/${periodId}/lock`, {}),
+    rules: () => checkedFetch<PayrollRule[]>('/checklist/payroll/rules'),
+    createRule: (data: { type: string; amount: number; graceMinutes?: number }) => post<PayrollRule>('/checklist/payroll/rules', data),
+    updateRule: (id: string, data: Partial<{ amount: number; graceMinutes: number; active: boolean }>) =>
+      checkedFetch<PayrollRule>(`/checklist/payroll/rules/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
+    addAdjustment: (employeeId: string, data: { kind: 'bonus' | 'penalty'; amount: number; reason?: string }) =>
+      post(`/checklist/payroll/employees/${employeeId}/adjustments`, data),
   },
 };
 
@@ -2919,6 +2926,14 @@ export interface PayrollPeriod {
   starts_on: string;
   ends_on: string;
   status: 'open' | 'review' | 'locked';
+}
+
+export interface PayrollRule {
+  id: string;
+  type: 'late_penalty' | 'missed_checklist_penalty';
+  amount: string;
+  grace_minutes: number;
+  active: boolean;
 }
 
 export interface Payslip {

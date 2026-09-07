@@ -2874,6 +2874,16 @@ export const checklistApi = {
     approveSwap: (id: string) => post<SwapRequest>(`/checklist/roster/swap-requests/${id}/approve`, {}),
     rejectSwap: (id: string) => post<SwapRequest>(`/checklist/roster/swap-requests/${id}/reject`, {}),
   },
+  payroll: {
+    getPayProfile: (employeeId: string) => checkedFetch<PayProfile | null>(`/checklist/payroll/employees/${employeeId}/pay-profile`),
+    savePayProfile: (employeeId: string, data: Partial<{
+      monthlyAmount: number; dailyAmount: number; perShiftAmount: number; hourlyRate: number;
+      overtimeMultiplier: number; overtimeAfterMinutes: number; unpaidBreakMinutes: number; minShiftMinutes: number;
+    }>) => checkedFetch<PayProfile>(`/checklist/payroll/employees/${employeeId}/pay-profile`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
+    recompute: (employeeId: string) => post(`/checklist/payroll/employees/${employeeId}/recompute`, {}),
+    periods: () => checkedFetch<PayrollPeriod[]>('/checklist/payroll/periods'),
+    payslips: (periodId: string) => checkedFetch<Payslip[]>(`/checklist/payroll/periods/${periodId}/payslips`),
+  },
 };
 
 export interface RosterShift {
@@ -2887,6 +2897,38 @@ export interface RosterShift {
   status: 'draft' | 'published' | 'cancelled';
   employee_name?: string;
   role_name?: string;
+}
+
+export interface PayProfile {
+  id: string;
+  employee_id: string;
+  monthly_amount: string;
+  daily_amount: string;
+  per_shift_amount: string;
+  hourly_rate: string;
+  overtime_multiplier: string;
+  overtime_after_minutes: number;
+  unpaid_break_minutes: number;
+  min_shift_minutes: number;
+  effective_from: string;
+}
+
+export interface PayrollPeriod {
+  id: string;
+  period_type: string;
+  starts_on: string;
+  ends_on: string;
+  status: 'open' | 'review' | 'locked';
+}
+
+export interface Payslip {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  role_name: string;
+  total_amount: string;
+  currency: string;
+  computed_at: string;
 }
 
 export interface SwapRequest {

@@ -6,14 +6,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MapPin, Locate, ShieldCheck, ShieldAlert, Save, Plus, Send, Check, X, Calendar } from 'lucide-react';
 import { Card } from '../ui/Card';
+import { Wallet } from 'lucide-react';
 import { Language, ChecklistRole, ChecklistEmployee } from '../../types';
-import { traceApi, WorkforceGeofenceSettings, checklistApi, RosterShift, SwapRequest } from '../../services/traceApi';
+import { traceApi, WorkforceGeofenceSettings, checklistApi, RosterShift, SwapRequest, PayProfile, PayrollPeriod, Payslip } from '../../services/traceApi';
 
 function tr(lang: Language, ru: string, en: string, uz: string) {
   return lang === 'ru' ? ru : lang === 'uz' ? uz : en;
 }
 
-type Tab = 'geofence' | 'roster';
+type Tab = 'geofence' | 'roster' | 'payroll';
 
 interface Props {
   lang: Language;
@@ -29,6 +30,7 @@ export function Workforce({ lang, onShowToast }: Props) {
         {([
           { id: 'geofence' as Tab, label: tr(lang, 'Геолокация', 'Geofence', 'Geolokatsiya') },
           { id: 'roster' as Tab, label: tr(lang, 'Расписание', 'Roster', 'Jadval') },
+          { id: 'payroll' as Tab, label: tr(lang, 'Зарплата', 'Payroll', 'Ish haqi') },
         ]).map(t => (
           <button
             key={t.id}
@@ -44,6 +46,194 @@ export function Workforce({ lang, onShowToast }: Props) {
 
       {tab === 'geofence' && <GeofenceTab lang={lang} onShowToast={onShowToast} />}
       {tab === 'roster' && <RosterTab lang={lang} onShowToast={onShowToast} />}
+      {tab === 'payroll' && <PayrollTab lang={lang} onShowToast={onShowToast} />}
+    </div>
+  );
+}
+
+// ── Payroll ──────────────────────────────────────────────────────────────
+// Pay-profile editor (four additive inputs, per plan §1.4) + a period
+// review table. No lock button here yet — that's Phase 7.
+function PayrollTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['onShowToast'] }) {
+  const [employees, setEmployees] = useState<ChecklistEmployee[]>([]);
+  const [roles, setRoles] = useState<ChecklistRole[]>([]);
+  const [periods, setPeriods] = useState<PayrollPeriod[]>([]);
+  const [selectedPeriodId, setSelectedPeriodId] = useState('');
+  const [payslips, setPayslips] = useState<Payslip[]>([]);
+  const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
+
+  useEffect(() => {
+    checklistApi.employees.list().then(setEmployees).catch(() => {});
+    checklistApi.roles.list().then(setRoles).catch(() => {});
+    checklistApi.payroll.periods().then(ps => { setPeriods(ps); if (ps[0]) setSelectedPeriodId(ps[0].id); }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (selectedPeriodId) checklistApi.payroll.payslips(selectedPeriodId).then(setPayslips).catch(() => {});
+  }, [selectedPeriodId]);
+
+  const roleName = (id: string) => roles.find(r => r.id === id)?.name ?? '—';
+  const selectedPeriod = periods.find(p => p.id === selectedPeriodId);
+  const totalForPeriod = payslips.reduce((sum, p) => sum + Number(p.total_amount), 0);
+
+  if (editingEmployeeId) {
+    const employee = employees.find(e => e.id === editingEmployeeId)!;
+    return (
+      <PayProfileEditor
+        lang={lang}
+        employee={employee}
+        onShowToast={onShowToast}
+        onDone={() => { setEditingEmployeeId(null); if (selectedPeriodId) checklistApi.payroll.payslips(selectedPeriodId).then(setPayslips); }}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <Card>
+        <h3 className="text-[15px] font-semibold text-text tracking-tight mb-3 flex items-center gap-2">
+          <Wallet size={16} /> {tr(lang, 'Ставки сотрудников', 'Employee pay rates', "Xodimlar ish haqi")}
+        </h3>
+        <div className="space-y-1.5">
+          {employees.map(e => (
+            <button key={e.id} onClick={() => setEditingEmployeeId(e.id)} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg bg-background border border-border text-left hover:border-primary/40">
+              <div>
+                <p className="text-[13px] font-medium text-text">{e.name}</p>
+                <p className="text-[11px] text-muted mt-0.5">{roleName(e.role_id)}</p>
+              </div>
+              <span className="text-[12px] text-primary font-semibold">{tr(lang, 'Настроить', 'Configure', 'Sozlash')}</span>
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      <Card>
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+          <h3 className="text-[15px] font-semibold text-text tracking-tight">{tr(lang, 'Расчётный период', 'Payroll period', 'Hisob davri')}</h3>
+          {periods.length > 0 && (
+            <select value={selectedPeriodId} onChange={e => setSelectedPeriodId(e.target.value)} className="px-3 py-1.5 rounded-lg border border-border bg-background text-[12px] text-text">
+              {periods.map(p => (
+                <option key={p.id} value={p.id}>
+                  {new Date(p.starts_on).toLocaleDateString()} – {new Date(p.ends_on).toLocaleDateString()}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {!selectedPeriod ? (
+          <p className="text-[13px] text-muted">{tr(lang, 'Периодов пока нет — появятся после первой закрытой смены', 'No periods yet — one appears after the first closed shift', "Hozircha davr yo'q — birinchi yopilgan smenadan keyin paydo bo'ladi")}</p>
+        ) : (
+          <>
+            <div className="flex items-baseline justify-between mb-3">
+              <span className="text-[13px] text-muted">{tr(lang, 'Итого за период', 'Period total', "Davr uchun jami")}</span>
+              <span className="text-[22px] font-display font-bold text-text tabular-nums">{totalForPeriod.toLocaleString()} {payslips[0]?.currency ?? ''}</span>
+            </div>
+            <div className="space-y-1.5">
+              {payslips.map(p => (
+                <div key={p.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-background border border-border">
+                  <div>
+                    <span className="text-[13px] text-text">{p.employee_name}</span>
+                    <span className="text-[11px] text-muted ml-2">{p.role_name}</span>
+                  </div>
+                  <span className="text-[13px] font-semibold text-text tabular-nums">{Number(p.total_amount).toLocaleString()} {p.currency}</span>
+                </div>
+              ))}
+              {payslips.length === 0 && <p className="text-[13px] text-muted">{tr(lang, 'Нет данных за этот период', 'No payslips for this period', "Bu davr uchun ma'lumot yo'q")}</p>}
+            </div>
+          </>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function PayProfileEditor({ lang, employee, onShowToast, onDone }: {
+  lang: Language; employee: ChecklistEmployee;
+  onShowToast: Props['onShowToast']; onDone: () => void;
+}) {
+  const [profile, setProfile] = useState<{
+    monthlyAmount: number; dailyAmount: number; perShiftAmount: number; hourlyRate: number;
+    overtimeMultiplier: number; overtimeAfterMinutes: number; unpaidBreakMinutes: number; minShiftMinutes: number;
+  }>({ monthlyAmount: 0, dailyAmount: 0, perShiftAmount: 0, hourlyRate: 0, overtimeMultiplier: 1.5, overtimeAfterMinutes: 480, unpaidBreakMinutes: 0, minShiftMinutes: 0 });
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    checklistApi.payroll.getPayProfile(employee.id).then(p => {
+      if (p) {
+        setProfile({
+          monthlyAmount: Number(p.monthly_amount), dailyAmount: Number(p.daily_amount),
+          perShiftAmount: Number(p.per_shift_amount), hourlyRate: Number(p.hourly_rate),
+          overtimeMultiplier: Number(p.overtime_multiplier), overtimeAfterMinutes: p.overtime_after_minutes,
+          unpaidBreakMinutes: p.unpaid_break_minutes, minShiftMinutes: p.min_shift_minutes,
+        });
+      }
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+  }, [employee.id]);
+
+  const update = (key: keyof typeof profile, value: number) => setProfile(p => ({ ...p, [key]: value }));
+
+  const estimatedMonthly = profile.monthlyAmount
+    + profile.dailyAmount * 22
+    + profile.perShiftAmount * 22
+    + profile.hourlyRate * 8 * 22;
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await checklistApi.payroll.savePayProfile(employee.id, profile);
+      onShowToast(tr(lang, 'Ставка сохранена', 'Pay rate saved', "Stavka saqlandi"), 'success');
+      onDone();
+    } catch { onShowToast(tr(lang, 'Не удалось сохранить', 'Failed to save', "Saqlab bo'lmadi"), 'error'); }
+    finally { setBusy(false); }
+  };
+
+  if (!loaded) return <Card><p className="text-[13px] text-muted">{tr(lang, 'Загрузка...', 'Loading...', 'Yuklanmoqda...')}</p></Card>;
+
+  return (
+    <Card>
+      <button onClick={onDone} className="text-[13px] text-muted hover:text-text mb-4">{tr(lang, '← Назад', '← Back', '← Orqaga')}</button>
+      <h3 className="text-[15px] font-semibold text-text tracking-tight mb-1">{employee.name}</h3>
+      <p className="text-[12px] text-muted mb-4">{tr(lang, 'Типы оплаты складываются — заполните только нужные поля', 'Salary types are additive — fill in only what applies', "To'lov turlari qo'shiladi — faqat kerakli maydonlarni to'ldiring")}</p>
+
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label={tr(lang, 'Фикс. в месяц', 'Fixed monthly', 'Oylik fiks')} value={profile.monthlyAmount} onChange={v => update('monthlyAmount', v)} />
+        <Field label={tr(lang, 'За день', 'Per day', 'Kunlik')} value={profile.dailyAmount} onChange={v => update('dailyAmount', v)} />
+        <Field label={tr(lang, 'За смену', 'Per shift', 'Smena uchun')} value={profile.perShiftAmount} onChange={v => update('perShiftAmount', v)} />
+        <Field label={tr(lang, 'За час', 'Per hour', 'Soatlik')} value={profile.hourlyRate} onChange={v => update('hourlyRate', v)} />
+      </div>
+
+      <div className="grid sm:grid-cols-3 gap-3 mt-3">
+        <Field label={tr(lang, 'Множитель сверхурочных', 'Overtime multiplier', "Qo'shimcha ish koeffitsienti")} value={profile.overtimeMultiplier} onChange={v => update('overtimeMultiplier', v)} step={0.1} />
+        <Field label={tr(lang, 'После, мин', 'Overtime after, min', "Necha daqiqadan keyin")} value={profile.overtimeAfterMinutes} onChange={v => update('overtimeAfterMinutes', v)} />
+        <Field label={tr(lang, 'Мин. смена, мин', 'Min shift, min', "Min smena, daqiqa")} value={profile.minShiftMinutes} onChange={v => update('minShiftMinutes', v)} />
+      </div>
+
+      <div className="mt-4 p-3 rounded-lg bg-primary/10 flex items-baseline justify-between">
+        <span className="text-[12px] text-muted">{tr(lang, 'Ориентировочно в месяц (22 смены × 8ч)', 'Estimated monthly (22 shifts × 8h)', "Taxminiy oylik (22 smena × 8soat)")}</span>
+        <span className="text-[16px] font-bold text-text tabular-nums">{estimatedMonthly.toLocaleString()}</span>
+      </div>
+
+      <button onClick={save} disabled={busy} className="w-full mt-4 px-3.5 py-2.5 rounded-lg bg-primary text-white text-[13px] font-semibold disabled:opacity-50">
+        {busy ? tr(lang, 'Сохранение…', 'Saving…', 'Saqlanmoqda…') : tr(lang, 'Сохранить', 'Save', 'Saqlash')}
+      </button>
+    </Card>
+  );
+}
+
+function Field({ label, value, onChange, step = 1 }: { label: string; value: number; onChange: (v: number) => void; step?: number }) {
+  return (
+    <div>
+      <label className="text-[11px] text-muted mb-1 block">{label}</label>
+      <input
+        type="number"
+        step={step}
+        value={value}
+        onChange={e => onChange(Number(e.target.value) || 0)}
+        className="w-full px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text tabular-nums"
+      />
     </div>
   );
 }

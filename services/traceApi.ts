@@ -2533,6 +2533,44 @@ export function clearTenantToken() {
   sessionStorage.removeItem(TENANT_TOKEN_KEY);
 }
 
+// ── QR login (desktop app only) ─────────────────────────────────────────
+// Pairs this window with an already-signed-in TRACEMOB phone, the way
+// Discord/WhatsApp Web do it — scan once instead of typing the tenant
+// password into a shared restaurant PC. See TRACE-BACKEND's
+// /admin/qr-session/* for the session lifecycle (single-use, 3min TTL).
+export interface QrSession {
+  sessionId: string;
+  qrDataUrl: string;
+  expiresAt: number;
+}
+
+export async function createQrSession(): Promise<QrSession | null> {
+  try {
+    const r = await fetch(`${BASE}/admin/qr-session/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subdomain: getSubdomain() }),
+    });
+    const json = await r.json();
+    if (json.ok !== true) return null;
+    return { sessionId: json.sessionId, qrDataUrl: json.qrDataUrl, expiresAt: json.expiresAt };
+  } catch { return null; }
+}
+
+// Polled every couple seconds while the QR is on screen.
+export async function pollQrSession(sessionId: string): Promise<'pending' | 'confirmed' | 'expired'> {
+  try {
+    const r = await fetch(`${BASE}/admin/qr-session/status?sessionId=${encodeURIComponent(sessionId)}`);
+    const json = await r.json();
+    if (json.status === 'confirmed' && json.token) {
+      sessionStorage.setItem(TENANT_PLAN_KEY, json.plan ?? 'pro');
+      sessionStorage.setItem(TENANT_TOKEN_KEY, json.token);
+      return 'confirmed';
+    }
+    return json.status === 'expired' ? 'expired' : 'pending';
+  } catch { return 'pending'; } // network blip — keep polling, don't flash "expired"
+}
+
 // Owner bearer token, wherever App.tsx currently keeps it (localStorage once
 // "remember me" is on, sessionStorage otherwise — see App.tsx's promote/demote
 // on login/logout). Needed for owner-only calls like the Team (staff) CRUD
@@ -2558,6 +2596,14 @@ export function getSubdomain(): string {
 
 export function isAdminSubdomain(): boolean {
   return getSubdomain() === 'admin' || window.location.hostname === 'localhost';
+}
+
+// True only inside the Tauri desktop shell (the exe) — false for every
+// browser tab, including a tenant's own subdomain. Same check the launcher
+// (launcher/index.html) uses to decide whether it can call get_preset_tenant.
+// Anything gated on this must never affect the plain website.
+export function isTauriApp(): boolean {
+  return typeof window !== 'undefined' && !!(window as any).__TAURI__;
 }
 
 export function isManagerPortal(): boolean {

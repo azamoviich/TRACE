@@ -16,7 +16,7 @@ import { Compare } from './components/views/Compare';
 import { Checklists } from './components/views/Checklists';
 import { Globe, Sun, Moon } from 'lucide-react';
 import { TRANSLATIONS, nextLang, tr } from './constants';
-import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos } from './services/traceApi';
+import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos, createQrSession, pollQrSession, QrSession, isTauriApp } from './services/traceApi';
 import { ManagerPortal } from './components/ManagerPortal';
 import { ChecklistManagerPortal } from './components/ChecklistManagerPortal';
 import { EmployeeChecklistPortal } from './components/EmployeeChecklistPortal';
@@ -48,56 +48,184 @@ const Login: React.FC<{ onLogin: (remember: boolean) => void; lang: Language; se
     else setError(tr(lang, 'Неверный логин или пароль', 'Invalid login or password', 'Login yoki parol noto\'g\'ri'));
   };
 
+  // QR login — exe only, real tenants only. Never runs in a plain browser
+  // tab (isTauriApp), so the website's tenant login is untouched by any of
+  // this: no extra requests, no extra UI.
+  const [qrSession, setQrSession] = useState<QrSession | null>(null);
+  const [qrStatus, setQrStatus] = useState<'pending' | 'expired' | 'confirmed'>('pending');
+  const rememberMeRef = React.useRef(rememberMe);
+  rememberMeRef.current = rememberMe;
+
+  useEffect(() => {
+    if (isDemoTenant() || !isTauriApp()) return;
+    let cancelled = false;
+    let pollId: ReturnType<typeof setInterval> | undefined;
+
+    const startSession = async () => {
+      const session = await createQrSession();
+      if (cancelled) return;
+      if (!session) { setTimeout(startSession, 3000); return; } // backend hiccup — keep retrying quietly
+      setQrSession(session);
+      setQrStatus('pending');
+      pollId = setInterval(async () => {
+        const status = await pollQrSession(session.sessionId);
+        if (cancelled) return;
+        if (status === 'confirmed') {
+          setQrStatus('confirmed');
+          clearInterval(pollId);
+          setTimeout(() => onLogin(rememberMeRef.current), 500);
+        } else if (status === 'expired') {
+          setQrStatus('expired');
+          clearInterval(pollId);
+          setTimeout(startSession, 1200);
+        }
+      }, 2000);
+    };
+    startSession();
+
+    return () => { cancelled = true; if (pollId) clearInterval(pollId); };
+  }, []);
+
+  // Plain website (any browser tab, including a tenant's own subdomain) —
+  // exactly the original login, untouched. Only the exe below gets the
+  // redesign + QR pairing.
+  if (!isTauriApp()) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">
+        <div className="absolute top-5 right-5 z-20">
+          <button
+            onClick={() => setLang(nextLang(lang))}
+            className="text-muted hover:text-text flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.15em] glass glass-hover px-3 py-1.5 rounded-full transition-colors"
+          >
+            <Globe size={13} />
+            {lang.toUpperCase()}
+          </button>
+        </div>
+
+        <div className="w-full max-w-[360px] animate-slide-up">
+          <div className="mb-10 text-center">
+            <div className="inline-flex w-14 h-14 rounded-[18px] glass overflow-hidden mb-6 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+              <img src="/trace-logo.png" alt="TRACE" className="w-full h-full object-cover invert dark:invert-0"
+                onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+            </div>
+            <h1 className="font-display text-[28px] font-black text-text tracking-[0.25em] leading-none">TRACE</h1>
+            <p className="text-[9px] uppercase tracking-[0.3em] text-muted mt-2">Restaurant OS</p>
+          </div>
+
+          <div className="glass rounded-[28px] p-7 shadow-[0_24px_64px_rgba(0,0,0,0.45)]">
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="block text-[10px] uppercase tracking-[0.18em] text-muted mb-2 font-medium">{t.login}</label>
+                <input type="text" value={loginVal} onChange={e => setLoginVal(e.target.value)} autoComplete="username"
+                  autoCapitalize="none" autoCorrect="off" spellCheck={false}
+                  className="w-full bg-white/[0.03] border border-white/[0.08] rounded-2xl px-4 py-3 text-text text-[14px] focus:border-primary/60 focus:bg-white/[0.05] focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all" />
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase tracking-[0.18em] text-muted mb-2 font-medium">{t.password}</label>
+                <input type="password" value={passwordVal} onChange={e => setPasswordVal(e.target.value)} autoComplete="current-password"
+                  className="w-full bg-white/[0.03] border border-white/[0.08] rounded-2xl px-4 py-3 text-text text-[14px] focus:border-primary/60 focus:bg-white/[0.05] focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all" />
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)}
+                  className="w-4 h-4 rounded accent-primary cursor-pointer" />
+                <span className="text-[12px] text-muted">{t.remember_me}</span>
+              </label>
+              {error && <p className="text-[12px] text-danger">{error}</p>}
+              <button
+                type="submit" disabled={loading || !loginVal || !passwordVal}
+                className="w-full bg-primary hover:bg-primary-hover text-white font-semibold py-3 rounded-2xl text-[13px] transition-all mt-1 flex items-center justify-center gap-2 disabled:opacity-70 shadow-[0_8px_24px_rgba(255,107,53,0.3)] hover:shadow-[0_8px_28px_rgba(255,107,53,0.45)] active:scale-[0.98]"
+              >
+                {loading
+                  ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  : t.enter_system}
+              </button>
+            </form>
+          </div>
+
+          <p className="text-center text-[11px] text-muted mt-4 leading-relaxed">
+            {t.legal_agree_prefix}{' '}
+            <a href="https://trace-os.uz/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-text">{t.legal_privacy}</a>
+            {' '}{t.legal_and}{' '}
+            <a href="https://trace-os.uz/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-text">{t.legal_terms}</a>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Desktop app (exe) — redesigned login + QR pairing with TRACEMOB below.
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative">
       <div className="absolute top-5 right-5 z-20">
         <button
           onClick={() => setLang(nextLang(lang))}
-          className="text-muted hover:text-text flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.15em] glass glass-hover px-3 py-1.5 rounded-full transition-colors"
+          className="text-muted hover:text-text flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.15em] border border-border hover:border-primary/40 px-3 py-1.5 rounded-full transition-colors"
         >
           <Globe size={13} />
           {lang.toUpperCase()}
         </button>
       </div>
 
-      <div className="w-full max-w-[360px] animate-slide-up">
-        <div className="mb-10 text-center">
-          <div className="inline-flex w-14 h-14 rounded-[18px] glass overflow-hidden mb-6 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-            <img src="/trace-logo.png" alt="TRACE" className="w-full h-full object-cover invert dark:invert-0"
-              onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-          </div>
-          <h1 className="font-display text-[28px] font-black text-text tracking-[0.25em] leading-none">TRACE</h1>
+      <div className={`w-full animate-fade-in ${isDemoTenant() ? 'max-w-[320px]' : 'max-w-[640px]'}`}>
+        <div className="mb-8 text-center">
+          <h1 className="font-display text-[24px] font-black text-text tracking-[0.25em] leading-none">TRACE</h1>
           <p className="text-[9px] uppercase tracking-[0.3em] text-muted mt-2">Restaurant OS</p>
         </div>
 
-        <div className="glass rounded-[28px] p-7 shadow-[0_24px_64px_rgba(0,0,0,0.45)]">
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-[10px] uppercase tracking-[0.18em] text-muted mb-2 font-medium">{t.login}</label>
-              <input type="text" value={loginVal} onChange={e => setLoginVal(e.target.value)} autoComplete="username"
-                autoCapitalize="none" autoCorrect="off" spellCheck={false}
-                className="w-full bg-white/[0.03] border border-white/[0.08] rounded-2xl px-4 py-3 text-text text-[14px] focus:border-primary/60 focus:bg-white/[0.05] focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all" />
+        <div className="flex flex-wrap justify-center gap-6">
+          <div className="bg-card border border-border rounded-xl p-6 w-full max-w-[320px]">
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="block text-[9px] uppercase tracking-[0.18em] text-muted mb-1.5 font-medium">{t.login}</label>
+                <input type="text" value={loginVal} onChange={e => setLoginVal(e.target.value)} autoComplete="username"
+                  autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-text text-[13px] focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all" />
+              </div>
+              <div>
+                <label className="block text-[9px] uppercase tracking-[0.18em] text-muted mb-1.5 font-medium">{t.password}</label>
+                <input type="password" value={passwordVal} onChange={e => setPasswordVal(e.target.value)} autoComplete="current-password"
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-text text-[13px] focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all" />
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)}
+                  className="w-4 h-4 rounded accent-primary cursor-pointer" />
+                <span className="text-[12px] text-muted">{t.remember_me}</span>
+              </label>
+              {error && <p className="text-[12px] text-danger">{error}</p>}
+              <button
+                type="submit" disabled={loading || !loginVal || !passwordVal}
+                className="w-full bg-primary hover:bg-primary-hover text-white font-semibold py-2.5 rounded-lg text-[13px] transition-colors flex items-center justify-center gap-2 disabled:opacity-70"
+              >
+                {loading
+                  ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  : t.enter_system}
+              </button>
+            </form>
+          </div>
+
+          {!isDemoTenant() && (
+            <div className="bg-card border border-border rounded-xl p-6 w-full max-w-[260px] flex flex-col items-center text-center">
+              <p className="text-[9px] uppercase tracking-[0.18em] text-muted mb-4 font-medium">{t.qr_login_title}</p>
+              <div className="w-[168px] h-[168px] rounded-lg bg-white flex items-center justify-center relative overflow-hidden shrink-0 border border-border">
+                {qrSession
+                  ? <img src={qrSession.qrDataUrl} alt="QR" className={`w-full h-full object-contain transition-opacity ${qrStatus === 'pending' ? 'opacity-100' : 'opacity-25'}`} />
+                  : <span className="w-6 h-6 border-2 border-black/10 border-t-black/40 rounded-full animate-spin" />}
+                {qrStatus === 'expired' && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-white/90">
+                    <span className="w-5 h-5 border-2 border-black/10 border-t-black/40 rounded-full animate-spin" />
+                  </div>
+                )}
+                {qrStatus === 'confirmed' && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-white/90">
+                    <span className="text-[12px] font-semibold text-success">✓</span>
+                  </div>
+                )}
+              </div>
+              <p className="text-[11px] text-muted mt-4 leading-relaxed">
+                {qrStatus === 'expired' ? t.qr_login_expired : qrStatus === 'confirmed' ? t.qr_login_confirmed : t.qr_login_hint}
+              </p>
             </div>
-            <div>
-              <label className="block text-[10px] uppercase tracking-[0.18em] text-muted mb-2 font-medium">{t.password}</label>
-              <input type="password" value={passwordVal} onChange={e => setPasswordVal(e.target.value)} autoComplete="current-password"
-                className="w-full bg-white/[0.03] border border-white/[0.08] rounded-2xl px-4 py-3 text-text text-[14px] focus:border-primary/60 focus:bg-white/[0.05] focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all" />
-            </div>
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)}
-                className="w-4 h-4 rounded accent-primary cursor-pointer" />
-              <span className="text-[12px] text-muted">{t.remember_me}</span>
-            </label>
-            {error && <p className="text-[12px] text-danger">{error}</p>}
-            <button
-              type="submit" disabled={loading || !loginVal || !passwordVal}
-              className="w-full bg-primary hover:bg-primary-hover text-white font-semibold py-3 rounded-2xl text-[13px] transition-all mt-1 flex items-center justify-center gap-2 disabled:opacity-70 shadow-[0_8px_24px_rgba(255,107,53,0.3)] hover:shadow-[0_8px_28px_rgba(255,107,53,0.45)] active:scale-[0.98]"
-            >
-              {loading
-                ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                : t.enter_system}
-            </button>
-          </form>
+          )}
         </div>
 
         <p className="text-center text-[11px] text-muted mt-4 leading-relaxed">

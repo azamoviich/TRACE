@@ -2860,7 +2860,47 @@ export const checklistApi = {
   },
   auditLog: (limit?: number) =>
     checkedFetch<import('../types').ChecklistAuditLogEntry[]>(`/checklist/audit-log${limit ? `?limit=${limit}` : ''}`),
+  roster: {
+    list: (from?: string, to?: string) => {
+      const q = new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) }).toString();
+      return checkedFetch<RosterShift[]>(`/checklist/roster${q ? `?${q}` : ''}`);
+    },
+    create: (data: { employeeId: string; roleId: string; plannedStart: string; plannedEnd: string }) =>
+      post<RosterShift>('/checklist/roster', data),
+    publish: (ids: string[]) => post<RosterShift[]>('/checklist/roster/publish', { ids }),
+    cancel: (id: string) => checkedFetch<RosterShift>(`/checklist/roster/${id}`, { method: 'DELETE' }),
+    swapRequests: (status?: string) =>
+      checkedFetch<SwapRequest[]>(`/checklist/roster/swap-requests${status ? `?status=${status}` : ''}`),
+    approveSwap: (id: string) => post<SwapRequest>(`/checklist/roster/swap-requests/${id}/approve`, {}),
+    rejectSwap: (id: string) => post<SwapRequest>(`/checklist/roster/swap-requests/${id}/reject`, {}),
+  },
 };
+
+export interface RosterShift {
+  id: string;
+  tenant_id: string;
+  employee_id: string;
+  original_employee_id: string | null;
+  role_id: string;
+  planned_start: string;
+  planned_end: string;
+  status: 'draft' | 'published' | 'cancelled';
+  employee_name?: string;
+  role_name?: string;
+}
+
+export interface SwapRequest {
+  id: string;
+  roster_shift_id: string;
+  requesting_employee_id: string;
+  coverer_employee_id: string | null;
+  reason: string | null;
+  status: 'open' | 'claimed' | 'approved' | 'rejected' | 'cancelled' | 'expired';
+  planned_start: string;
+  planned_end: string;
+  requesting_employee_name: string;
+  coverer_employee_name: string | null;
+}
 
 // Manager portal surface — same shape as checklistApi.checklists/stats, but
 // explicit tenant+token since the manager isn't on the tenant's real subdomain.

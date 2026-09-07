@@ -4,16 +4,16 @@
 // Roster/Shifts/Swaps/Payroll/Rules tabs land in later phases as more tabs
 // added to the same `Tab` union, following this file's own pattern.
 import React, { useEffect, useRef, useState } from 'react';
-import { MapPin, Locate, ShieldCheck, ShieldAlert, Save } from 'lucide-react';
+import { MapPin, Locate, ShieldCheck, ShieldAlert, Save, Plus, Send, Check, X, Calendar } from 'lucide-react';
 import { Card } from '../ui/Card';
-import { Language } from '../../types';
-import { traceApi, WorkforceGeofenceSettings } from '../../services/traceApi';
+import { Language, ChecklistRole, ChecklistEmployee } from '../../types';
+import { traceApi, WorkforceGeofenceSettings, checklistApi, RosterShift, SwapRequest } from '../../services/traceApi';
 
 function tr(lang: Language, ru: string, en: string, uz: string) {
   return lang === 'ru' ? ru : lang === 'uz' ? uz : en;
 }
 
-type Tab = 'geofence';
+type Tab = 'geofence' | 'roster';
 
 interface Props {
   lang: Language;
@@ -28,6 +28,7 @@ export function Workforce({ lang, onShowToast }: Props) {
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
         {([
           { id: 'geofence' as Tab, label: tr(lang, 'Геолокация', 'Geofence', 'Geolokatsiya') },
+          { id: 'roster' as Tab, label: tr(lang, 'Расписание', 'Roster', 'Jadval') },
         ]).map(t => (
           <button
             key={t.id}
@@ -42,6 +43,176 @@ export function Workforce({ lang, onShowToast }: Props) {
       </div>
 
       {tab === 'geofence' && <GeofenceTab lang={lang} onShowToast={onShowToast} />}
+      {tab === 'roster' && <RosterTab lang={lang} onShowToast={onShowToast} />}
+    </div>
+  );
+}
+
+// ── Roster ───────────────────────────────────────────────────────────────
+// Build-a-week + swap approvals. Keeps the same Card/tr conventions as the
+// rest of this file — a genuine "grid" builder (drag to assign, etc.) is a
+// future pass; this ships create → publish → approve end-to-end.
+function RosterTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['onShowToast'] }) {
+  const [roles, setRoles] = useState<ChecklistRole[]>([]);
+  const [employees, setEmployees] = useState<ChecklistEmployee[]>([]);
+  const [shifts, setShifts] = useState<RosterShift[]>([]);
+  const [swaps, setSwaps] = useState<SwapRequest[]>([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const [roleId, setRoleId] = useState('');
+  const [employeeId, setEmployeeId] = useState('');
+  const [date, setDate] = useState('');
+  const [startTime, setStartTime] = useState('09:00');
+  const [endTime, setEndTime] = useState('17:00');
+
+  const load = () => {
+    checklistApi.roles.list().then(setRoles).catch(() => {});
+    checklistApi.employees.list().then(setEmployees).catch(() => {});
+    checklistApi.roster.list().then(setShifts).catch(() => {});
+    checklistApi.roster.swapRequests('open').then(setSwaps).catch(() => {});
+    checklistApi.roster.swapRequests('claimed').then(claimed => setSwaps(prev => [...prev.filter(s => s.status !== 'claimed'), ...claimed])).catch(() => {});
+  };
+  useEffect(() => { load(); }, []);
+  useEffect(() => { if (!roleId && roles[0]) setRoleId(roles[0].id); }, [roles]);
+  useEffect(() => {
+    const roleEmployees = employees.filter(e => e.role_id === roleId);
+    if (roleEmployees[0] && !roleEmployees.some(e => e.id === employeeId)) setEmployeeId(roleEmployees[0].id);
+  }, [roleId, employees]);
+
+  const roleEmployees = employees.filter(e => e.role_id === roleId);
+  const roleName = (id: string) => roles.find(r => r.id === id)?.name ?? '—';
+  const employeeName = (id: string) => employees.find(e => e.id === id)?.name ?? '—';
+
+  const addShift = async () => {
+    if (!employeeId || !roleId || !date) {
+      onShowToast(tr(lang, 'Укажите дату, роль и сотрудника', 'Enter a date, role and employee', "Sana, rol va xodimni kiriting"), 'error');
+      return;
+    }
+    setBusy(true);
+    try {
+      const plannedStart = new Date(`${date}T${startTime}:00`).toISOString();
+      const plannedEnd = new Date(`${date}T${endTime}:00`).toISOString();
+      const created = await checklistApi.roster.create({ employeeId, roleId, plannedStart, plannedEnd });
+      await checklistApi.roster.publish([created.id]);
+      setShowAdd(false);
+      load();
+      onShowToast(tr(lang, 'Смена опубликована', 'Shift published', 'Smena e\'lon qilindi'), 'success');
+    } catch { onShowToast(tr(lang, 'Не удалось создать смену', 'Failed to create shift', "Smena yaratib bo'lmadi"), 'error'); }
+    finally { setBusy(false); }
+  };
+
+  const cancelShift = async (id: string) => {
+    try { await checklistApi.roster.cancel(id); load(); } catch { onShowToast(tr(lang, 'Не удалось отменить', 'Failed to cancel', "Bekor qilib bo'lmadi"), 'error'); }
+  };
+
+  const approveSwap = async (id: string) => {
+    try { await checklistApi.roster.approveSwap(id); load(); onShowToast(tr(lang, 'Замена одобрена', 'Swap approved', 'Almashtirish tasdiqlandi'), 'success'); }
+    catch { onShowToast(tr(lang, 'Нужен исполнитель — дождитесь отклика', 'Needs a claimer first — wait for someone to volunteer', "Avval kimdir javob berishini kuting"), 'error'); }
+  };
+  const rejectSwap = async (id: string) => {
+    try { await checklistApi.roster.rejectSwap(id); load(); }
+    catch { onShowToast(tr(lang, 'Не удалось отклонить', 'Failed to reject', "Rad etib bo'lmadi"), 'error'); }
+  };
+
+  const upcoming = shifts.filter(s => s.status === 'published' && new Date(s.planned_end) > new Date()).sort((a, b) => a.planned_start.localeCompare(b.planned_start));
+
+  return (
+    <div className="space-y-5">
+      <Card>
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+          <h3 className="text-[15px] font-semibold text-text tracking-tight flex items-center gap-2">
+            <Calendar size={16} /> {tr(lang, 'Расписание', 'Roster', 'Jadval')}
+          </h3>
+          <button onClick={() => setShowAdd(v => !v)} className="px-3 py-1.5 rounded-lg bg-primary text-white text-[12px] font-semibold flex items-center gap-1.5">
+            <Plus size={14} /> {tr(lang, 'Добавить смену', 'Add shift', "Smena qo'shish")}
+          </button>
+        </div>
+
+        {showAdd && (
+          <div className="mt-3 mb-4 p-3.5 rounded-xl border border-border bg-background space-y-2">
+            <div className="grid sm:grid-cols-2 gap-2">
+              <select value={roleId} onChange={e => setRoleId(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text">
+                {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+              <select value={employeeId} onChange={e => setEmployeeId(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text">
+                {roleEmployees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+            </div>
+            <div className="grid sm:grid-cols-3 gap-2">
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
+              <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
+              <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <button onClick={addShift} disabled={busy} className="px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold flex items-center gap-1.5 disabled:opacity-50">
+                <Send size={14} /> {tr(lang, 'Опубликовать', 'Publish', "E'lon qilish")}
+              </button>
+              <button onClick={() => setShowAdd(false)} className="px-3.5 py-2 rounded-lg bg-card border border-border text-muted text-[13px] font-medium">
+                {tr(lang, 'Отмена', 'Cancel', 'Bekor qilish')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {upcoming.length === 0 ? (
+          <p className="text-[13px] text-muted">{tr(lang, 'Смены не запланированы', 'No shifts scheduled', "Smenalar rejalashtirilmagan")}</p>
+        ) : (
+          <div className="space-y-1.5">
+            {upcoming.map(s => (
+              <div key={s.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-background border border-border">
+                <div>
+                  <span className="text-[13px] text-text font-medium">{s.employee_name}</span>
+                  <span className="text-[11px] text-muted ml-2">{s.role_name}</span>
+                  <p className="text-[11px] text-muted mt-0.5">
+                    {new Date(s.planned_start).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    {' – '}
+                    {new Date(s.planned_end).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+                <button onClick={() => cancelShift(s.id)} className="text-red-500 hover:text-red-600 text-[11px] font-semibold">
+                  {tr(lang, 'Отменить', 'Cancel', 'Bekor qilish')}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <h3 className="text-[15px] font-semibold text-text tracking-tight mb-3">{tr(lang, 'Запросы на замену', 'Swap requests', "Almashtirish so'rovlari")}</h3>
+        {swaps.length === 0 ? (
+          <p className="text-[13px] text-muted">{tr(lang, 'Нет активных запросов', 'No active requests', "Faol so'rovlar yo'q")}</p>
+        ) : (
+          <div className="space-y-1.5">
+            {swaps.map(s => (
+              <div key={s.id} className="p-3 rounded-lg bg-background border border-border space-y-1.5">
+                <p className="text-[13px] text-text">
+                  <span className="font-medium">{s.requesting_employee_name}</span>{' '}
+                  {tr(lang, 'просит замену на', 'wants coverage for', 'uchun almashtirish so\'ramoqda')}{' '}
+                  {new Date(s.planned_start).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </p>
+                {s.reason && <p className="text-[11px] text-muted">{s.reason}</p>}
+                <p className="text-[11px] text-muted">
+                  {s.status === 'claimed'
+                    ? tr(lang, `Готов выйти: ${s.coverer_employee_name}`, `Volunteered: ${s.coverer_employee_name}`, `Tayyor: ${s.coverer_employee_name}`)
+                    : tr(lang, 'Ожидает желающего', 'Waiting for a volunteer', "Ko'ngilli kutilmoqda")}
+                </p>
+                {s.status === 'claimed' && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <button onClick={() => approveSwap(s.id)} className="px-2.5 py-1.5 rounded-lg bg-green-500/10 text-green-600 text-[12px] font-semibold flex items-center gap-1">
+                      <Check size={13} /> {tr(lang, 'Одобрить', 'Approve', 'Tasdiqlash')}
+                    </button>
+                    <button onClick={() => rejectSwap(s.id)} className="px-2.5 py-1.5 rounded-lg bg-red-500/10 text-red-600 text-[12px] font-semibold flex items-center gap-1">
+                      <X size={13} /> {tr(lang, 'Отклонить', 'Reject', 'Rad etish')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

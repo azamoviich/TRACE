@@ -9,8 +9,15 @@
   * { box-sizing: border-box; }
   body {
     margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    background: #F7F5F2; color: #1A1A1A; font-family: system-ui, sans-serif; padding: 16px;
+    background: #F7F5F2; color: #1A1A1A; font-family: system-ui, sans-serif; padding: 16px; position: relative;
   }
+  .lang-btn {
+    position: absolute; top: 20px; right: 20px; display: flex; align-items: center; gap: 6px;
+    background: none; width: auto; padding: 6px 12px; border-radius: 999px; border: 1px solid #E5E2DD;
+    color: #5F5F5F; font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.15em;
+    cursor: pointer; font-family: inherit;
+  }
+  .lang-btn:hover { background: #F7F5F2; border-color: #FF6B35; color: #1A1A1A; }
   .wrap { width: 100%; max-width: 640px; visibility: hidden; }
   .header { text-align: center; margin-bottom: 32px; }
   .header h1 { font-size: 24px; font-weight: 900; letter-spacing: 0.25em; margin: 0; }
@@ -29,6 +36,7 @@
   }
   input[type="text"]:focus, input[type="password"]:focus { outline: none; border-color: #FF6B35; }
   .remember { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; cursor: pointer; user-select: none; }
+  .remember input[type="checkbox"] { accent-color: #FF6B35; width: 15px; height: 15px; cursor: pointer; }
   .remember span { font-size: 12px; color: #5F5F5F; }
   button {
     width: 100%; padding: 11px; border-radius: 8px; border: none;
@@ -57,6 +65,10 @@
 </style>
 </head>
 <body>
+  <button class="lang-btn" id="langBtn">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+    <span id="langLabel">RU</span>
+  </button>
   <div class="wrap" id="wrap">
     <div class="header">
       <h1>TRACE</h1>
@@ -66,40 +78,93 @@
       <div class="card">
         <form id="loginForm">
           <div class="field">
-            <label>Login</label>
+            <label data-i18n="login">Login</label>
             <input type="text" id="login" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" />
           </div>
           <div class="field">
-            <label>Password</label>
+            <label data-i18n="password">Password</label>
             <input type="password" id="password" autocomplete="current-password" />
           </div>
           <label class="remember">
             <input type="checkbox" id="remember" checked />
-            <span>Remember me</span>
+            <span data-i18n="rememberMe">Remember me</span>
           </label>
           <p class="error" id="loginError" style="display:none"></p>
-          <button type="submit" id="loginBtn">Sign In</button>
+          <button type="submit" id="loginBtn" data-i18n="signIn">Sign In</button>
         </form>
-        <p class="manual-toggle" id="manualToggle">Know your restaurant's TRACE address? <a href="#" id="manualLink">Enter it directly</a></p>
+        <p class="manual-toggle" id="manualToggle"><span data-i18n="manualPrompt">Know your restaurant's TRACE address?</span> <a href="#" id="manualLink" data-i18n="manualLink">Enter it directly</a></p>
         <form id="manualForm" style="display:none">
           <div class="field">
-            <label>TRACE address</label>
-            <input type="text" id="manualAddress" placeholder="e.g. benedict" autocapitalize="none" autocorrect="off" spellcheck="false" />
+            <label data-i18n="manualLabel">TRACE address</label>
+            <input type="text" id="manualAddress" data-i18n-placeholder="manualPlaceholder" placeholder="e.g. benedict" autocapitalize="none" autocorrect="off" spellcheck="false" />
           </div>
-          <button type="submit">Continue</button>
+          <button type="submit" data-i18n="continueBtn">Continue</button>
         </form>
       </div>
       <div class="card qr">
-        <p class="qr-title">Sign in via TRACEMOB</p>
+        <p class="qr-title" data-i18n="qrTitle">Sign in via TRACEMOB</p>
         <div class="qr-box" id="qrBox"><div class="spinner"></div></div>
-        <p class="qr-hint" id="qrHint">Open TRACEMOB on your phone and scan the code</p>
+        <p class="qr-hint" id="qrHint" data-i18n="qrHint">Open TRACEMOB on your phone and scan the code</p>
       </div>
     </div>
-    <p class="hint">You only need to do this once on this computer.</p>
+    <p class="hint" data-i18n="onceHint">You only need to do this once on this computer.</p>
   </div>
   <script>
     const BASE = 'https://trace-backend-production-cbce.up.railway.app';
     const KEY = 'trace_desktop_tenant';
+
+    // Same three strings/order as constants.ts (TRANSLATIONS) and nextLang's
+    // ru → en → uz cycle — kept in sync by hand since this launcher is a
+    // static asset with no build step to share that file with.
+    const TR = {
+      ru: {
+        login: 'Войти', password: 'Пароль', rememberMe: 'Запомнить меня', signIn: 'Войти в Систему',
+        qrTitle: 'Вход через TRACEMOB', qrHint: 'Откройте приложение TRACEMOB на телефоне и отсканируйте код',
+        qrExpired: 'Код истёк — обновляем...', qrConfirmed: 'Вход подтверждён',
+        invalidLogin: 'Неверный логин или пароль — или используйте «Ввести вручную» ниже',
+        networkError: 'Не удалось связаться с сервером — попробуйте снова',
+        manualPrompt: 'Знаете адрес своего ресторана?', manualLink: 'Ввести вручную',
+        manualLabel: 'Адрес TRACE', manualPlaceholder: 'например benedict', continueBtn: 'Продолжить',
+        onceHint: 'Это нужно сделать только один раз на этом компьютере.',
+      },
+      en: {
+        login: 'Login', password: 'Password', rememberMe: 'Remember me', signIn: 'Enter System',
+        qrTitle: 'Sign in via TRACEMOB', qrHint: 'Open TRACEMOB on your phone and scan the code',
+        qrExpired: 'Code expired — refreshing...', qrConfirmed: 'Signed in',
+        invalidLogin: 'Invalid login or password — or use "Enter it directly" below',
+        networkError: 'Could not reach the server — try again',
+        manualPrompt: "Know your restaurant's TRACE address?", manualLink: 'Enter it directly',
+        manualLabel: 'TRACE address', manualPlaceholder: 'e.g. benedict', continueBtn: 'Continue',
+        onceHint: 'You only need to do this once on this computer.',
+      },
+      uz: {
+        login: 'Kirish', password: 'Parol', rememberMe: 'Meni eslab qol', signIn: 'Tizimga kirish',
+        qrTitle: 'TRACEMOB orqali kirish', qrHint: 'Telefoningizda TRACEMOB ilovasini oching va kodni skanerlang',
+        qrExpired: 'Kod eskirdi — yangilanmoqda...', qrConfirmed: 'Kirish tasdiqlandi',
+        invalidLogin: "Login yoki parol noto'g'ri — yoki quyidagi «To'g'ridan-to'g'ri kiritish»dan foydalaning",
+        networkError: "Server bilan bog'lanib bo'lmadi — qayta urinib ko'ring",
+        manualPrompt: 'Restoraningiz manzilini bilasizmi?', manualLink: "To'g'ridan-to'g'ri kiritish",
+        manualLabel: 'TRACE manzili', manualPlaceholder: 'masalan benedict', continueBtn: 'Davom etish',
+        onceHint: 'Buni ushbu kompyuterda faqat bir marta bajarish kifoya.',
+      },
+    };
+    const LANG_CYCLE = ['ru', 'en', 'uz'];
+    let lang = localStorage.getItem('trace_lang');
+    if (!LANG_CYCLE.includes(lang)) lang = 'ru';
+
+    function applyLang() {
+      const t = TR[lang];
+      document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t[el.dataset.i18n]; });
+      document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => { el.placeholder = t[el.dataset.i18nPlaceholder]; });
+      document.getElementById('langLabel').textContent = lang.toUpperCase();
+      document.documentElement.lang = lang;
+    }
+    document.getElementById('langBtn').addEventListener('click', () => {
+      lang = LANG_CYCLE[(LANG_CYCLE.indexOf(lang) + 1) % LANG_CYCLE.length];
+      localStorage.setItem('trace_lang', lang);
+      applyLang();
+    });
+    applyLang();
 
     function goToTenant(subdomain, token, plan, remember) {
       localStorage.setItem(KEY, subdomain);
@@ -133,10 +198,12 @@
         // /admin/login can't tell a wrong password apart from "this login
         // isn't unique across tenants" (e.g. two restaurants both still on
         // the admin/123 default) — point at the manual fallback either way.
-        loginError.innerHTML = 'Invalid login or password — or use "Enter it directly" below';
+        loginError.dataset.i18n = 'invalidLogin';
+        loginError.textContent = TR[lang].invalidLogin;
         loginError.style.display = 'block';
       } catch (e) {
-        loginError.textContent = 'Could not reach the server — try again';
+        loginError.dataset.i18n = 'networkError';
+        loginError.textContent = TR[lang].networkError;
         loginError.style.display = 'block';
       } finally {
         loginBtn.disabled = false;
@@ -148,8 +215,16 @@
     const qrHint = document.getElementById('qrHint');
     let qrPollId = null;
 
+    // Keeps qrHint's data-i18n key in sync with whichever message is
+    // showing, so a language toggle mid-flow (e.g. while "expired") still
+    // re-translates it correctly instead of only working before it starts.
+    function setQrHint(key) {
+      qrHint.dataset.i18n = key;
+      qrHint.textContent = TR[lang][key];
+    }
+
     async function startQrSession() {
-      qrHint.textContent = 'Open TRACEMOB on your phone and scan the code';
+      setQrHint('qrHint');
       try {
         const r = await fetch(`${BASE}/admin/qr-session/create`, {
           method: 'POST',
@@ -172,11 +247,11 @@
         const json = await r.json();
         if (json.status === 'confirmed' && json.token && json.subdomain) {
           clearInterval(qrPollId);
-          qrHint.textContent = 'Signed in';
+          setQrHint('qrConfirmed');
           goToTenant(json.subdomain, json.token, json.plan, true); // scanning a phone is trust enough to remember this device
         } else if (json.status === 'expired') {
           clearInterval(qrPollId);
-          qrHint.textContent = 'Code expired — refreshing...';
+          setQrHint('qrExpired');
           qrBox.innerHTML = '<div class="spinner"></div>';
           setTimeout(startQrSession, 1200);
         }

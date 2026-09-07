@@ -150,7 +150,7 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
   const [plans, setPlans] = useState<HallPlan[]>([]);
   const [activeTab, setActiveTab] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState<'now' | 'revenue'>('now');
+  const [mode, setMode] = useState<'now' | 'revenue' | 'duration'>('now');
   const [period, setPeriod] = useState<HeatPeriod>(30);
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -158,6 +158,9 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
   const [revenueRows, setRevenueRows] = useState<{ table: number; revenue: number; orders: number }[]>([]);
   const [revenueLoading, setRevenueLoading] = useState(false);
   const revenueCache = useRef<Map<string, { table: number; revenue: number; orders: number }[]>>(new Map());
+  const [durationRows, setDurationRows] = useState<{ table: number; avgMin: number; visits: number }[]>([]);
+  const [durationLoading, setDurationLoading] = useState(false);
+  const durationCache = useRef<Map<string, { table: number; avgMin: number; visits: number }[]>>(new Map());
 
   useEffect(() => {
     traceApi.halls.list(branchId)
@@ -182,6 +185,18 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
       .finally(() => setRevenueLoading(false));
   }, [mode, effectiveDays, effectiveRange?.from, effectiveRange?.to, branchId]);
 
+  useEffect(() => {
+    if (mode !== 'duration') return;
+    const cacheKey = effectiveRange ? `${effectiveRange.from}:${effectiveRange.to}` : String(effectiveDays);
+    const cached = durationCache.current.get(cacheKey);
+    if (cached) { setDurationRows(cached); return; }
+    setDurationLoading(true);
+    traceApi.operations.tableDurations(effectiveDays, effectiveRange ?? undefined, branchId)
+      .then(rows => { durationCache.current.set(cacheKey, rows); setDurationRows(rows); })
+      .catch(() => setDurationRows([]))
+      .finally(() => setDurationLoading(false));
+  }, [mode, effectiveDays, effectiveRange?.from, effectiveRange?.to, branchId]);
+
   const activePlan = plans[activeTab] ?? plans[0];
 
   // Tables that actually belong to the currently-open hall/floor — a
@@ -201,37 +216,65 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
     return withRevenue.filter(r => activePlanTableNumbers.has(r.table));
   }, [revenueRows, activePlanTableNumbers]);
 
+  // Same scoping for historical occupancy (duration) rows.
+  const scopedDurationRows = useMemo(() => {
+    const withDuration = durationRows.filter(r => r.visits > 0);
+    if (!activePlanTableNumbers) return withDuration;
+    return withDuration.filter(r => activePlanTableNumbers.has(r.table));
+  }, [durationRows, activePlanTableNumbers]);
+
   // Normalize revenue → 0..1 heat per table
   const tableHeat = useMemo(() => {
-    if (mode !== 'revenue' || scopedRevenueRows.length === 0) return undefined;
-    const max = Math.max(...scopedRevenueRows.map(r => r.revenue));
-    return new Map(scopedRevenueRows.map(r => [r.table, max > 0 ? r.revenue / max : 0]));
-  }, [mode, scopedRevenueRows]);
+    if (mode === 'revenue') {
+      if (scopedRevenueRows.length === 0) return undefined;
+      const max = Math.max(...scopedRevenueRows.map(r => r.revenue));
+      return new Map(scopedRevenueRows.map(r => [r.table, max > 0 ? r.revenue / max : 0]));
+    }
+    if (mode === 'duration') {
+      if (scopedDurationRows.length === 0) return undefined;
+      // Intensity is TOTAL occupied time that period (avg minutes per visit
+      // × visit count), not the per-visit average — a table doing 20 short
+      // orders can rack up more real occupied hours than one doing 5 long ones.
+      const totals = scopedDurationRows.map(r => r.avgMin * r.visits);
+      const max = Math.max(...totals);
+      return new Map(scopedDurationRows.map((r, i) => [r.table, max > 0 ? totals[i] / max : 0]));
+    }
+    return undefined;
+  }, [mode, scopedRevenueRows, scopedDurationRows]);
 
   const revenueInfo = useMemo(() => {
     if (mode !== 'revenue' || scopedRevenueRows.length === 0) return undefined;
     return new Map(scopedRevenueRows.map(r => [r.table, { revenue: r.revenue, orders: r.orders }]));
   }, [mode, scopedRevenueRows]);
 
-  // In revenue mode, don't just skip the badge — drop the table shape
-  // itself so a mostly-idle hall doesn't render as a grid of blank tables.
-  // Structural elements (walls, bar, entrance) stay for orientation.
+  const durationInfo = useMemo(() => {
+    if (mode !== 'duration' || scopedDurationRows.length === 0) return undefined;
+    return new Map(scopedDurationRows.map(r => [r.table, { avgMin: r.avgMin, visits: r.visits }]));
+  }, [mode, scopedDurationRows]);
+
+  // In revenue/duration mode, don't just skip the badge — drop the table
+  // shape itself so a mostly-idle hall doesn't render as a grid of blank
+  // tables. Structural elements (walls, bar, entrance) stay for orientation.
   const displayPlan = useMemo(() => {
-    if (mode !== 'revenue' || !activePlan) return activePlan;
-    const revenueTableNumbers = new Set(scopedRevenueRows.map(r => r.table));
+    if (mode === 'now' || !activePlan) return activePlan;
+    const coveredTableNumbers = new Set(
+      (mode === 'revenue' ? scopedRevenueRows : scopedDurationRows).map(r => r.table),
+    );
     const isTable = (t: string) => t === 'rect_table' || t === 'round_table' || t === 'stool';
     return {
       ...activePlan,
       elements: activePlan.elements.filter(e =>
-        !isTable(e.type) || (e.iiko_table_number != null && revenueTableNumbers.has(e.iiko_table_number))),
+        !isTable(e.type) || (e.iiko_table_number != null && coveredTableNumbers.has(e.iiko_table_number))),
     };
-  }, [mode, activePlan, scopedRevenueRows]);
+  }, [mode, activePlan, scopedRevenueRows, scopedDurationRows]);
 
   // HallEditor snapshots `plan.elements` into local state on mount only, so
   // the inline viewer must remount whenever the filtered table set changes
   // (mode switch, period switch, hall switch) — not just on plan.id.
   const displayPlanKey = mode === 'revenue'
     ? `${activePlan?.id}-revenue-${scopedRevenueRows.map(r => r.table).sort((a, b) => a - b).join(',')}`
+    : mode === 'duration'
+    ? `${activePlan?.id}-duration-${scopedDurationRows.map(r => r.table).sort((a, b) => a - b).join(',')}`
     : `${activePlan?.id}-now`;
 
   // Ranked summary — total, top table, avg check, coverage — surfaced above
@@ -249,6 +292,22 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
       tablesCovered: sorted.length,
     };
   }, [mode, scopedRevenueRows]);
+
+  // Ranked summary for historical occupancy — busiest table, total occupied
+  // hours, avg visit length, coverage.
+  const durationSummary = useMemo(() => {
+    if (mode !== 'duration' || scopedDurationRows.length === 0) return null;
+    const withTotal = scopedDurationRows.map(r => ({ ...r, totalMin: r.avgMin * r.visits }));
+    const sorted = [...withTotal].sort((a, b) => b.totalMin - a.totalMin);
+    const totalMin = sorted.reduce((s, r) => s + r.totalMin, 0);
+    const visits = sorted.reduce((s, r) => s + r.visits, 0);
+    return {
+      top: sorted[0],
+      totalMin, visits,
+      avgVisitMin: visits > 0 ? totalMin / visits : 0,
+      tablesCovered: sorted.length,
+    };
+  }, [mode, scopedDurationRows]);
 
   const occupiedTableNumbers = useMemo(() => occupiedTables ?? new Set<number>(), [occupiedTables]);
 
@@ -282,7 +341,7 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
         ) : <div />}
 
         <div className="flex items-center gap-2 flex-wrap ml-auto">
-          {mode === 'revenue' && (
+          {(mode === 'revenue' || mode === 'duration') && (
             <div className="relative flex items-center gap-0.5 p-0.5 bg-background rounded-xl border border-border">
               {HEAT_PERIODS.map(d => (
                 <button
@@ -317,8 +376,9 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
           )}
           <div className="flex gap-0.5 p-0.5 bg-background rounded-xl border border-border">
             {([
-              { id: 'now' as const,     label: tr(lang, 'Сейчас', 'Now', 'Hozir'), icon: Radio },
-              { id: 'revenue' as const, label: tr(lang, 'Выручка', 'Revenue', 'Tushum'), icon: TrendingUp },
+              { id: 'now' as const,      label: tr(lang, 'Сейчас', 'Now', 'Hozir'), icon: Radio },
+              { id: 'revenue' as const,  label: tr(lang, 'Выручка', 'Revenue', 'Tushum'), icon: TrendingUp },
+              { id: 'duration' as const, label: tr(lang, 'Загрузка', 'Occupancy', 'Band vaqti'), icon: Clock },
             ]).map(m => (
               <button
                 key={m.id}
@@ -387,6 +447,59 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
         </div>
       )}
 
+      {/* ── Occupancy (duration) summary strip ── */}
+      {mode === 'duration' && durationLoading && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          {[0, 1, 2, 3].map(i => <div key={i} className="h-[68px] bg-zinc-800/40 rounded-xl animate-pulse" />)}
+        </div>
+      )}
+
+      {mode === 'duration' && !durationLoading && durationSummary && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          {[
+            {
+              icon: Clock, iconClass: 'bg-primary/10 text-primary',
+              label: tr(lang, 'Занятость зала', 'Hall occupied time', 'Zal band vaqti'),
+              value: formatMinutes(durationSummary.totalMin, lang), suffix: '',
+            },
+            {
+              icon: Crown, iconClass: 'bg-amber-500/10 text-amber-400',
+              label: tr(lang, 'Самый занятый стол', 'Busiest table', 'Eng band stol'),
+              value: tr(lang, `Стол ${durationSummary.top.table}`, `Table ${durationSummary.top.table}`, `Stol ${durationSummary.top.table}`),
+              suffix: formatMinutes(durationSummary.top.avgMin * durationSummary.top.visits, lang),
+            },
+            {
+              icon: Timer, iconClass: 'bg-success/10 text-success',
+              label: tr(lang, 'Средняя посадка', 'Avg visit', "O'rtacha o'tirish"),
+              value: formatMinutes(durationSummary.avgVisitMin, lang), suffix: '',
+            },
+            {
+              icon: Grid2x2, iconClass: 'bg-blue-500/10 text-blue-400',
+              label: tr(lang, 'Столов с данными', 'Tables w/ data', "Ma'lumotli stollar"),
+              value: String(durationSummary.tablesCovered),
+              suffix: `/ ${activePlan.elements.filter(e => e.iiko_table_number != null).length}`,
+            },
+          ].map((s, i) => (
+            <div key={i} className="flex items-center gap-2.5 bg-card border border-border rounded-xl px-3 py-2.5">
+              <div className={`p-2 rounded-lg flex-shrink-0 ${s.iconClass}`}><s.icon size={15} /></div>
+              <div className="min-w-0">
+                <p className="text-[9px] uppercase tracking-[0.12em] text-muted truncate">{s.label}</p>
+                <p className="text-[13px] font-bold text-text metric-number leading-tight mt-0.5 truncate">
+                  {s.value} <span className="text-[9px] text-muted font-normal">{s.suffix}</span>
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {mode === 'duration' && !durationLoading && !durationSummary && (
+        <div className="flex flex-col items-center justify-center gap-1.5 mb-4 py-6 text-muted bg-card border border-dashed border-border rounded-xl">
+          <Clock size={18} className="opacity-40" />
+          <span className="text-[11px]">{tr(lang, 'Нет данных о посадках за период', 'No visit data for this period', 'Bu davr uchun oʻtirish maʼlumotlari yoʻq')}</span>
+        </div>
+      )}
+
       <HallEditor
         key={displayPlanKey}
         plan={displayPlan}
@@ -394,7 +507,8 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
         tableHeat={tableHeat}
         tableInfo={mode === 'now' ? tableInfo : undefined}
         revenueInfo={mode === 'revenue' ? revenueInfo : undefined}
-        legendMode={mode === 'revenue' ? 'revenue' : 'occupancy'}
+        durationInfo={mode === 'duration' ? durationInfo : undefined}
+        legendMode={mode === 'revenue' ? 'revenue' : mode === 'duration' ? 'duration' : 'occupancy'}
         onSave={async () => {}}
         onClose={() => {}}
         readOnly

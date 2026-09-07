@@ -69,6 +69,7 @@ function shortMoney(sum: number): string {
 
 type LiveInfo = { kind: 'live'; min: number; sum: number };
 type RevenueInfo = { kind: 'revenue'; revenue: number; orders: number };
+type DurationInfo = { kind: 'duration'; avgMin: number; visits: number };
 
 function renderElement(
   el: HallElement,
@@ -77,7 +78,7 @@ function renderElement(
   isDark: boolean,
   onMouseDown: (e: React.MouseEvent) => void,
   onContextMenu: (e: React.MouseEvent) => void,
-  info?: LiveInfo | RevenueInfo | null,
+  info?: LiveInfo | RevenueInfo | DurationInfo | null,
 ) {
   const isTable = el.type === 'rect_table' || el.type === 'round_table' || el.type === 'stool';
   const structFill   = isDark ? '#1a1a1e' : '#e8e4de';
@@ -100,9 +101,11 @@ function renderElement(
 
   const infoTitle = info == null ? undefined
     : info.kind === 'live' ? `${el.label}: ${shortMin(info.min)} · ${shortMoney(info.sum)} UZS`
+    : info.kind === 'duration' ? `${el.label}: ${shortMin(Math.round(info.avgMin * info.visits))} total · ${info.visits} ${info.visits === 1 ? 'visit' : 'visits'}`
     : `${el.label}: ${shortMoney(info.revenue)} UZS · ${info.orders} ${info.orders === 1 ? 'order' : 'orders'}`;
   const infoBadge = info == null ? undefined
     : info.kind === 'live' ? shortMin(info.min)
+    : info.kind === 'duration' ? shortMin(Math.round(info.avgMin * info.visits))
     : `${shortMoney(info.revenue)}${info.orders ? ` · ${info.orders}` : ''}`;
 
   if (el.type === 'rect_table') {
@@ -326,8 +329,10 @@ interface HallEditorProps {
   tableInfo?: Map<number, { min: number; sum: number }>;
   /** period revenue per table number — mutually exclusive with tableInfo, drives the badge + tooltip in revenue mode */
   revenueInfo?: Map<number, { revenue: number; orders: number }>;
-  /** swaps the legend copy from occupancy language ("Free/Busy") to revenue language ("Low/Top") */
-  legendMode?: 'occupancy' | 'revenue';
+  /** period avg-visit-duration per table number — historical occupancy, drives the badge + tooltip in duration mode */
+  durationInfo?: Map<number, { avgMin: number; visits: number }>;
+  /** swaps the legend copy from occupancy language ("Free/Busy") to revenue/duration language */
+  legendMode?: 'occupancy' | 'revenue' | 'duration';
   onSave: (updated: HallPlan) => Promise<void>;
   onClose: () => void;
   readOnly?: boolean;
@@ -335,7 +340,7 @@ interface HallEditorProps {
   lang?: Language;
 }
 
-export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tableInfo, revenueInfo, legendMode = 'occupancy', onSave, onClose, readOnly = false, inline = false, lang = 'ru' }: HallEditorProps) {
+export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tableInfo, revenueInfo, durationInfo, legendMode = 'occupancy', onSave, onClose, readOnly = false, inline = false, lang = 'ru' }: HallEditorProps) {
   const isDark = useIsDark();
   const [elements, setElements] = useState<HallElement[]>(plan.elements);
   const [planName, setPlanName] = useState(plan.name);
@@ -550,6 +555,7 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
           (e) => handleContextMenu(el.id, e),
           el.iiko_table_number == null ? null
             : revenueInfo ? (revenueInfo.get(el.iiko_table_number) ? { kind: 'revenue' as const, ...revenueInfo.get(el.iiko_table_number)! } : null)
+            : durationInfo ? (durationInfo.get(el.iiko_table_number) ? { kind: 'duration' as const, ...durationInfo.get(el.iiko_table_number)! } : null)
             : tableInfo ? (tableInfo.get(el.iiko_table_number) ? { kind: 'live' as const, ...tableInfo.get(el.iiko_table_number)! } : null)
             : null,
         );
@@ -570,6 +576,12 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
         { label: tr(lang, 'Средняя', 'Average', "O'rtacha"), color: '#f59e0b' },
         { label: tr(lang, 'Выше среднего', 'Above avg', "O'rtachadan yuqori"), color: '#ff6b35' },
         { label: tr(lang, 'Топ-стол', 'Top table', 'Eng yaxshi stol'), color: '#ef4444' },
+      ] : legendMode === 'duration' ? [
+        { label: tr(lang, 'Нет данных', 'No data', "Ma'lumot yo'q"), color: isDark ? '#555' : '#c8c3bb' },
+        { label: tr(lang, 'Низкая', 'Low', 'Past'), color: '#22c55e' },
+        { label: tr(lang, 'Средняя', 'Average', "O'rtacha"), color: '#f59e0b' },
+        { label: tr(lang, 'Выше среднего', 'Above avg', "O'rtachadan yuqori"), color: '#ff6b35' },
+        { label: tr(lang, 'Топ по загрузке', 'Most occupied', 'Eng band'), color: '#ef4444' },
       ] : [
         { label: tr(lang, 'Своб.', 'Free', "Bo'sh"), color: isDark ? '#555' : '#c8c3bb' },
         { label: tr(lang, 'Низкая', 'Low', 'Past'), color: '#22c55e' },

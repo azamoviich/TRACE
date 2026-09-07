@@ -79,7 +79,7 @@
         <form id="loginForm">
           <div class="field">
             <label data-i18n="login">Login</label>
-            <input type="text" id="login" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" />
+            <input type="text" id="login" data-i18n-placeholder="loginPlaceholder" placeholder="e.g. rodena" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" />
           </div>
           <div class="field">
             <label data-i18n="password">Password</label>
@@ -124,6 +124,7 @@
         invalidLogin: 'Неверный логин или пароль — или используйте «Ввести вручную» ниже',
         networkError: 'Не удалось связаться с сервером — попробуйте снова',
         manualPrompt: 'Знаете адрес своего ресторана?', manualLink: 'Ввести вручную',
+        loginPlaceholder: 'например rodena',
         manualLabel: 'Адрес TRACE', manualPlaceholder: 'например benedict', continueBtn: 'Продолжить',
         onceHint: 'Это нужно сделать только один раз на этом компьютере.',
       },
@@ -134,6 +135,7 @@
         invalidLogin: 'Invalid login or password — or use "Enter it directly" below',
         networkError: 'Could not reach the server — try again',
         manualPrompt: "Know your restaurant's TRACE address?", manualLink: 'Enter it directly',
+        loginPlaceholder: 'e.g. rodena',
         manualLabel: 'TRACE address', manualPlaceholder: 'e.g. benedict', continueBtn: 'Continue',
         onceHint: 'You only need to do this once on this computer.',
       },
@@ -144,6 +146,7 @@
         invalidLogin: "Login yoki parol noto'g'ri — yoki quyidagi «To'g'ridan-to'g'ri kiritish»dan foydalaning",
         networkError: "Server bilan bog'lanib bo'lmadi — qayta urinib ko'ring",
         manualPrompt: 'Restoraningiz manzilini bilasizmi?', manualLink: "To'g'ridan-to'g'ri kiritish",
+        loginPlaceholder: 'masalan rodena',
         manualLabel: 'TRACE manzili', manualPlaceholder: 'masalan benedict', continueBtn: 'Davom etish',
         onceHint: 'Buni ushbu kompyuterda faqat bir marta bajarish kifoya.',
       },

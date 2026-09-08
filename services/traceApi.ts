@@ -2824,6 +2824,9 @@ export const checklistApi = {
       post<{ created: { name: string; pin: string }[] }>('/checklist/employees/import', { roleId, names }),
     invite: (name: string, roleId: string, contact: { email?: string; phone?: string }) =>
       post<ChecklistEmployee>('/checklist/employees/invite', { name, roleId, ...contact }),
+    iikoCandidates: () => checkedFetch<{ id: string; name: string; roleId: string | null }[]>('/checklist/employees/iiko-candidates'),
+    linkIiko: (id: string, iikoEmployeeId: string | null, iikoRoleId: string | null) =>
+      checkedFetch<ChecklistEmployee>(`/checklist/employees/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ iikoEmployeeId, iikoRoleId }) }),
   },
   managers: {
     list: () => checkedFetch<ChecklistManager[]>('/checklist/managers'),

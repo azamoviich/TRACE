@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, Trash2, Camera, ChevronRight, ArrowLeft, X, Download, Pencil, Calendar as CalendarIcon, History as HistoryIcon, Building2 as Building2Icon, Copy } from 'lucide-react';
+import { Plus, Trash2, Camera, ChevronRight, ArrowLeft, X, Download, Pencil, Calendar as CalendarIcon, History as HistoryIcon, Building2 as Building2Icon, Copy, Link2 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { DateRangePicker } from '../ui/DateRangePicker';
 import { Language } from '../../types';
@@ -528,12 +528,15 @@ function PosImportPanel({ lang, roles, onShowToast, onImported, api }: {
   );
 }
 
-export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.employees }: {
+export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.employees, showIikoLink = true }: {
   lang: Language; roles: ChecklistRole[];
   onShowToast: (m: string, t: 'success' | 'error' | 'info') => void;
   api?: EmployeesApi;
+  showIikoLink?: boolean;
 }) {
   const [employees, setEmployees] = useState<ChecklistEmployee[]>([]);
+  const [iikoLinkingId, setIikoLinkingId] = useState<string | null>(null);
+  const [iikoCandidates, setIikoCandidates] = useState<{ id: string; name: string; roleId: string | null }[] | null>(null);
   const [roleId, setRoleId] = useState('');
   const [name, setName] = useState('');
   const [pin, setPin] = useState('');
@@ -687,7 +690,36 @@ export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.empl
         <p className="text-[13px] text-muted">{tr(lang, 'Сотрудников пока нет', 'No employees yet', "Hozircha xodim yo'q")}</p>
       ) : (
         <div className="space-y-1.5">
-          {employees.map(e => editingId === e.id ? (
+          {employees.map(e => iikoLinkingId === e.id ? (
+            <div key={e.id} className="p-3 rounded-lg bg-background border border-border space-y-2">
+              <p className="text-[12px] text-muted">
+                {tr(lang, `Привязать «${e.name}» к сотруднику iiko:`, `Link "${e.name}" to their iiko record:`, `"${e.name}" ni iiko xodimiga bog'lash:`)}
+              </p>
+              {iikoCandidates === null ? (
+                <p className="text-[12px] text-muted">{tr(lang, 'Загрузка...', 'Loading...', 'Yuklanmoqda...')}</p>
+              ) : iikoCandidates.length === 0 ? (
+                <p className="text-[12px] text-muted">{tr(lang, 'iiko не подключен или сотрудники не найдены', 'iiko not connected or no employees found', "iiko ulanmagan yoki xodimlar topilmadi")}</p>
+              ) : (
+                <select
+                  defaultValue={e.iiko_employee_id ?? ''}
+                  onChange={async ev => {
+                    const candidate = iikoCandidates.find(c => c.id === ev.target.value);
+                    await checklistApi.employees.linkIiko(e.id, candidate?.id ?? null, candidate?.roleId ?? null);
+                    setIikoLinkingId(null);
+                    load();
+                    onShowToast(tr(lang, 'Привязка сохранена', 'Link saved', "Bog'lash saqlandi"), 'success');
+                  }}
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text"
+                >
+                  <option value="">{tr(lang, '— Не привязан —', '— Not linked —', "— Bog'lanmagan —")}</option>
+                  {iikoCandidates.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              )}
+              <button onClick={() => setIikoLinkingId(null)} className="px-3 py-1.5 rounded-lg bg-card border border-border text-muted text-[12px] font-medium">
+                {tr(lang, 'Закрыть', 'Close', 'Yopish')}
+              </button>
+            </div>
+          ) : editingId === e.id ? (
             <div key={e.id} className="p-3 rounded-lg bg-background border border-border space-y-2">
               <div className="grid sm:grid-cols-2 gap-2">
                 <input value={editName} onChange={ev => setEditName(ev.target.value)} placeholder={tr(lang, 'Имя', 'Name', 'Ism')} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
@@ -715,6 +747,18 @@ export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.empl
                 >
                   {e.active ? tr(lang, 'Активен', 'Active', 'Faol') : tr(lang, 'Скрыт', 'Hidden', 'Yashirilgan')}
                 </button>
+                {showIikoLink && (
+                  <button
+                    onClick={() => {
+                      setIikoLinkingId(e.id);
+                      if (iikoCandidates === null) checklistApi.employees.iikoCandidates().then(setIikoCandidates).catch(() => setIikoCandidates([]));
+                    }}
+                    title={tr(lang, 'Привязать к iiko', 'Link to iiko', "iiko ga bog'lash")}
+                    className={e.iiko_employee_id ? 'text-primary hover:text-primary-hover' : 'text-muted hover:text-text'}
+                  >
+                    <Link2 size={15} />
+                  </button>
+                )}
                 <button onClick={() => startEdit(e)} className="text-muted hover:text-text">
                   <Pencil size={15} />
                 </button>

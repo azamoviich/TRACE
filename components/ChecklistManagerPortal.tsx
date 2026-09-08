@@ -217,7 +217,7 @@ function Builder({ lang, session, onSwitchBranch, onLogout }: {
               <ChecklistsBuilderTab key={branch} lang={lang} roles={roles} branch={branch} session={session} onShowToast={showToast} />
             )}
             {tab === 'employees' && (
-              <EmployeesTab lang={lang} roles={roles} onShowToast={showToast} api={employeesApi} />
+              <EmployeesTab lang={lang} roles={roles} onShowToast={showToast} api={employeesApi} showIikoLink={false} />
             )}
             {tab === 'history' && (
               <HistoryTab

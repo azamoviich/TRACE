@@ -105,6 +105,8 @@ export interface ChecklistEmployee {
   name: string;
   active: boolean;
   created_at: string;
+  iiko_employee_id?: string | null;
+  iiko_role_id?: string | null;
 }
 
 export interface ChecklistManager {

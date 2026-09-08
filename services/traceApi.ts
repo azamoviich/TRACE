@@ -2894,7 +2894,79 @@ export const checklistApi = {
     addAdjustment: (employeeId: string, data: { kind: 'bonus' | 'penalty'; amount: number; reason?: string }) =>
       post(`/checklist/payroll/employees/${employeeId}/adjustments`, data),
   },
+  feed: {
+    list: () => checkedFetch<FeedPost[]>('/checklist/feed'),
+    create: (data: { title: string; body?: string; photoUrl?: string; pinned?: boolean; branchOnly?: boolean }) =>
+      post<FeedPost>('/checklist/feed', data),
+    remove: (id: string) => checkedFetch<void>(`/checklist/feed/${id}`, { method: 'DELETE' }),
+  },
+  knowledge: {
+    list: () => checkedFetch<KnowledgeCategory[]>('/employee/knowledge'), // owner reads the same tree employees see
+    createCategory: (name: string, branchOnly?: boolean) => post<{ id: string; name: string }>('/checklist/knowledge/categories', { name, branchOnly }),
+    removeCategory: (id: string) => checkedFetch<void>(`/checklist/knowledge/categories/${id}`, { method: 'DELETE' }),
+    createItem: (data: {
+      categoryId: string; title: string; description?: string; itemType: 'file' | 'link';
+      fileUrl?: string; fileType?: string; fileSizeBytes?: number; externalUrl?: string;
+    }) => post<KnowledgeItem>('/checklist/knowledge/items', data),
+    removeItem: (id: string) => checkedFetch<void>(`/checklist/knowledge/items/${id}`, { method: 'DELETE' }),
+    uploadDocument: async (file: File): Promise<{ url: string; fileType: string; fileSizeBytes: number }> => {
+      const form = new FormData();
+      form.append('file', file);
+      return checkedFetch('/upload/document', { method: 'POST', body: form });
+    },
+  },
+  chat: {
+    channels: () => checkedFetch<ChatChannel[]>('/checklist/chat/channels'),
+    messages: (channelId: string) => checkedFetch<ChatMessage[]>(`/checklist/chat/channels/${channelId}/messages`),
+    send: (channelId: string, body: string) => post<ChatMessage>(`/checklist/chat/channels/${channelId}/messages`, { body }),
+  },
 };
+
+export interface FeedPost {
+  id: string;
+  author_type: 'owner' | 'manager' | 'system';
+  author_name: string | null;
+  kind: 'announcement' | 'birthday' | 'custom';
+  title: string;
+  body: string;
+  photo_url: string | null;
+  pinned: boolean;
+  published_at: string;
+}
+
+export interface KnowledgeItem {
+  id: string;
+  category_id: string;
+  title: string;
+  description: string | null;
+  item_type: 'file' | 'link';
+  file_url: string | null;
+  file_type: string | null;
+  external_url: string | null;
+  created_at: string;
+}
+
+export interface KnowledgeCategory {
+  id: string;
+  name: string;
+  items: KnowledgeItem[];
+}
+
+export interface ChatChannel {
+  id: string;
+  kind: 'role_group' | 'direct' | 'announcement';
+  name: string;
+  role_name?: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  channel_id: string;
+  sender_type: 'employee' | 'manager' | 'owner';
+  sender_name: string;
+  body: string;
+  created_at: string;
+}
 
 export interface RosterShift {
   id: string;

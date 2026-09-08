@@ -4,18 +4,21 @@
 // Roster/Shifts/Swaps/Payroll/Rules tabs land in later phases as more tabs
 // added to the same `Tab` union, following this file's own pattern.
 import React, { useEffect, useRef, useState } from 'react';
-import { MapPin, Locate, ShieldCheck, ShieldAlert, Save, Plus, Send, Check, X, Calendar } from 'lucide-react';
+import { MapPin, Locate, ShieldCheck, ShieldAlert, Save, Plus, Send, Check, X, Calendar, Pin, FileText, Link as LinkIcon, MessageSquare, Trash2, Upload, Folder } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Wallet } from 'lucide-react';
 import { Language, ChecklistRole, ChecklistEmployee } from '../../types';
 import { Lock, ShieldQuestion } from 'lucide-react';
-import { traceApi, WorkforceGeofenceSettings, checklistApi, RosterShift, SwapRequest, PayProfile, PayrollPeriod, Payslip, PayrollRule } from '../../services/traceApi';
+import {
+  traceApi, WorkforceGeofenceSettings, checklistApi, RosterShift, SwapRequest, PayProfile, PayrollPeriod, Payslip, PayrollRule,
+  FeedPost, KnowledgeCategory, ChatChannel, ChatMessage,
+} from '../../services/traceApi';
 
 function tr(lang: Language, ru: string, en: string, uz: string) {
   return lang === 'ru' ? ru : lang === 'uz' ? uz : en;
 }
 
-type Tab = 'geofence' | 'roster' | 'payroll';
+type Tab = 'geofence' | 'roster' | 'payroll' | 'feed' | 'knowledge' | 'chat';
 
 interface Props {
   lang: Language;
@@ -32,6 +35,9 @@ export function Workforce({ lang, onShowToast }: Props) {
           { id: 'geofence' as Tab, label: tr(lang, 'Геолокация', 'Geofence', 'Geolokatsiya') },
           { id: 'roster' as Tab, label: tr(lang, 'Расписание', 'Roster', 'Jadval') },
           { id: 'payroll' as Tab, label: tr(lang, 'Зарплата', 'Payroll', 'Ish haqi') },
+          { id: 'feed' as Tab, label: tr(lang, 'Лента', 'Feed', 'Lenta') },
+          { id: 'knowledge' as Tab, label: tr(lang, 'База знаний', 'Knowledge', 'Bilimlar') },
+          { id: 'chat' as Tab, label: tr(lang, 'Чат', 'Chat', 'Chat') },
         ]).map(t => (
           <button
             key={t.id}
@@ -48,6 +54,9 @@ export function Workforce({ lang, onShowToast }: Props) {
       {tab === 'geofence' && <GeofenceTab lang={lang} onShowToast={onShowToast} />}
       {tab === 'roster' && <RosterTab lang={lang} onShowToast={onShowToast} />}
       {tab === 'payroll' && <PayrollTab lang={lang} onShowToast={onShowToast} />}
+      {tab === 'feed' && <FeedTab lang={lang} onShowToast={onShowToast} />}
+      {tab === 'knowledge' && <KnowledgeTab lang={lang} onShowToast={onShowToast} />}
+      {tab === 'chat' && <ChatTab lang={lang} onShowToast={onShowToast} />}
     </div>
   );
 }
@@ -763,6 +772,300 @@ function GeofenceTab({ lang, onShowToast }: { lang: Language; onShowToast: Props
           <Save size={14} /> {saving ? tr(lang, 'Сохранение…', 'Saving…', 'Saqlanmoqda…') : tr(lang, 'Сохранить', 'Save', 'Saqlash')}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ── Feed ─────────────────────────────────────────────────────────────────
+function FeedTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['onShowToast'] }) {
+  const [posts, setPosts] = useState<FeedPost[]>([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [pinned, setPinned] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => checklistApi.feed.list().then(setPosts).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const create = async () => {
+    if (!title.trim()) { onShowToast(tr(lang, 'Укажите заголовок', 'Enter a title', 'Sarlavha kiriting'), 'error'); return; }
+    setBusy(true);
+    try {
+      await checklistApi.feed.create({ title: title.trim(), body, pinned });
+      setTitle(''); setBody(''); setPinned(false);
+      setShowAdd(false);
+      load();
+    } catch { onShowToast(tr(lang, 'Не удалось опубликовать', 'Failed to publish', "Nashr qilib bo'lmadi"), 'error'); }
+    finally { setBusy(false); }
+  };
+
+  const remove = async (id: string) => {
+    try { await checklistApi.feed.remove(id); load(); } catch { onShowToast(tr(lang, 'Не удалось удалить', 'Failed to delete', "O'chirib bo'lmadi"), 'error'); }
+  };
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+        <h3 className="text-[15px] font-semibold text-text tracking-tight">{tr(lang, 'Лента объявлений', 'Announcements feed', "E'lonlar lentasi")}</h3>
+        <button onClick={() => setShowAdd(v => !v)} className="px-3 py-1.5 rounded-lg bg-primary text-white text-[12px] font-semibold flex items-center gap-1.5">
+          <Plus size={14} /> {tr(lang, 'Написать', 'New post', 'Yozish')}
+        </button>
+      </div>
+
+      {showAdd && (
+        <div className="mb-4 p-3.5 rounded-xl border border-border bg-background space-y-2">
+          <input value={title} onChange={e => setTitle(e.target.value)} placeholder={tr(lang, 'Заголовок', 'Title', 'Sarlavha')} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
+          <textarea value={body} onChange={e => setBody(e.target.value)} placeholder={tr(lang, 'Текст объявления', 'Announcement text', "E'lon matni")} rows={3} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text resize-none" />
+          <button onClick={() => setPinned(v => !v)} className="flex items-center gap-1.5 text-[12px] font-medium text-muted">
+            <Pin size={13} className={pinned ? 'text-primary' : ''} /> {tr(lang, 'Закрепить', 'Pin to top', "Yuqorida mahkamlash")}
+          </button>
+          <div className="flex items-center gap-2 pt-1">
+            <button onClick={create} disabled={busy} className="px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold disabled:opacity-50">
+              {tr(lang, 'Опубликовать', 'Publish', "Nashr qilish")}
+            </button>
+            <button onClick={() => setShowAdd(false)} className="px-3.5 py-2 rounded-lg bg-card border border-border text-muted text-[13px] font-medium">
+              {tr(lang, 'Отмена', 'Cancel', 'Bekor qilish')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {posts.length === 0 ? (
+        <p className="text-[13px] text-muted">{tr(lang, 'Пока нет публикаций', 'No posts yet', "Hozircha post yo'q")}</p>
+      ) : (
+        <div className="space-y-2">
+          {posts.map(p => (
+            <div key={p.id} className="p-3 rounded-lg bg-background border border-border">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    {p.pinned && <Pin size={12} className="text-primary" />}
+                    {p.kind === 'birthday' && <span>🎂</span>}
+                    <p className="text-[13px] font-semibold text-text">{p.title}</p>
+                  </div>
+                  {p.body && <p className="text-[12px] text-muted mt-1">{p.body}</p>}
+                  <p className="text-[10px] text-muted mt-1.5">{p.author_name} · {new Date(p.published_at).toLocaleDateString()}</p>
+                </div>
+                {p.kind !== 'birthday' && (
+                  <button onClick={() => remove(p.id)} className="text-red-500 hover:text-red-600 shrink-0">
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ── Knowledge Room ───────────────────────────────────────────────────────
+function KnowledgeTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['onShowToast'] }) {
+  const [categories, setCategories] = useState<KnowledgeCategory[]>([]);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [addingItemTo, setAddingItemTo] = useState<string | null>(null);
+  const [itemTitle, setItemTitle] = useState('');
+  const [itemType, setItemType] = useState<'file' | 'link'>('file');
+  const [externalUrl, setExternalUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
+
+  const load = () => checklistApi.knowledge.list().then(setCategories).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const addCategory = async () => {
+    if (!newCategoryName.trim()) return;
+    try {
+      await checklistApi.knowledge.createCategory(newCategoryName.trim());
+      setNewCategoryName('');
+      load();
+    } catch { onShowToast(tr(lang, 'Не удалось создать раздел', 'Failed to create category', "Bo'lim yaratib bo'lmadi"), 'error'); }
+  };
+
+  const removeCategory = async (id: string) => {
+    if (!confirm(tr(lang, 'Удалить раздел и все файлы в нём?', 'Delete this category and everything in it?', "Bo'lim va undagi barcha fayllarni o'chirasizmi?"))) return;
+    try { await checklistApi.knowledge.removeCategory(id); load(); } catch { onShowToast(tr(lang, 'Не удалось удалить', 'Failed to delete', "O'chirib bo'lmadi"), 'error'); }
+  };
+
+  const onFileSelected = async (categoryId: string, file: File) => {
+    setUploading(true);
+    try {
+      const { url, fileType, fileSizeBytes } = await checklistApi.knowledge.uploadDocument(file);
+      await checklistApi.knowledge.createItem({
+        categoryId, title: itemTitle.trim() || file.name, itemType: 'file',
+        fileUrl: url, fileType, fileSizeBytes,
+      });
+      setItemTitle(''); setAddingItemTo(null);
+      load();
+    } catch { onShowToast(tr(lang, 'Не удалось загрузить файл', 'Failed to upload file', "Faylni yuklab bo'lmadi"), 'error'); }
+    finally { setUploading(false); }
+  };
+
+  const addLink = async (categoryId: string) => {
+    if (!itemTitle.trim() || !externalUrl.trim()) { onShowToast(tr(lang, 'Укажите название и ссылку', 'Enter a title and URL', 'Nomi va havolani kiriting'), 'error'); return; }
+    try {
+      await checklistApi.knowledge.createItem({ categoryId, title: itemTitle.trim(), itemType: 'link', externalUrl: externalUrl.trim() });
+      setItemTitle(''); setExternalUrl(''); setAddingItemTo(null);
+      load();
+    } catch { onShowToast(tr(lang, 'Не удалось добавить', 'Failed to add', "Qo'shib bo'lmadi"), 'error'); }
+  };
+
+  const removeItem = async (id: string) => {
+    try { await checklistApi.knowledge.removeItem(id); load(); } catch { onShowToast(tr(lang, 'Не удалось удалить', 'Failed to delete', "O'chirib bo'lmadi"), 'error'); }
+  };
+
+  return (
+    <div className="space-y-5">
+      <Card>
+        <h3 className="text-[15px] font-semibold text-text tracking-tight mb-3">{tr(lang, 'Новый раздел', 'New category', "Yangi bo'lim")}</h3>
+        <div className="flex items-center gap-2">
+          <input value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} placeholder={tr(lang, 'Например: Меню', 'e.g. Menu', 'masalan: Menyu')} className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text" />
+          <button onClick={addCategory} className="px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold flex items-center gap-1.5">
+            <Plus size={14} /> {tr(lang, 'Создать', 'Create', 'Yaratish')}
+          </button>
+        </div>
+      </Card>
+
+      {categories.map(cat => (
+        <Card key={cat.id}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-[15px] font-semibold text-text tracking-tight flex items-center gap-2">
+              <Folder size={16} /> {cat.name}
+            </h3>
+            <div className="flex items-center gap-2">
+              <button onClick={() => { setAddingItemTo(cat.id); setItemType('file'); }} className="px-2.5 py-1.5 rounded-lg bg-card border border-border text-[12px] font-semibold text-text flex items-center gap-1">
+                <Plus size={13} /> {tr(lang, 'Добавить', 'Add', "Qo'shish")}
+              </button>
+              <button onClick={() => removeCategory(cat.id)} className="text-red-500 hover:text-red-600">
+                <Trash2 size={14} />
+              </button>
+            </div>
+          </div>
+
+          {addingItemTo === cat.id && (
+            <div className="mb-3 p-3 rounded-lg border border-border bg-background space-y-2">
+              <div className="flex gap-2">
+                <button onClick={() => setItemType('file')} className={`px-2.5 py-1.5 rounded-lg text-[12px] font-semibold ${itemType === 'file' ? 'bg-primary text-white' : 'bg-card text-muted'}`}>{tr(lang, 'Файл', 'File', 'Fayl')}</button>
+                <button onClick={() => setItemType('link')} className={`px-2.5 py-1.5 rounded-lg text-[12px] font-semibold ${itemType === 'link' ? 'bg-primary text-white' : 'bg-card text-muted'}`}>{tr(lang, 'Ссылка', 'Link', 'Havola')}</button>
+              </div>
+              <input value={itemTitle} onChange={e => setItemTitle(e.target.value)} placeholder={tr(lang, 'Название', 'Title', 'Nomi')} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
+              {itemType === 'file' ? (
+                <label className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-border text-[13px] text-muted cursor-pointer hover:border-primary/40">
+                  <Upload size={14} /> {uploading ? tr(lang, 'Загрузка…', 'Uploading…', 'Yuklanmoqda…') : tr(lang, 'Выбрать PDF/Word/Excel', 'Choose PDF/Word/Excel', 'PDF/Word/Excel tanlash')}
+                  <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx" hidden disabled={uploading}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) onFileSelected(cat.id, f); }} />
+                </label>
+              ) : (
+                <div className="flex gap-2">
+                  <input value={externalUrl} onChange={e => setExternalUrl(e.target.value)} placeholder="https://..." className="flex-1 px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
+                  <button onClick={() => addLink(cat.id)} className="px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold">{tr(lang, 'Добавить', 'Add', "Qo'shish")}</button>
+                </div>
+              )}
+              <button onClick={() => setAddingItemTo(null)} className="text-[12px] text-muted">{tr(lang, 'Отмена', 'Cancel', 'Bekor qilish')}</button>
+            </div>
+          )}
+
+          {cat.items.length === 0 ? (
+            <p className="text-[13px] text-muted">{tr(lang, 'Пока пусто', 'Nothing here yet', "Hozircha bo'sh")}</p>
+          ) : (
+            <div className="space-y-1.5">
+              {cat.items.map(item => (
+                <div key={item.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-background border border-border">
+                  <a href={item.file_url ?? item.external_url ?? '#'} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-[13px] text-text hover:text-primary min-w-0">
+                    {item.item_type === 'link' ? <LinkIcon size={14} className="shrink-0" /> : <FileText size={14} className="shrink-0" />}
+                    <span className="truncate">{item.title}</span>
+                  </a>
+                  <button onClick={() => removeItem(item.id)} className="text-red-500 hover:text-red-600 shrink-0 ml-2">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ── Chat ─────────────────────────────────────────────────────────────────
+function ChatTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['onShowToast'] }) {
+  const [channels, setChannels] = useState<ChatChannel[]>([]);
+  const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    checklistApi.chat.channels().then(chs => {
+      setChannels(chs);
+      if (!activeChannelId && chs[0]) setActiveChannelId(chs[0].id);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!activeChannelId) return;
+    const load = () => checklistApi.chat.messages(activeChannelId).then(setMessages).catch(() => {});
+    load();
+    const interval = setInterval(load, 5000);
+    return () => clearInterval(interval);
+  }, [activeChannelId]);
+
+  const send = async () => {
+    if (!draft.trim() || !activeChannelId) return;
+    setSending(true);
+    try {
+      await checklistApi.chat.send(activeChannelId, draft.trim());
+      setDraft('');
+      checklistApi.chat.messages(activeChannelId).then(setMessages);
+    } catch { onShowToast(tr(lang, 'Не удалось отправить', 'Failed to send', "Yuborib bo'lmadi"), 'error'); }
+    finally { setSending(false); }
+  };
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <Card className="md:col-span-1 !p-2">
+        <div className="space-y-1">
+          {channels.length === 0 && <p className="text-[12px] text-muted p-2">{tr(lang, 'Нет каналов', 'No channels', "Kanallar yo'q")}</p>}
+          {channels.map(ch => (
+            <button
+              key={ch.id}
+              onClick={() => setActiveChannelId(ch.id)}
+              className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-left text-[13px] font-medium ${activeChannelId === ch.id ? 'bg-primary text-white' : 'text-text hover:bg-card-hover'}`}
+            >
+              <MessageSquare size={14} className="shrink-0" /> {ch.name}
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      <Card className="md:col-span-2 flex flex-col" style={{ minHeight: 420 }}>
+        <div className="flex-1 overflow-y-auto space-y-2 mb-3">
+          {messages.length === 0 ? (
+            <p className="text-[13px] text-muted">{tr(lang, 'Пока нет сообщений', 'No messages yet', "Hozircha xabar yo'q")}</p>
+          ) : (
+            messages.map(m => (
+              <div key={m.id} className={`max-w-[80%] p-2.5 rounded-xl text-[13px] ${m.sender_type === 'owner' || m.sender_type === 'manager' ? 'bg-primary/10 ml-auto text-text' : 'bg-background text-text'}`}>
+                <p className="text-[11px] font-semibold text-muted mb-0.5">{m.sender_name}</p>
+                <p>{m.body}</p>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && send()}
+            placeholder={tr(lang, 'Сообщение…', 'Message…', 'Xabar…')}
+            className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text"
+          />
+          <button onClick={send} disabled={sending || !draft.trim()} className="px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold disabled:opacity-50 flex items-center gap-1.5">
+            <Send size={14} />
+          </button>
+        </div>
+      </Card>
     </div>
   );
 }

@@ -2003,7 +2003,7 @@ export interface InventoryItem {
   sum: number;
 }
 
-export type ReportType = 'daily_summary' | 'financial_summary';
+export type ReportType = 'daily_summary' | 'financial_summary' | 'weekly_summary';
 export type ReportChannel = 'email' | 'telegram';
 
 export interface ReportSubscription {

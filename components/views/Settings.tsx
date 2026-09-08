@@ -431,6 +431,7 @@ export const Settings: React.FC<{
                       >
                         <option value="daily_summary">{t.daily_summary_label}</option>
                         {!isPoster && <option value="financial_summary">{t.financial_summary_label}</option>}
+                        <option value="weekly_summary">{t.weekly_summary_label}</option>
                       </select>
                     </div>
                   </div>

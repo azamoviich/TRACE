@@ -22,6 +22,7 @@ import { ChecklistManagerPortal } from './components/ChecklistManagerPortal';
 import { EmployeeChecklistPortal } from './components/EmployeeChecklistPortal';
 import { PWAInstallGuide } from './components/PWAInstallGuide';
 import { Sidebar } from './components/Sidebar';
+import { useWindowMaximized } from './hooks/useWindowMaximized';
 import {
   NavStyle, MobileNavStyle, NAV_STYLE_KEY, MOBILE_NAV_STYLE_KEY, HIDDEN_PAGES_KEY, DEFAULT_PAGE_KEY, ACCENT_KEY, LOGO_URL_KEY,
   loadNavStyle, loadMobileNavStyle, loadHiddenPages, loadDefaultPage, loadAccent, applyAccent, loadLogoUrl,
@@ -87,43 +88,39 @@ const Login: React.FC<{ onLogin: (remember: boolean) => void; lang: Language; se
   }, []);
 
   // Plain website (any browser tab, including a tenant's own subdomain) —
-  // exactly the original login, untouched. Only the exe below gets the
-  // redesign + QR pairing.
+  // same visual language as the exe login below, minus the QR/TRACEMOB
+  // pairing card (web-only login is login/password, never QR).
   if (!isTauriApp()) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">
+      <div className="min-h-screen bg-background flex items-center justify-center p-4 relative">
         <div className="absolute top-5 right-5 z-20">
           <button
             onClick={() => setLang(nextLang(lang))}
-            className="text-muted hover:text-text flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.15em] glass glass-hover px-3 py-1.5 rounded-full transition-colors"
+            className="text-muted hover:text-text flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.15em] border border-border hover:border-primary/40 px-3 py-1.5 rounded-full transition-colors"
           >
             <Globe size={13} />
             {lang.toUpperCase()}
           </button>
         </div>
 
-        <div className="w-full max-w-[360px] animate-slide-up">
-          <div className="mb-10 text-center">
-            <div className="inline-flex w-14 h-14 rounded-[18px] glass overflow-hidden mb-6 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-              <img src="/trace-logo.png" alt="TRACE" className="w-full h-full object-cover invert dark:invert-0"
-                onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-            </div>
-            <h1 className="font-display text-[28px] font-black text-text tracking-[0.25em] leading-none">TRACE</h1>
+        <div className="w-full max-w-[320px] animate-fade-in">
+          <div className="mb-8 text-center">
+            <h1 className="font-display text-[24px] font-black text-text tracking-[0.25em] leading-none">TRACE</h1>
             <p className="text-[9px] uppercase tracking-[0.3em] text-muted mt-2">Restaurant OS</p>
           </div>
 
-          <div className="glass rounded-[28px] p-7 shadow-[0_24px_64px_rgba(0,0,0,0.45)]">
+          <div className="bg-card border border-border rounded-xl p-6">
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
-                <label className="block text-[10px] uppercase tracking-[0.18em] text-muted mb-2 font-medium">{t.login}</label>
+                <label className="block text-[9px] uppercase tracking-[0.18em] text-muted mb-1.5 font-medium">{t.login}</label>
                 <input type="text" value={loginVal} onChange={e => setLoginVal(e.target.value)} autoComplete="username"
-                  autoCapitalize="none" autoCorrect="off" spellCheck={false}
-                  className="w-full bg-white/[0.03] border border-white/[0.08] rounded-2xl px-4 py-3 text-text text-[14px] focus:border-primary/60 focus:bg-white/[0.05] focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all" />
+                  autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-text text-[13px] focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all" />
               </div>
               <div>
-                <label className="block text-[10px] uppercase tracking-[0.18em] text-muted mb-2 font-medium">{t.password}</label>
+                <label className="block text-[9px] uppercase tracking-[0.18em] text-muted mb-1.5 font-medium">{t.password}</label>
                 <input type="password" value={passwordVal} onChange={e => setPasswordVal(e.target.value)} autoComplete="current-password"
-                  className="w-full bg-white/[0.03] border border-white/[0.08] rounded-2xl px-4 py-3 text-text text-[14px] focus:border-primary/60 focus:bg-white/[0.05] focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all" />
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-text text-[13px] focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all" />
               </div>
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)}
@@ -133,7 +130,7 @@ const Login: React.FC<{ onLogin: (remember: boolean) => void; lang: Language; se
               {error && <p className="text-[12px] text-danger">{error}</p>}
               <button
                 type="submit" disabled={loading || !loginVal || !passwordVal}
-                className="w-full bg-primary hover:bg-primary-hover text-white font-semibold py-3 rounded-2xl text-[13px] transition-all mt-1 flex items-center justify-center gap-2 disabled:opacity-70 shadow-[0_8px_24px_rgba(255,107,53,0.3)] hover:shadow-[0_8px_28px_rgba(255,107,53,0.45)] active:scale-[0.98]"
+                className="w-full bg-primary hover:bg-primary-hover text-white font-semibold py-2.5 rounded-lg text-[13px] transition-colors flex items-center justify-center gap-2 disabled:opacity-70"
               >
                 {loading
                   ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -357,6 +354,10 @@ export default function App() {
 
   const [navStyle, setNavStyleState] = useState<NavStyle>(loadNavStyle);
   const setNavStyle = (s: NavStyle) => { setNavStyleState(s); localStorage.setItem(NAV_STYLE_KEY, s); };
+  // 'auto' tracks the actual window state (maximized -> side nav, normal -> top nav);
+  // an explicit 'top'/'side' choice in Settings stays pinned regardless of window size.
+  const isWindowMaximized = useWindowMaximized();
+  const effectiveNavStyle: 'top' | 'side' = navStyle === 'auto' ? (isWindowMaximized ? 'side' : 'top') : navStyle;
   const [mobileNavStyle, setMobileNavStyleState] = useState<MobileNavStyle>(loadMobileNavStyle);
   const setMobileNavStyle = (s: MobileNavStyle) => { setMobileNavStyleState(s); localStorage.setItem(MOBILE_NAV_STYLE_KEY, s); };
   const [hiddenPages, setHiddenPagesState] = useState<ViewState[]>(loadHiddenPages);
@@ -524,7 +525,7 @@ export default function App() {
     <div className="min-h-screen bg-background text-text font-sans selection:bg-primary/20">
       <ToastContainer toasts={toasts} removeToast={removeToast} />
 
-      {navStyle === 'side' && (
+      {effectiveNavStyle === 'side' && (
         <Sidebar
           currentView={currentView}
           onNavigate={setCurrentView}
@@ -548,14 +549,14 @@ export default function App() {
         showAllBranchesOption={showAllBranchesOption}
         theme={theme}
         setTheme={setTheme}
-        navStyle={navStyle}
+        navStyle={effectiveNavStyle}
         mobileNavStyle={mobileNavStyle}
         hiddenPages={hiddenPages}
         logoUrl={logoUrl}
       />
 
       {demoBannerVisible && (
-        <div className={`fixed top-[52px] left-0 right-0 z-40 flex justify-center px-3 pt-2 ${navStyle === 'side' ? 'lg:pl-14' : ''}`}>
+        <div className={`fixed top-[52px] left-0 right-0 z-40 flex justify-center px-3 pt-2 ${effectiveNavStyle === 'side' ? 'lg:pl-56' : ''}`}>
           <div className="flex items-center gap-2 px-4 py-2 rounded-2xl text-[11px] font-medium max-w-full glass"
             style={{ borderColor: 'rgba(245,158,11,0.22)', background: 'rgba(245,158,11,0.08)' }}>
             <span style={{ color: '#f59e0b' }}>⚠</span>
@@ -568,8 +569,8 @@ export default function App() {
         </div>
       )}
 
-      <main className={`min-h-screen ${mobileNavStyle === 'bottom' ? 'pb-[76px] md:pb-0' : ''} ${demoBannerVisible ? 'pt-[96px]' : 'pt-[52px]'} ${navStyle === 'side' ? 'lg:pl-14' : ''}`}>
-        <div className="px-4 md:px-10 py-5 md:py-8 max-w-[1400px] mx-auto">
+      <main className={`min-h-screen ${mobileNavStyle === 'bottom' ? 'pb-[76px] md:pb-0' : ''} ${demoBannerVisible ? 'pt-[96px]' : 'pt-[52px]'} ${effectiveNavStyle === 'side' ? 'lg:pl-56' : ''}`}>
+        <div className={`px-4 md:px-10 py-5 md:py-8 mx-auto ${effectiveNavStyle === 'side' ? 'max-w-none' : 'max-w-[1400px]'}`}>
           {renderContent()}
         </div>
       </main>

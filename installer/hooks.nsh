@@ -5,10 +5,15 @@
   ; "TRACE-Setup-benedict.exe" -> tenant = "benedict".
   ; Browsers append " (1)", " (2)", etc. on repeat downloads, so we only
   ; keep leading alphanumeric/hyphen characters and stop at the first
-  ; anything-else (space, parenthesis, ...). If the filename doesn't
-  ; match the expected prefix at all, this yields an empty tenant and
-  ; the app falls back to asking the user once.
+  ; anything-else (space, parenthesis, ...). Anything not actually
+  ; prefixed "TRACE-Setup-" (a generically-named build, e.g. Tauri's own
+  ; default "TRACE_0.1.0_x64-setup.exe") is left alone entirely — no
+  ; tenant.txt is written, so the app falls back to asking the user once,
+  ; instead of parsing garbage out of an unrelated filename.
   ${GetFileName} "$EXEPATH" $1
+  StrCpy $8 $1 12
+  StrCmp $8 "TRACE-Setup-" 0 skip_tenant
+
   StrCpy $2 $1 -4
   StrCpy $3 $2 "" 12
 
@@ -28,6 +33,7 @@
   FileOpen $7 "$APPDATA\uz.trace-os.app\tenant.txt" w
   FileWrite $7 "$4"
   FileClose $7
+  skip_tenant:
 
   CreateShortCut "$DESKTOP\TRACE.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
 !macroend

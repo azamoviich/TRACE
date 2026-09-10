@@ -185,6 +185,9 @@ export const Waiters: React.FC<{ lang: Language }> = ({ lang }) => {
                     {tr(lang, 'Изм.', 'Change', "O'zgarish")}
                   </th>
                   <th className="text-right font-medium px-3 py-2">{tr(lang, 'Отзывов', 'Reviews', 'Sharhlar')}</th>
+                  <th className="text-right font-medium px-3 py-2" title={tr(lang, 'Сегодня минус вчера (отзывы)', 'Today minus yesterday (reviews)', 'Bugun minus kecha (sharhlar)')}>
+                    {tr(lang, 'Изм.', 'Change', "O'zgarish")}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -198,6 +201,9 @@ export const Waiters: React.FC<{ lang: Language }> = ({ lang }) => {
                       {s.delta > 0 ? '+' : ''}{s.delta}
                     </td>
                     <td className="px-3 py-2 text-right text-muted">{s.total_reviews}</td>
+                    <td className={`px-3 py-2 text-right font-medium ${s.reviews_delta > 0 ? 'text-success' : s.reviews_delta < 0 ? 'text-danger' : 'text-muted'}`}>
+                      {s.reviews_delta > 0 ? '+' : ''}{s.reviews_delta}
+                    </td>
                   </tr>
                 ))}
               </tbody>

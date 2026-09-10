@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import {
-  LogOut, Menu, X, Globe, Sparkles, GitCompare, Sun, Moon,
+  LogOut, Menu, X, Globe, Sparkles, GitCompare, Sun, Moon, Minus, Square, Copy,
 } from 'lucide-react';
 import { ViewState, Language } from '../types';
 import { TRANSLATIONS, nextLang, tr } from '../constants';
-import { BranchSummary, ALL_BRANCHES_ID } from '../services/traceApi';
+import { BranchSummary, ALL_BRANCHES_ID, isTauriApp } from '../services/traceApi';
 import { NAV_ITEMS, NavStyle, MobileNavStyle } from './navConfig';
+import { useWindowMaximized } from '../hooks/useWindowMaximized';
 
 interface TopNavProps {
   currentView: ViewState;
@@ -48,6 +49,13 @@ export const TopNav: React.FC<TopNavProps> = ({
   const [navHovered, setNavHovered] = useState(false);
   const [itemHover, setItemHover] = useState<number | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const inTauri = isTauriApp();
+  const isMaximized = useWindowMaximized();
+
+  const callWindow = async (action: 'minimize' | 'toggleMaximize' | 'close') => {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    await getCurrentWindow()[action]();
+  };
 
   const showBranches = branches.length > 1;
   const baseNav = NAV.filter(n => !hiddenPages.includes(n.id));
@@ -65,7 +73,11 @@ export const TopNav: React.FC<TopNavProps> = ({
 
   return (
     <>
-      <header className={`fixed top-0 left-0 right-0 z-50 h-[52px] glass-strong flex items-center px-5 md:px-8 shadow-[0_4px_16px_rgba(0,0,0,0.06)] ${navStyle === 'side' ? 'lg:pl-[72px]' : ''}`}>
+      <header
+        data-tauri-drag-region
+        className={`fixed top-0 right-0 z-50 h-[52px] glass-strong flex items-stretch shadow-[0_4px_16px_rgba(0,0,0,0.06)] ${navStyle === 'side' ? 'left-0 lg:left-56' : 'left-0'}`}
+      >
+      <div data-tauri-drag-region className="flex items-center px-5 md:px-8 flex-1 min-w-0 h-full">
 
         {/* Mobile menu trigger — only when the phone nav is set to drawer mode */}
         {mobileNavStyle === 'drawer' && (
@@ -77,24 +89,28 @@ export const TopNav: React.FC<TopNavProps> = ({
           </button>
         )}
 
-        {/* Logo — a custom upload from Settings replaces the wordmark */}
-        {logoUrl ? (
-          <img
-            src={logoUrl}
-            alt="Logo"
-            onClick={() => handleNav('dashboard')}
-            className="h-7 w-auto max-w-[120px] object-contain cursor-pointer select-none mr-6 flex-shrink-0 rounded"
-          />
-        ) : (
-          <span
-            className="font-display font-black text-[16px] tracking-[0.22em] text-text cursor-pointer select-none mr-6 flex-shrink-0"
-            onClick={() => handleNav('dashboard')}
-          >
-            TRACE
-          </span>
-        )}
+        {/* Logo — a custom upload from Settings replaces the wordmark. Hidden
+            at the lg+ breakpoint when nav style is 'side': the Sidebar
+            already shows the logo there, so this would just duplicate it. */}
+        <div className={`flex items-center ${navStyle === 'side' ? 'lg:hidden' : ''}`}>
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt="Logo"
+              onClick={() => handleNav('dashboard')}
+              className="h-7 w-auto max-w-[120px] object-contain cursor-pointer select-none mr-6 flex-shrink-0 rounded"
+            />
+          ) : (
+            <span
+              className="font-display font-black text-[16px] tracking-[0.22em] text-text cursor-pointer select-none mr-6 flex-shrink-0"
+              onClick={() => handleNav('dashboard')}
+            >
+              TRACE
+            </span>
+          )}
 
-        <div className="hidden md:block w-px h-4 bg-border mr-6 flex-shrink-0" />
+          <div className="hidden md:block w-px h-4 bg-border mr-6 flex-shrink-0" />
+        </div>
 
         {/* Desktop nav — hidden when the desktop nav style is set to sidebar */}
         <nav
@@ -241,6 +257,36 @@ export const TopNav: React.FC<TopNavProps> = ({
             <LogOut size={13} />
           </button>
         </div>
+      </div>
+
+      {/* Window controls — exe only; the plain website has its own browser
+          tab chrome. Sits flush against the right edge, outside the padded
+          content wrapper above, matching the Cursor/VS Code convention. */}
+      {inTauri && (
+        <div className="flex items-stretch h-full flex-shrink-0">
+          <button
+            onClick={() => callWindow('minimize')}
+            className="w-11 h-full flex items-center justify-center text-muted hover:text-text hover:bg-card-hover transition-colors"
+            title={tr(lang, 'Свернуть', 'Minimize', 'Yig\'ish')}
+          >
+            <Minus size={14} />
+          </button>
+          <button
+            onClick={() => callWindow('toggleMaximize')}
+            className="w-11 h-full flex items-center justify-center text-muted hover:text-text hover:bg-card-hover transition-colors"
+            title={isMaximized ? tr(lang, 'Восстановить', 'Restore', 'Tiklash') : tr(lang, 'Развернуть', 'Maximize', 'Yoyish')}
+          >
+            {isMaximized ? <Copy size={12} className="-scale-x-100" /> : <Square size={11} />}
+          </button>
+          <button
+            onClick={() => callWindow('close')}
+            className="w-11 h-full flex items-center justify-center text-muted hover:text-white hover:bg-danger transition-colors"
+            title={tr(lang, 'Закрыть', 'Close', 'Yopish')}
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
       </header>
 
       {/* Mobile menu */}

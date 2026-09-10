@@ -9,10 +9,25 @@
   * { box-sizing: border-box; }
   body {
     margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    background: #F7F5F2; color: #1A1A1A; font-family: system-ui, sans-serif; padding: 16px; position: relative;
+    background: #F7F5F2; color: #1A1A1A; font-family: system-ui, sans-serif; padding: 16px; padding-top: 48px; position: relative;
   }
+  .titlebar {
+    position: fixed; top: 0; left: 0; right: 0; height: 32px; z-index: 100;
+    background: #FFFFFF; border-bottom: 1px solid #E5E2DD;
+    display: flex; align-items: center; justify-content: space-between; user-select: none;
+  }
+  .titlebar-brand { display: flex; align-items: center; gap: 8px; padding: 0 12px; height: 100%; flex: 1; min-width: 0; }
+  .titlebar-brand img { width: 14px; height: 14px; flex-shrink: 0; }
+  .titlebar-brand span { font-size: 10px; font-weight: 700; letter-spacing: 0.14em; color: #5F5F5F; }
+  .titlebar-controls { display: flex; align-items: stretch; height: 100%; flex-shrink: 0; }
+  .titlebar-btn {
+    width: 44px; height: 100%; border: none; background: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; color: #5F5F5F;
+  }
+  .titlebar-btn:hover { background: #F7F5F2; color: #1A1A1A; }
+  .titlebar-btn.close:hover { background: #DC2626; color: #FFFFFF; }
   .lang-btn {
-    position: absolute; top: 20px; right: 20px; display: flex; align-items: center; gap: 6px;
+    position: absolute; top: 44px; right: 20px; display: flex; align-items: center; gap: 6px;
     background: none; width: auto; padding: 6px 12px; border-radius: 999px; border: 1px solid #E5E2DD;
     color: #5F5F5F; font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.15em;
     cursor: pointer; font-family: inherit;
@@ -65,6 +80,23 @@
 </style>
 </head>
 <body>
+  <div class="titlebar" data-tauri-drag-region>
+    <div class="titlebar-brand" data-tauri-drag-region>
+      <img src="/trace-icon-192.png" alt="" draggable="false" onerror="this.style.display='none'" />
+      <span>TRACE</span>
+    </div>
+    <div class="titlebar-controls">
+      <button class="titlebar-btn" id="tbMinimize" title="Minimize">
+        <svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="5.5" width="10" height="1" fill="currentColor"/></svg>
+      </button>
+      <button class="titlebar-btn" id="tbMaximize" title="Maximize">
+        <svg width="11" height="11" viewBox="0 0 11 11"><rect x="0.5" y="0.5" width="10" height="10" fill="none" stroke="currentColor"/></svg>
+      </button>
+      <button class="titlebar-btn close" id="tbClose" title="Close">
+        <svg width="12" height="12" viewBox="0 0 12 12"><path d="M1 1 L11 11 M11 1 L1 11" stroke="currentColor" stroke-width="1.2"/></svg>
+      </button>
+    </div>
+  </div>
   <button class="lang-btn" id="langBtn">
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
     <span id="langLabel">RU</span>
@@ -79,7 +111,7 @@
         <form id="loginForm">
           <div class="field">
             <label data-i18n="login">Login</label>
-            <input type="text" id="login" data-i18n-placeholder="loginPlaceholder" placeholder="e.g. rodena" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" />
+            <input type="text" id="login" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" />
           </div>
           <div class="field">
             <label data-i18n="password">Password</label>
@@ -124,7 +156,6 @@
         invalidLogin: 'Неверный логин или пароль — или используйте «Ввести вручную» ниже',
         networkError: 'Не удалось связаться с сервером — попробуйте снова',
         manualPrompt: 'Знаете адрес своего ресторана?', manualLink: 'Ввести вручную',
-        loginPlaceholder: 'например rodena',
         manualLabel: 'Адрес TRACE', manualPlaceholder: 'например benedict', continueBtn: 'Продолжить',
         onceHint: 'Это нужно сделать только один раз на этом компьютере.',
       },
@@ -135,7 +166,6 @@
         invalidLogin: 'Invalid login or password — or use "Enter it directly" below',
         networkError: 'Could not reach the server — try again',
         manualPrompt: "Know your restaurant's TRACE address?", manualLink: 'Enter it directly',
-        loginPlaceholder: 'e.g. rodena',
         manualLabel: 'TRACE address', manualPlaceholder: 'e.g. benedict', continueBtn: 'Continue',
         onceHint: 'You only need to do this once on this computer.',
       },
@@ -146,7 +176,6 @@
         invalidLogin: "Login yoki parol noto'g'ri — yoki quyidagi «To'g'ridan-to'g'ri kiritish»dan foydalaning",
         networkError: "Server bilan bog'lanib bo'lmadi — qayta urinib ko'ring",
         manualPrompt: 'Restoraningiz manzilini bilasizmi?', manualLink: "To'g'ridan-to'g'ri kiritish",
-        loginPlaceholder: 'masalan rodena',
         manualLabel: 'TRACE manzili', manualPlaceholder: 'masalan benedict', continueBtn: 'Davom etish',
         onceHint: 'Buni ushbu kompyuterda faqat bir marta bajarish kifoya.',
       },
@@ -280,6 +309,16 @@
       localStorage.setItem(KEY, address);
       window.location.href = `https://${address}.trace-os.uz/`;
     });
+
+    // ── Custom title bar (decorations: false in tauri.conf.json) ──
+    (function () {
+      const win = window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow
+        ? window.__TAURI__.window.getCurrentWindow() : null;
+      if (!win) return;
+      document.getElementById('tbMinimize').addEventListener('click', () => win.minimize());
+      document.getElementById('tbClose').addEventListener('click', () => win.close());
+      document.getElementById('tbMaximize').addEventListener('click', () => win.toggleMaximize());
+    })();
 
     // ── Boot: skip straight to a known tenant, otherwise show login + QR ──
     async function init() {

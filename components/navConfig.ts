@@ -36,11 +36,15 @@ export const DEFAULT_PAGE_KEY = 'trace_default_page';
 export const ACCENT_KEY = 'trace_accent';
 export const LOGO_URL_KEY = 'trace_logo_url';
 
-export type NavStyle = 'top' | 'side';
+// 'auto' follows the window's maximized state (see hooks/useWindowMaximized) —
+// side nav when maximized, top nav otherwise. 'top'/'side' are explicit user
+// overrides from Settings and stay pinned regardless of window state.
+export type NavStyle = 'top' | 'side' | 'auto';
 export type MobileNavStyle = 'bottom' | 'drawer';
 
 export function loadNavStyle(): NavStyle {
-  return localStorage.getItem(NAV_STYLE_KEY) === 'side' ? 'side' : 'top';
+  const saved = localStorage.getItem(NAV_STYLE_KEY);
+  return saved === 'side' || saved === 'top' ? saved : 'auto';
 }
 
 export function loadMobileNavStyle(): MobileNavStyle {

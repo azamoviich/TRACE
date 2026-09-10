@@ -14,7 +14,7 @@ import { Settings } from './components/views/Settings';
 import { Admin } from './components/views/Admin';
 import { Compare } from './components/views/Compare';
 import { Checklists } from './components/views/Checklists';
-import { Globe, Sun, Moon, Minus, Square, Copy, X } from 'lucide-react';
+import { Globe, Sun, Moon } from 'lucide-react';
 import { TRANSLATIONS, nextLang, tr } from './constants';
 import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos, createQrSession, pollQrSession, QrSession, isTauriApp, consumeBootstrapToken } from './services/traceApi';
 import { ManagerPortal } from './components/ManagerPortal';
@@ -35,12 +35,6 @@ const Login: React.FC<{ onLogin: (remember: boolean) => void; lang: Language; se
   const [passwordVal, setPasswordVal] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const t = TRANSLATIONS[lang];
-  const isMaximized = useWindowMaximized();
-
-  const callWindow = async (action: 'minimize' | 'toggleMaximize' | 'close') => {
-    const { getCurrentWindow } = await import('@tauri-apps/api/window');
-    await getCurrentWindow()[action]();
-  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -159,39 +153,7 @@ const Login: React.FC<{ onLogin: (remember: boolean) => void; lang: Language; se
   // Desktop app (exe) — redesigned login + QR pairing with TRACEMOB below.
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4 relative">
-      {/* Custom titlebar — decorations: false in tauri.conf.json means the OS
-          draws no window chrome at all, so the login screen needs its own
-          drag region and minimize/maximize/close, same as TopNav once
-          logged in. */}
-      <div data-tauri-drag-region className="fixed top-0 left-0 right-0 h-9 flex items-stretch z-30">
-        <div data-tauri-drag-region className="flex-1" />
-        <div className="flex items-stretch h-full flex-shrink-0">
-          <button
-            onClick={() => callWindow('minimize')}
-            className="w-11 h-full flex items-center justify-center text-muted hover:text-text hover:bg-card-hover transition-colors"
-            title={tr(lang, 'Свернуть', 'Minimize', 'Yig\'ish')}
-          >
-            <Minus size={14} />
-          </button>
-          <button
-            onClick={() => callWindow('toggleMaximize')}
-            className="w-11 h-full flex items-center justify-center text-muted hover:text-text hover:bg-card-hover transition-colors"
-            title={isMaximized ? tr(lang, 'Восстановить', 'Restore', 'Tiklash') : tr(lang, 'Развернуть', 'Maximize', 'Yoyish')}
-          >
-            {isMaximized ? <Copy size={12} className="-scale-x-100" /> : <Square size={11} />}
-          </button>
-          <button
-            onClick={() => callWindow('close')}
-            className="w-11 h-full flex items-center justify-center text-muted hover:text-white hover:bg-danger transition-colors"
-            title={tr(lang, 'Закрыть', 'Close', 'Yopish')}
-          >
-            <X size={15} />
-          </button>
-        </div>
-      </div>
-
-      {/* top-14: clears the fixed titlebar (h-9) above so it never sits under the window controls */}
-      <div className="absolute top-14 right-5 z-20">
+      <div className="absolute top-5 right-5 z-20">
         <button
           onClick={() => setLang(nextLang(lang))}
           className="text-muted hover:text-text flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.15em] border border-border hover:border-primary/40 px-3 py-1.5 rounded-full transition-colors"

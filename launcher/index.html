@@ -5,53 +5,286 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>TRACE</title>
 <style>
-  :root { color-scheme: dark; }
+  :root { color-scheme: light; }
   * { box-sizing: border-box; }
   body {
-    margin: 0; height: 100vh; display: flex; align-items: center; justify-content: center;
-    background: #1a1a1d; color: #f0eee9; font-family: system-ui, sans-serif;
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #F7F5F2; color: #1A1A1A; font-family: system-ui, sans-serif; padding: 16px; position: relative;
   }
-  .box { width: 320px; text-align: center; }
-  h1 { font-size: 20px; margin: 0 0 6px; }
-  p { font-size: 13px; color: #9a9a9a; margin: 0 0 20px; }
-  input {
-    width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #303036;
-    background: #222226; color: #f0eee9; font-size: 14px; margin-bottom: 12px;
+  .lang-btn {
+    position: absolute; top: 20px; right: 20px; display: flex; align-items: center; gap: 6px;
+    background: none; width: auto; padding: 6px 12px; border-radius: 999px; border: 1px solid #E5E2DD;
+    color: #5F5F5F; font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.15em;
+    cursor: pointer; font-family: inherit;
   }
+  .lang-btn:hover { background: #F7F5F2; border-color: #FF6B35; color: #1A1A1A; }
+  .wrap { width: 100%; max-width: 640px; visibility: hidden; }
+  .header { text-align: center; margin-bottom: 32px; }
+  .header h1 { font-size: 24px; font-weight: 900; letter-spacing: 0.25em; margin: 0; }
+  .header p { font-size: 9px; text-transform: uppercase; letter-spacing: 0.3em; color: #5F5F5F; margin: 8px 0 0; }
+  .row { display: flex; flex-wrap: wrap; justify-content: center; gap: 24px; }
+  .card {
+    background: #FFFFFF; border: 1px solid #E5E2DD; border-radius: 12px; padding: 24px;
+    width: 100%; max-width: 320px;
+  }
+  .card.qr { max-width: 260px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+  label { display: block; font-size: 9px; text-transform: uppercase; letter-spacing: 0.18em; color: #5F5F5F; margin-bottom: 6px; font-weight: 500; }
+  .field { margin-bottom: 16px; }
+  input[type="text"], input[type="password"] {
+    width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #E5E2DD;
+    background: #F7F5F2; color: #1A1A1A; font-size: 13px; font-family: inherit;
+  }
+  input[type="text"]:focus, input[type="password"]:focus { outline: none; border-color: #FF6B35; }
+  .remember { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; cursor: pointer; user-select: none; }
+  .remember input[type="checkbox"] { accent-color: #FF6B35; width: 15px; height: 15px; cursor: pointer; }
+  .remember span { font-size: 12px; color: #5F5F5F; }
   button {
-    width: 100%; padding: 10px; border-radius: 10px; border: none;
-    background: #ff6b35; color: white; font-weight: 600; font-size: 14px; cursor: pointer;
+    width: 100%; padding: 11px; border-radius: 8px; border: none;
+    background: #FF6B35; color: white; font-weight: 600; font-size: 13px; cursor: pointer; font-family: inherit;
   }
-  button:disabled { opacity: 0.5; cursor: default; }
-  .hint { font-size: 11px; color: #6b6b6b; margin-top: 10px; }
+  button:hover { background: #E85A1F; }
+  button:disabled { opacity: 0.6; cursor: default; }
+  .error { font-size: 12px; color: #DC2626; margin: -8px 0 16px; }
+  .manual-toggle { font-size: 11px; color: #5F5F5F; text-align: center; margin: 14px 0 0; }
+  .manual-toggle a { color: #FF6B35; text-decoration: none; }
+  .manual-toggle a:hover { text-decoration: underline; }
+  #manualForm { margin-top: 14px; padding-top: 14px; border-top: 1px solid #E5E2DD; }
+  .qr-title { font-size: 9px; text-transform: uppercase; letter-spacing: 0.18em; color: #5F5F5F; font-weight: 500; margin: 0 0 16px; }
+  .qr-box {
+    width: 168px; height: 168px; border-radius: 8px; border: 1px solid #E5E2DD;
+    display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; flex-shrink: 0;
+  }
+  .qr-box img { width: 100%; height: 100%; object-fit: contain; }
+  .qr-hint { font-size: 11px; color: #5F5F5F; margin: 16px 0 0; line-height: 1.5; }
+  .spinner {
+    width: 22px; height: 22px; border: 2px solid rgba(0,0,0,0.1); border-top-color: rgba(0,0,0,0.4);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .hint { text-align: center; font-size: 11px; color: #9a9a9a; margin-top: 20px; }
 </style>
 </head>
 <body>
-  <div class="box">
-    <h1>TRACE</h1>
-    <p>Enter your restaurant's TRACE address to continue</p>
-    <input id="subdomain" placeholder="e.g. benedict" autofocus />
-    <button id="go">Continue</button>
-    <div class="hint">You only need to do this once on this computer.</div>
+  <button class="lang-btn" id="langBtn">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+    <span id="langLabel">RU</span>
+  </button>
+  <div class="wrap" id="wrap">
+    <div class="header">
+      <h1>TRACE</h1>
+      <p>Restaurant OS</p>
+    </div>
+    <div class="row">
+      <div class="card">
+        <form id="loginForm">
+          <div class="field">
+            <label data-i18n="login">Login</label>
+            <input type="text" id="login" data-i18n-placeholder="loginPlaceholder" placeholder="e.g. rodena" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" />
+          </div>
+          <div class="field">
+            <label data-i18n="password">Password</label>
+            <input type="password" id="password" autocomplete="current-password" />
+          </div>
+          <label class="remember">
+            <input type="checkbox" id="remember" checked />
+            <span data-i18n="rememberMe">Remember me</span>
+          </label>
+          <p class="error" id="loginError" style="display:none"></p>
+          <button type="submit" id="loginBtn" data-i18n="signIn">Sign In</button>
+        </form>
+        <p class="manual-toggle" id="manualToggle"><span data-i18n="manualPrompt">Know your restaurant's TRACE address?</span> <a href="#" id="manualLink" data-i18n="manualLink">Enter it directly</a></p>
+        <form id="manualForm" style="display:none">
+          <div class="field">
+            <label data-i18n="manualLabel">TRACE address</label>
+            <input type="text" id="manualAddress" data-i18n-placeholder="manualPlaceholder" placeholder="e.g. benedict" autocapitalize="none" autocorrect="off" spellcheck="false" />
+          </div>
+          <button type="submit" data-i18n="continueBtn">Continue</button>
+        </form>
+      </div>
+      <div class="card qr">
+        <p class="qr-title" data-i18n="qrTitle">Sign in via TRACEMOB</p>
+        <div class="qr-box" id="qrBox"><div class="spinner"></div></div>
+        <p class="qr-hint" id="qrHint" data-i18n="qrHint">Open TRACEMOB on your phone and scan the code</p>
+      </div>
+    </div>
+    <p class="hint" data-i18n="onceHint">You only need to do this once on this computer.</p>
   </div>
   <script>
+    const BASE = 'https://trace-backend-production-cbce.up.railway.app';
     const KEY = 'trace_desktop_tenant';
-    const input = document.getElementById('subdomain');
-    const go = document.getElementById('go');
 
-    function normalize(v) {
-      v = v.trim().toLowerCase();
-      v = v.replace(/^https?:\/\//, '').replace(/\.trace-os\.uz.*$/, '').replace(/\/.*$/, '');
-      return v;
+    // Same three strings/order as constants.ts (TRANSLATIONS) and nextLang's
+    // ru → en → uz cycle — kept in sync by hand since this launcher is a
+    // static asset with no build step to share that file with.
+    const TR = {
+      ru: {
+        login: 'Войти', password: 'Пароль', rememberMe: 'Запомнить меня', signIn: 'Войти в Систему',
+        qrTitle: 'Вход через TRACEMOB', qrHint: 'Откройте приложение TRACEMOB на телефоне и отсканируйте код',
+        qrExpired: 'Код истёк — обновляем...', qrConfirmed: 'Вход подтверждён',
+        invalidLogin: 'Неверный логин или пароль — или используйте «Ввести вручную» ниже',
+        networkError: 'Не удалось связаться с сервером — попробуйте снова',
+        manualPrompt: 'Знаете адрес своего ресторана?', manualLink: 'Ввести вручную',
+        loginPlaceholder: 'например rodena',
+        manualLabel: 'Адрес TRACE', manualPlaceholder: 'например benedict', continueBtn: 'Продолжить',
+        onceHint: 'Это нужно сделать только один раз на этом компьютере.',
+      },
+      en: {
+        login: 'Login', password: 'Password', rememberMe: 'Remember me', signIn: 'Enter System',
+        qrTitle: 'Sign in via TRACEMOB', qrHint: 'Open TRACEMOB on your phone and scan the code',
+        qrExpired: 'Code expired — refreshing...', qrConfirmed: 'Signed in',
+        invalidLogin: 'Invalid login or password — or use "Enter it directly" below',
+        networkError: 'Could not reach the server — try again',
+        manualPrompt: "Know your restaurant's TRACE address?", manualLink: 'Enter it directly',
+        loginPlaceholder: 'e.g. rodena',
+        manualLabel: 'TRACE address', manualPlaceholder: 'e.g. benedict', continueBtn: 'Continue',
+        onceHint: 'You only need to do this once on this computer.',
+      },
+      uz: {
+        login: 'Kirish', password: 'Parol', rememberMe: 'Meni eslab qol', signIn: 'Tizimga kirish',
+        qrTitle: 'TRACEMOB orqali kirish', qrHint: 'Telefoningizda TRACEMOB ilovasini oching va kodni skanerlang',
+        qrExpired: 'Kod eskirdi — yangilanmoqda...', qrConfirmed: 'Kirish tasdiqlandi',
+        invalidLogin: "Login yoki parol noto'g'ri — yoki quyidagi «To'g'ridan-to'g'ri kiritish»dan foydalaning",
+        networkError: "Server bilan bog'lanib bo'lmadi — qayta urinib ko'ring",
+        manualPrompt: 'Restoraningiz manzilini bilasizmi?', manualLink: "To'g'ridan-to'g'ri kiritish",
+        loginPlaceholder: 'masalan rodena',
+        manualLabel: 'TRACE manzili', manualPlaceholder: 'masalan benedict', continueBtn: 'Davom etish',
+        onceHint: 'Buni ushbu kompyuterda faqat bir marta bajarish kifoya.',
+      },
+    };
+    const LANG_CYCLE = ['ru', 'en', 'uz'];
+    let lang = localStorage.getItem('trace_lang');
+    if (!LANG_CYCLE.includes(lang)) lang = 'ru';
+
+    function applyLang() {
+      const t = TR[lang];
+      document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t[el.dataset.i18n]; });
+      document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => { el.placeholder = t[el.dataset.i18nPlaceholder]; });
+      document.getElementById('langLabel').textContent = lang.toUpperCase();
+      document.documentElement.lang = lang;
+    }
+    document.getElementById('langBtn').addEventListener('click', () => {
+      lang = LANG_CYCLE[(LANG_CYCLE.indexOf(lang) + 1) % LANG_CYCLE.length];
+      localStorage.setItem('trace_lang', lang);
+      applyLang();
+    });
+    applyLang();
+
+    function goToTenant(subdomain, token, plan, remember) {
+      localStorage.setItem(KEY, subdomain);
+      const params = new URLSearchParams({ bootstrapToken: token, bootstrapRemember: remember ? '1' : '0', bootstrapPlan: plan || 'pro' });
+      window.location.href = `https://${subdomain}.trace-os.uz/?${params.toString()}`;
     }
 
-    function launch(sub) {
-      window.location.href = `https://${sub}.trace-os.uz/`;
+    // ── Password login ──
+    const loginForm = document.getElementById('loginForm');
+    const loginBtn = document.getElementById('loginBtn');
+    const loginError = document.getElementById('loginError');
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const login = document.getElementById('login').value.trim();
+      const password = document.getElementById('password').value;
+      const remember = document.getElementById('remember').checked;
+      if (!login || !password) return;
+      loginBtn.disabled = true;
+      loginError.style.display = 'none';
+      try {
+        const r = await fetch(`${BASE}/admin/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ login, password }),
+        });
+        const json = await r.json();
+        if (json.ok && json.subdomain && json.token) {
+          goToTenant(json.subdomain, json.token, json.plan, remember);
+          return;
+        }
+        // /admin/login can't tell a wrong password apart from "this login
+        // isn't unique across tenants" (e.g. two restaurants both still on
+        // the admin/123 default) — point at the manual fallback either way.
+        loginError.dataset.i18n = 'invalidLogin';
+        loginError.textContent = TR[lang].invalidLogin;
+        loginError.style.display = 'block';
+      } catch (e) {
+        loginError.dataset.i18n = 'networkError';
+        loginError.textContent = TR[lang].networkError;
+        loginError.style.display = 'block';
+      } finally {
+        loginBtn.disabled = false;
+      }
+    });
+
+    // ── QR login ──
+    const qrBox = document.getElementById('qrBox');
+    const qrHint = document.getElementById('qrHint');
+    let qrPollId = null;
+
+    // Keeps qrHint's data-i18n key in sync with whichever message is
+    // showing, so a language toggle mid-flow (e.g. while "expired") still
+    // re-translates it correctly instead of only working before it starts.
+    function setQrHint(key) {
+      qrHint.dataset.i18n = key;
+      qrHint.textContent = TR[lang][key];
     }
 
+    async function startQrSession() {
+      setQrHint('qrHint');
+      try {
+        const r = await fetch(`${BASE}/admin/qr-session/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const json = await r.json();
+        if (!json.ok) { setTimeout(startQrSession, 3000); return; }
+        qrBox.innerHTML = `<img src="${json.qrDataUrl}" alt="QR" />`;
+        if (qrPollId) clearInterval(qrPollId);
+        qrPollId = setInterval(() => pollQrSession(json.sessionId), 2000);
+      } catch (e) {
+        setTimeout(startQrSession, 3000);
+      }
+    }
+
+    async function pollQrSession(sessionId) {
+      try {
+        const r = await fetch(`${BASE}/admin/qr-session/status?sessionId=${encodeURIComponent(sessionId)}`);
+        const json = await r.json();
+        if (json.status === 'confirmed' && json.token && json.subdomain) {
+          clearInterval(qrPollId);
+          setQrHint('qrConfirmed');
+          goToTenant(json.subdomain, json.token, json.plan, true); // scanning a phone is trust enough to remember this device
+        } else if (json.status === 'expired') {
+          clearInterval(qrPollId);
+          setQrHint('qrExpired');
+          qrBox.innerHTML = '<div class="spinner"></div>';
+          setTimeout(startQrSession, 1200);
+        }
+      } catch (e) {
+        // network blip — keep polling, don't flash "expired"
+      }
+    }
+
+    // ── Manual address fallback — for the rare login that /admin/login
+    // can't resolve to a single tenant (e.g. two restaurants still both on
+    // the admin/123 default with no custom login set) ──
+    const manualLink = document.getElementById('manualLink');
+    const manualForm = document.getElementById('manualForm');
+    manualLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      manualForm.style.display = manualForm.style.display === 'none' ? 'block' : 'none';
+    });
+    manualForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      let address = document.getElementById('manualAddress').value.trim().toLowerCase();
+      address = address.replace(/^https?:\/\//, '').replace(/\.trace-os\.uz.*$/, '').replace(/\/.*$/, '');
+      if (!address) return;
+      localStorage.setItem(KEY, address);
+      window.location.href = `https://${address}.trace-os.uz/`;
+    });
+
+    // ── Boot: skip straight to a known tenant, otherwise show login + QR ──
     async function init() {
       const saved = localStorage.getItem(KEY);
-      if (saved) { launch(saved); return; }
+      if (saved) { window.location.href = `https://${saved}.trace-os.uz/`; return; }
 
       try {
         const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
@@ -59,21 +292,18 @@
           const preset = await invoke('get_preset_tenant');
           if (preset) {
             localStorage.setItem(KEY, preset);
-            launch(preset);
+            window.location.href = `https://${preset}.trace-os.uz/`;
             return;
           }
         }
       } catch (e) {}
+
+      // No saved/preset tenant — this device hasn't signed in before. Show
+      // login + QR and let the credentials themselves determine the tenant.
+      document.getElementById('wrap').style.visibility = 'visible';
+      startQrSession();
     }
     init();
-
-    go.addEventListener('click', () => {
-      const sub = normalize(input.value);
-      if (!sub) return;
-      localStorage.setItem(KEY, sub);
-      launch(sub);
-    });
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go.click(); });
   </script>
 </body>
 </html>

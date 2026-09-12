@@ -2402,6 +2402,14 @@ export interface Organization {
   iiko_chain_server: string | null;
   iiko_chain_login: string | null;
   iiko_chain_password: string | null;
+  // The owner's TRACE dashboard login, shared across every branch tenant in
+  // this organization instead of each branch having its own — see
+  // /admin/login and /admin/tenant-auth. Writable via PATCH
+  // /admin/organizations/:id (app_password is hashed server-side into
+  // app_password_hash — never sent back).
+  app_login: string | null;
+  app_password_hash?: string | null;
+  app_password?: string;
 }
 
 export interface BranchCompareResult extends BranchSummary {

@@ -167,7 +167,13 @@
     applyLang();
 
     function goToTenant(subdomain, token, plan, remember) {
-      localStorage.setItem(KEY, subdomain);
+      // Only pin this device to the restaurant when "Remember me" is
+      // checked — this exe is a single shared download used by every
+      // customer, so without "remember" the launcher must show the login
+      // form again next time (letting a different restaurant's owner sign
+      // in on the same machine) instead of permanently locking the device
+      // to whichever account happened to log in first.
+      if (remember) localStorage.setItem(KEY, subdomain);
       const params = new URLSearchParams({ bootstrapToken: token, bootstrapRemember: remember ? '1' : '0', bootstrapPlan: plan || 'pro' });
       window.location.href = `https://${subdomain}.trace-os.uz/?${params.toString()}`;
     }
@@ -280,20 +286,28 @@
 
     // ── Boot: skip straight to a known tenant, otherwise show login + QR ──
     async function init() {
-      const saved = localStorage.getItem(KEY);
-      if (saved) { window.location.href = `https://${saved}.trace-os.uz/`; return; }
+      // Set by App.tsx's sign-out (exe only) — this device's owner explicitly
+      // asked to switch accounts, so the remembered tenant must not just
+      // bounce them straight back to the restaurant they signed out of.
+      const switchingAccount = new URLSearchParams(window.location.search).get('switchAccount') === '1';
+      if (switchingAccount) {
+        localStorage.removeItem(KEY);
+      } else {
+        const saved = localStorage.getItem(KEY);
+        if (saved) { window.location.href = `https://${saved}.trace-os.uz/`; return; }
 
-      try {
-        const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
-        if (invoke) {
-          const preset = await invoke('get_preset_tenant');
-          if (preset) {
-            localStorage.setItem(KEY, preset);
-            window.location.href = `https://${preset}.trace-os.uz/`;
-            return;
+        try {
+          const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+          if (invoke) {
+            const preset = await invoke('get_preset_tenant');
+            if (preset) {
+              localStorage.setItem(KEY, preset);
+              window.location.href = `https://${preset}.trace-os.uz/`;
+              return;
+            }
           }
-        }
-      } catch (e) {}
+        } catch (e) {}
+      }
 
       // No saved/preset tenant — this device hasn't signed in before. Show
       // login + QR and let the credentials themselves determine the tenant.

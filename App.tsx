@@ -331,6 +331,19 @@ export default function App() {
   const [bootstrapped] = useState(consumeBootstrapToken);
 
   const [isLoggedIn, setIsLoggedIn] = useState(() => isDemoTenant() || bootstrapped);
+  // Logging out in the exe must send the device back to the restaurant
+  // picker (launcher/index.html), not just re-show this same tenant's own
+  // login form — this exe is a single shared download used by every
+  // customer, so a different owner needs to be able to sign into their own
+  // restaurant from here. switchAccount=1 tells the launcher's init() to
+  // skip its "jump straight to the remembered tenant" shortcut even if this
+  // device still has one saved (see launcher/index.html).
+  const handleLogout = () => {
+    localStorage.removeItem('trace_remember');
+    clearTenantToken();
+    if (isTauriApp()) { window.location.href = 'https://tauri.localhost/?switchAccount=1'; return; }
+    setIsLoggedIn(false);
+  };
   const [authChecking, setAuthChecking] = useState(() => !isDemoTenant() && !bootstrapped && localStorage.getItem('trace_remember') === '1');
   const [currentView, setCurrentView] = useState<ViewState>(() => {
     const v = new URLSearchParams(window.location.search).get('view');
@@ -529,7 +542,7 @@ export default function App() {
         <Sidebar
           currentView={currentView}
           onNavigate={setCurrentView}
-          onLogout={() => { localStorage.removeItem('trace_remember'); clearTenantToken(); setIsLoggedIn(false); }}
+          onLogout={handleLogout}
           lang={lang}
           hiddenPages={hiddenPages}
           logoUrl={logoUrl}
@@ -539,7 +552,7 @@ export default function App() {
       <TopNav
         currentView={currentView}
         onNavigate={setCurrentView}
-        onLogout={() => { localStorage.removeItem('trace_remember'); clearTenantToken(); setIsLoggedIn(false); }}
+        onLogout={handleLogout}
         lang={lang}
         setLang={setLang}
         onOpenAI={() => setAiOpen(true)}

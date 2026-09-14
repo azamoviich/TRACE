@@ -341,7 +341,17 @@ export default function App() {
   const handleLogout = () => {
     localStorage.removeItem('trace_remember');
     clearTenantToken();
-    if (isTauriApp()) { window.location.href = 'https://tauri.localhost/index.html?switchAccount=1'; return; }
+    if (isTauriApp()) {
+      // Driven from Rust (src-tauri's `sign_out` command) rather than a
+      // plain window.location.href — navigating tauri.localhost via JS from
+      // this remote origin hit ERR_CONNECTION_REFUSED on WebView2. Falls
+      // back to the old direct navigation if an older installed exe doesn't
+      // have the command yet.
+      import('@tauri-apps/api/core')
+        .then(({ invoke }) => invoke('sign_out'))
+        .catch(() => { window.location.href = 'https://tauri.localhost/index.html?switchAccount=1'; });
+      return;
+    }
     setIsLoggedIn(false);
   };
   const [authChecking, setAuthChecking] = useState(() => !isDemoTenant() && !bootstrapped && localStorage.getItem('trace_remember') === '1');

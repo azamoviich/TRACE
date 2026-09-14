@@ -341,7 +341,7 @@ export default function App() {
   const handleLogout = () => {
     localStorage.removeItem('trace_remember');
     clearTenantToken();
-    if (isTauriApp()) { window.location.href = 'https://tauri.localhost/?switchAccount=1'; return; }
+    if (isTauriApp()) { window.location.href = 'https://tauri.localhost/index.html?switchAccount=1'; return; }
     setIsLoggedIn(false);
   };
   const [authChecking, setAuthChecking] = useState(() => !isDemoTenant() && !bootstrapped && localStorage.getItem('trace_remember') === '1');

@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, Trash2, Camera, ChevronRight, ArrowLeft, X, Download, Pencil, Calendar as CalendarIcon, History as HistoryIcon, Building2 as Building2Icon, Copy, Link2 } from 'lucide-react';
+import { Plus, Trash2, Camera, ChevronRight, ArrowLeft, X, Download, Pencil, Calendar as CalendarIcon, History as HistoryIcon, Building2 as Building2Icon, Copy, Link2, ShieldCheck } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { DateRangePicker } from '../ui/DateRangePicker';
 import { Language } from '../../types';
-import { checklistApi, getSubdomain, getActiveBranchId, traceApi, BranchSummary } from '../../services/traceApi';
+import { checklistApi, getSubdomain, getActiveBranchId, traceApi, BranchSummary, EmployeeDashboard, EmployeeStatus, MenuItem } from '../../services/traceApi';
 import type {
   ChecklistRole, ChecklistEmployee, ChecklistManager, Checklist, ChecklistItem, ChecklistItemType, ChecklistStats,
   ChecklistHistoryRow, ChecklistAuditLogEntry, ChecklistWithItems,
@@ -22,7 +22,7 @@ function confirmDelete(lang: Language, what: string): boolean {
   return window.confirm(tr(lang, `Удалить «${what}»? Это нельзя отменить.`, `Delete "${what}"? This can't be undone.`, `"${what}" o'chirilsinmi? Buni bekor qilib bo'lmaydi.`));
 }
 
-type Tab = 'dashboard' | 'roles' | 'employees' | 'managers' | 'checklists' | 'history';
+type Tab = 'dashboard' | 'roles' | 'employees' | 'managers' | 'checklists' | 'history' | 'menu';
 
 interface Props {
   lang: Language;
@@ -54,6 +54,7 @@ export function Checklists({ lang, onShowToast }: Props) {
     { id: 'roles', label: tr(lang, 'Должности', 'Roles', 'Lavozimlar') },
     { id: 'employees', label: tr(lang, 'Сотрудники', 'Employees', 'Xodimlar') },
     { id: 'managers', label: tr(lang, 'Менеджеры', 'Managers', 'Menejerlar') },
+    { id: 'menu', label: tr(lang, 'Меню', 'Menu', 'Menyu') },
     { id: 'history', label: tr(lang, 'История', 'History', 'Tarix') },
   ];
 
@@ -83,6 +84,7 @@ export function Checklists({ lang, onShowToast }: Props) {
       {tab === 'roles' && <RolesTab lang={lang} roles={roles} loading={loadingRoles} onChange={loadRoles} onShowToast={onShowToast} />}
       {tab === 'employees' && <EmployeesTab lang={lang} roles={roles} onShowToast={onShowToast} />}
       {tab === 'managers' && <ManagersTab lang={lang} roles={roles} onShowToast={onShowToast} />}
+      {tab === 'menu' && <MenuTab lang={lang} onShowToast={onShowToast} />}
       {tab === 'checklists' && <ChecklistsTab lang={lang} roles={roles} onShowToast={onShowToast} branches={branches} currentBranch={currentBranch} />}
       {tab === 'history' && (
         <HistoryTab
@@ -445,6 +447,16 @@ export interface EmployeesApi {
   posPreview: () => Promise<{ groups: { posRoleName: string; names: string[] }[] }>;
   import: (roleId: string, names: string[]) => Promise<{ created: { name: string; pin: string }[] }>;
   invite: (name: string, roleId: string, contact: { email?: string; phone?: string }) => Promise<ChecklistEmployee>;
+  // Employee Hub Phase 1 — optional so an older/manager-bound EmployeesApi
+  // that hasn't wired these yet still satisfies the interface; EmployeesTab
+  // guards every call with `api.dashboard?.(...)` etc.
+  dashboard?: (query?: { q?: string; roleId?: string; status?: string }) => Promise<EmployeeDashboard>;
+  inviteBulk?: (invites: { name: string; roleId: string; email?: string; phone?: string }[]) => Promise<{ results: { name?: string; ok: boolean; id?: string; error?: string }[] }>;
+  resendInvite?: (id: string) => Promise<{ ok: boolean }>;
+  // Employee Hub Phase 7 (plan §13) — web/EXE-only permission grants.
+  permissionScopes?: () => Promise<{ scopes: string[]; presets: Record<string, string[]> }>;
+  getPermissions?: (id: string) => Promise<{ scopes: string[] }>;
+  setPermissions?: (id: string, scopes: string[]) => Promise<{ scopes: string[] }>;
 }
 
 // ── POS import ───────────────────────────────────────────────────────────
@@ -528,6 +540,30 @@ function PosImportPanel({ lang, roles, onShowToast, onImported, api }: {
   );
 }
 
+// Employee Hub Phase 1 — status badge styling + copy per derived state
+// (plan §2.5: three distinct states, not one boolean).
+function statusBadge(lang: Language, status: EmployeeStatus): { label: string; className: string } {
+  switch (status) {
+    case 'terminated': return { label: tr(lang, 'Уволен', 'Terminated', 'Ishdan bo\'shatilgan'), className: 'bg-red-500/10 text-red-600' };
+    case 'suspended': return { label: tr(lang, 'Заблокирован', 'Suspended', 'Bloklangan'), className: 'bg-red-500/10 text-red-600' };
+    case 'invited_not_logged_in': return { label: tr(lang, 'Приглашён', 'Invited', 'Taklif qilingan'), className: 'bg-amber-500/10 text-amber-600' };
+    case 'on_shift': return { label: tr(lang, 'На смене', 'On shift', 'Smenada'), className: 'bg-green-500/10 text-green-600' };
+    case 'onboarded_offline': return { label: tr(lang, 'Офлайн', 'Offline', 'Oflayn'), className: 'bg-muted/10 text-muted' };
+  }
+}
+
+function relativeTimeShort(lang: Language, iso: string | null): string {
+  if (!iso) return tr(lang, 'никогда', 'never', 'hech qachon');
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return tr(lang, 'только что', 'just now', 'hozirgina');
+  if (mins < 60) return tr(lang, `${mins} мин назад`, `${mins}m ago`, `${mins} daq oldin`);
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return tr(lang, `${hrs} ч назад`, `${hrs}h ago`, `${hrs} soat oldin`);
+  const days = Math.floor(hrs / 24);
+  return tr(lang, `${days} дн назад`, `${days}d ago`, `${days} kun oldin`);
+}
+
 export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.employees, showIikoLink = true }: {
   lang: Language; roles: ChecklistRole[];
   onShowToast: (m: string, t: 'success' | 'error' | 'info') => void;
@@ -553,8 +589,43 @@ export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.empl
   const [editName, setEditName] = useState('');
   const [editPin, setEditPin] = useState('');
   const [editBusy, setEditBusy] = useState(false);
+  // Employee Hub Phase 1 — roster summary + derived status (plan §2.2/§2.5).
+  const [dashboard, setDashboard] = useState<EmployeeDashboard | null>(null);
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  // Employee Hub Phase 7 — permission-grant modal (plan §13).
+  const [permEmployee, setPermEmployee] = useState<ChecklistEmployee | null>(null);
+  const [permAll, setPermAll] = useState<{ scopes: string[]; presets: Record<string, string[]> } | null>(null);
+  const [permSelected, setPermSelected] = useState<string[]>([]);
+  const [permBusy, setPermBusy] = useState(false);
 
-  const load = () => api.list().then(setEmployees).catch(() => {});
+  const openPermissions = async (e: ChecklistEmployee) => {
+    setPermEmployee(e);
+    setPermSelected([]);
+    try {
+      const [all, mine] = await Promise.all([
+        permAll ?? api.permissionScopes?.() ?? Promise.resolve({ scopes: [], presets: {} }),
+        api.getPermissions?.(e.id) ?? Promise.resolve({ scopes: [] }),
+      ]);
+      if (!permAll) setPermAll(all);
+      setPermSelected(mine.scopes);
+    } catch { onShowToast(tr(lang, 'Не удалось загрузить доступы', 'Failed to load permissions', "Ruxsatlarni yuklab bo'lmadi"), 'error'); }
+  };
+
+  const savePermissions = async () => {
+    if (!permEmployee) return;
+    setPermBusy(true);
+    try {
+      await api.setPermissions?.(permEmployee.id, permSelected);
+      onShowToast(tr(lang, 'Доступы сохранены', 'Permissions saved', 'Ruxsatlar saqlandi'), 'success');
+      setPermEmployee(null);
+    } catch { onShowToast(tr(lang, 'Не удалось сохранить доступы', 'Failed to save permissions', "Ruxsatlarni saqlab bo'lmadi"), 'error'); }
+    finally { setPermBusy(false); }
+  };
+
+  const load = () => {
+    api.list().then(setEmployees).catch(() => {});
+    api.dashboard?.().then(setDashboard).catch(() => {});
+  };
   useEffect(() => { load(); }, []);
   useEffect(() => { if (!roleId && roles[0]) setRoleId(roles[0].id); }, [roles]);
   useEffect(() => { if (!inviteRoleId && roles[0]) setInviteRoleId(roles[0].id); }, [roles]);
@@ -612,6 +683,7 @@ export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.empl
   const roleName = (id: string) => roles.find(r => r.id === id)?.name ?? '—';
 
   return (
+    <>
     <Card>
       <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
         <h3 className="text-[15px] font-semibold text-text tracking-tight">{tr(lang, 'Сотрудники', 'Employees', 'Xodimlar')}</h3>
@@ -637,6 +709,27 @@ export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.empl
         </div>
       </div>
       <p className="text-[13px] text-muted mb-4">{tr(lang, 'Имя и PIN для входа на своей странице, либо приглашение по email/телефону в мобильное приложение', 'Name and PIN for the web page, or an email/phone invite to the mobile app', "O'z sahifasiga kirish uchun ism va PIN, yoki mobil ilovaga email/telefon orqali taklifnoma")}</p>
+
+      {dashboard && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+          {[
+            { label: tr(lang, 'Всего', 'Total', 'Jami'), value: dashboard.summary.total },
+            { label: tr(lang, 'На борту', 'Onboarded', 'Faol'), value: dashboard.summary.onboarded },
+            { label: tr(lang, 'Не приглашены', 'Not onboarded', 'Taklif qilinmagan'), value: dashboard.summary.notYetOnboarded },
+            { label: tr(lang, 'На смене', 'On shift now', 'Hozir smenada'), value: dashboard.summary.onShiftNow },
+          ].map(tile => (
+            <div key={tile.label} className="p-2.5 rounded-lg bg-background border border-border">
+              <p className="text-[18px] font-bold text-text metric-number">{tile.value}</p>
+              <p className="text-[10px] text-muted uppercase tracking-[0.1em]">{tile.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {dashboard && dashboard.summary.checklistsToday.total > 0 && (
+        <p className="text-[11px] text-muted mb-4">
+          {tr(lang, 'Сегодняшние чек-листы', "Today's checklists", 'Bugungi cheklistlar')}: {dashboard.summary.checklistsToday.done}/{dashboard.summary.checklistsToday.total}
+        </p>
+      )}
 
       {showImport && (
         <PosImportPanel lang={lang} roles={roles} onShowToast={onShowToast} onImported={() => { setShowImport(false); load(); }} api={api} />
@@ -735,12 +828,48 @@ export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.empl
               </div>
             </div>
           ) : (
-            <div key={e.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-background border border-border">
-              <div>
-                <span className="text-[13px] text-text">{e.name}</span>
-                <span className="text-[11px] text-muted ml-2">{roleName(e.role_id)}</span>
+            <div key={e.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-background border border-border flex-wrap gap-y-1.5">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[13px] text-text">{e.name}</span>
+                  <span className="text-[11px] text-muted">{roleName(e.role_id)}</span>
+                  {(() => {
+                    const row = dashboard?.employees.find(d => d.id === e.id);
+                    if (!row) return null;
+                    const badge = statusBadge(lang, row.status);
+                    return (
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${badge.className}`}>{badge.label}</span>
+                    );
+                  })()}
+                </div>
+                {(() => {
+                  const row = dashboard?.employees.find(d => d.id === e.id);
+                  if (!row) return null;
+                  return (
+                    <p className="text-[10px] text-muted/70 mt-0.5">
+                      {tr(lang, 'Был(а) в сети', 'Last active', 'Faol edi')}: {relativeTimeShort(lang, row.lastActiveAt)}
+                      {row.payroll && ` · ${tr(lang, 'начислено', 'accrued', 'hisoblangan')}: ${row.payroll.accrued.toLocaleString()}`}
+                    </p>
+                  );
+                })()}
               </div>
               <div className="flex items-center gap-2">
+                {dashboard?.employees.find(d => d.id === e.id)?.status === 'invited_not_logged_in' && api.resendInvite && (
+                  <button
+                    onClick={async () => {
+                      setResendingId(e.id);
+                      try {
+                        await api.resendInvite!(e.id);
+                        onShowToast(tr(lang, 'Приглашение отправлено повторно', 'Invite resent', 'Taklifnoma qayta yuborildi'), 'success');
+                      } catch { onShowToast(tr(lang, 'Не удалось отправить повторно', 'Failed to resend', "Qayta yuborib bo'lmadi"), 'error'); }
+                      finally { setResendingId(null); }
+                    }}
+                    disabled={resendingId === e.id}
+                    className="text-[11px] font-medium px-2 py-0.5 rounded border border-border text-muted hover:text-text disabled:opacity-50"
+                  >
+                    {resendingId === e.id ? tr(lang, 'Отправка...', 'Sending...', 'Yuborilmoqda...') : tr(lang, 'Повторить', 'Resend', 'Qayta yuborish')}
+                  </button>
+                )}
                 <button
                   onClick={async () => { await api.update(e.id, { active: !e.active }); load(); }}
                   className={`text-[11px] font-semibold px-2 py-0.5 rounded ${e.active ? 'bg-green-500/10 text-green-600' : 'bg-muted/10 text-muted'}`}
@@ -759,6 +888,11 @@ export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.empl
                     <Link2 size={15} />
                   </button>
                 )}
+                {api.setPermissions && (
+                  <button onClick={() => openPermissions(e)} title={tr(lang, 'Права доступа', 'Permissions', 'Ruxsatlar')} className="text-muted hover:text-text">
+                    <ShieldCheck size={15} />
+                  </button>
+                )}
                 <button onClick={() => startEdit(e)} className="text-muted hover:text-text">
                   <Pencil size={15} />
                 </button>
@@ -770,6 +904,149 @@ export function EmployeesTab({ lang, roles, onShowToast, api = checklistApi.empl
           ))}
         </div>
       )}
+    </Card>
+    {permEmployee && permAll && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setPermEmployee(null)}>
+        <div className="w-full max-w-sm rounded-xl bg-card border border-border p-4 space-y-3" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between">
+            <h3 className="text-[14px] font-semibold text-text">{tr(lang, 'Права доступа', 'Permissions', 'Ruxsatlar')} — {permEmployee.name}</h3>
+            <button onClick={() => setPermEmployee(null)} className="text-muted hover:text-text"><X size={16} /></button>
+          </div>
+          <p className="text-[11px] text-muted">{tr(lang, 'Действует только на веб/EXE, не в мобильном приложении', 'Applies to web/EXE only, never the mobile app', "Faqat veb/EXE uchun, mobil ilovada emas")}</p>
+          {Object.keys(permAll.presets).length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {Object.entries(permAll.presets).map(([name, scopes]) => (
+                <button key={name} onClick={() => setPermSelected(scopes)} className="px-2 py-1 rounded-md bg-background border border-border text-[11px] text-muted hover:text-text">
+                  {name}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="space-y-1.5 max-h-64 overflow-y-auto">
+            {permAll.scopes.map(s => (
+              <label key={s} className="flex items-center gap-2 text-[13px] text-text">
+                <input
+                  type="checkbox"
+                  checked={permSelected.includes(s)}
+                  onChange={e => setPermSelected(v => e.target.checked ? [...v, s] : v.filter(x => x !== s))}
+                />
+                {s}
+              </label>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <button onClick={savePermissions} disabled={permBusy} className="px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold disabled:opacity-50">
+              {tr(lang, 'Сохранить', 'Save', 'Saqlash')}
+            </button>
+            <button onClick={() => setPermEmployee(null)} className="px-3.5 py-2 rounded-lg bg-background border border-border text-muted text-[13px] font-medium">
+              {tr(lang, 'Отмена', 'Cancel', 'Bekor qilish')}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
+  );
+}
+
+// ── Menu (Phase 7, plan §9) — net-new, no menu CRUD existed before this ──
+function MenuTab({ lang, onShowToast }: { lang: Language; onShowToast: (m: string, t: 'success' | 'error' | 'info') => void }) {
+  const [items, setItems] = useState<MenuItem[]>([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [ingredients, setIngredients] = useState('');
+  const [allergens, setAllergens] = useState('');
+  const [price, setPrice] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = () => checklistApi.menu.list().then(setItems).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const add = async () => {
+    if (!name.trim()) { onShowToast(tr(lang, 'Укажите название', 'Enter a name', 'Nom kiriting'), 'error'); return; }
+    setBusy(true);
+    try {
+      await checklistApi.menu.create({
+        name: name.trim(),
+        description: description.trim() || undefined,
+        ingredients: ingredients.split(',').map(s => s.trim()).filter(Boolean),
+        allergens: allergens.split(',').map(s => s.trim()).filter(Boolean),
+        price: price ? Number(price) : undefined,
+      });
+      setName(''); setDescription(''); setIngredients(''); setAllergens(''); setPrice('');
+      setShowAdd(false);
+      load();
+    } catch { onShowToast(tr(lang, 'Не удалось добавить блюдо', 'Failed to add dish', "Taomni qo'shib bo'lmadi"), 'error'); }
+    finally { setBusy(false); }
+  };
+
+  const toggleActive = async (item: MenuItem) => {
+    await checklistApi.menu.update(item.id, { active: !item.active });
+    load();
+  };
+
+  const remove = async (item: MenuItem) => {
+    if (!confirmDelete(lang, item.name)) return;
+    await checklistApi.menu.remove(item.id);
+    load();
+  };
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-[14px] font-semibold text-text">{tr(lang, 'Меню', 'Menu', 'Menyu')}</h3>
+        <button
+          onClick={() => setShowAdd(v => !v)}
+          className="px-3 py-1.5 rounded-lg bg-primary text-white text-[12px] font-semibold flex items-center gap-1.5"
+        >
+          <Plus size={14} /> {tr(lang, 'Добавить блюдо', 'Add dish', "Taom qo'shish")}
+        </button>
+      </div>
+
+      {showAdd && (
+        <div className="mb-4 p-3.5 rounded-xl border border-border bg-background space-y-2">
+          <div className="grid sm:grid-cols-2 gap-2">
+            <input value={name} onChange={e => setName(e.target.value)} placeholder={tr(lang, 'Название', 'Name', 'Nomi')} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
+            <input value={price} onChange={e => setPrice(e.target.value)} type="number" placeholder={tr(lang, 'Цена', 'Price', 'Narxi')} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
+          </div>
+          <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder={tr(lang, 'Описание', 'Description', 'Tavsif')} className="w-full px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" rows={2} />
+          <div className="grid sm:grid-cols-2 gap-2">
+            <input value={ingredients} onChange={e => setIngredients(e.target.value)} placeholder={tr(lang, 'Ингредиенты (через запятую)', 'Ingredients (comma-separated)', "Tarkibi (vergul bilan)")} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
+            <input value={allergens} onChange={e => setAllergens(e.target.value)} placeholder={tr(lang, 'Аллергены (через запятую)', 'Allergens (comma-separated)', "Allergenlar (vergul bilan)")} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <button onClick={add} disabled={busy} className="px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold disabled:opacity-50">
+              {tr(lang, 'Добавить', 'Add', "Qo'shish")}
+            </button>
+            <button onClick={() => setShowAdd(false)} className="px-3.5 py-2 rounded-lg bg-card border border-border text-muted text-[13px] font-medium">
+              {tr(lang, 'Отмена', 'Cancel', 'Bekor qilish')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {items.map(item => (
+          <div key={item.id} className="flex items-center justify-between p-3 rounded-xl border border-border bg-background">
+            <div>
+              <p className="text-[13px] font-semibold text-text">{item.name}{item.price != null && <span className="text-muted font-normal"> — {item.price}</span>}</p>
+              {item.description && <p className="text-[12px] text-muted">{item.description}</p>}
+              {item.allergens.length > 0 && <p className="text-[11px] text-amber-600">{tr(lang, 'Аллергены', 'Allergens', 'Allergenlar')}: {item.allergens.join(', ')}</p>}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => toggleActive(item)}
+                className={`text-[11px] font-semibold px-2 py-0.5 rounded ${item.active ? 'bg-green-500/10 text-green-600' : 'bg-muted/10 text-muted'}`}
+              >
+                {item.active ? tr(lang, 'Активно', 'Active', 'Faol') : tr(lang, 'Скрыто', 'Hidden', 'Yashirilgan')}
+              </button>
+              <button onClick={() => remove(item)} className="text-red-500 hover:text-red-600"><Trash2 size={15} /></button>
+            </div>
+          </div>
+        ))}
+        {items.length === 0 && !showAdd && <p className="text-[13px] text-muted">{tr(lang, 'Меню пусто', 'Menu is empty', "Menyu bo'sh")}</p>}
+      </div>
     </Card>
   );
 }

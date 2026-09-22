@@ -148,6 +148,9 @@ function Builder({ lang, session, onSwitchBranch, onLogout }: {
     posPreview: () => checklistManagerApi.employees.posPreview(branch, session.token),
     import: (roleId, names) => checklistManagerApi.employees.import(branch, session.token, roleId, names),
     invite: (name, roleId, contact) => checklistManagerApi.employees.invite(branch, session.token, name, roleId, contact),
+    dashboard: (query) => checklistManagerApi.employees.dashboard(branch, session.token, query),
+    inviteBulk: (invites) => checklistManagerApi.employees.inviteBulk(branch, session.token, invites),
+    resendInvite: (id) => checklistManagerApi.employees.resendInvite(branch, session.token, id),
   };
 
   const tabs: { id: Tab; label: string }[] = [

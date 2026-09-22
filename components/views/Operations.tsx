@@ -6,7 +6,7 @@ import { useOccupiedTables } from '../../hooks/useOccupiedTables';
 import { Language } from '../../types';
 import { TRANSLATIONS, tr, formatMinutes, formatMinutesShort } from '../../constants';
 import { useRealtimeData, RealtimeEvent, StopListUpdateData } from '../../hooks/useRealtimeData';
-import { Clock, Trash2, Users, CreditCard, Banknote, AlertTriangle, CheckCircle, Timer, X, Plug, Radio, ChefHat, CalendarClock, Bell, TrendingDown, TrendingUp, Zap, Sparkles, ChevronRight, FileDown, FileSpreadsheet, Send, Calendar as CalendarIcon, Crown, Receipt, Grid2x2 } from 'lucide-react';
+import { Clock, Trash2, Users, CreditCard, Banknote, AlertTriangle, CheckCircle, Timer, X, Plug, Radio, ChefHat, CalendarClock, Bell, TrendingDown, TrendingUp, Zap, Sparkles, ChevronRight, FileDown, FileSpreadsheet, Send, Calendar as CalendarIcon, Crown, Receipt, Grid2x2, Wallet } from 'lucide-react';
 import { DateRangePicker } from '../ui/DateRangePicker';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -844,6 +844,17 @@ function StaffPerfCard({
   const calendarBtnRef = useRef<HTMLButtonElement>(null);
   const [abcRows, setAbcRows] = useState<StaffAbcRow[]>([]);
   const [abcLoading, setAbcLoading] = useState(false);
+  // Employee Hub Phase 8 (plan §11) — TRACE payroll accrual per employee,
+  // joined server-side by iiko_employee_id. Fetched separately from staffRows
+  // (a different endpoint, its own iiko cost basis) and merged in by name for
+  // display only — extends this card rather than adding a parallel one.
+  const [payrollByName, setPayrollByName] = useState<Map<string, import('../../services/traceApi').StaffProfitabilityRow>>(new Map());
+
+  useEffect(() => {
+    traceApi.operations.staffProfitability('today')
+      .then(r => setPayrollByName(new Map((r.rows ?? []).map(row => [row.name.trim().toLowerCase(), row]))))
+      .catch(() => setPayrollByName(new Map()));
+  }, []);
 
   useEffect(() => {
     if (rangeMode === 'today') return;
@@ -1059,6 +1070,28 @@ function StaffPerfCard({
                       )}
                     </div>
                   )}
+
+                  {/* TRACE payroll accrual — Employee Hub Phase 8 (plan §11) */}
+                  {(() => {
+                    const payroll = payrollByName.get(s.name.trim().toLowerCase());
+                    if (!payroll?.traceEmployeeId || payroll.traceAccrual == null) return null;
+                    return (
+                      <div className="flex items-center gap-1.5 pt-2 border-t border-border">
+                        <Wallet className="w-3 h-3 text-muted shrink-0" />
+                        <span className="text-[10px] text-muted">
+                          {ru ? 'Начислено' : isUz ? 'Hisoblangan' : 'Accrued'}
+                        </span>
+                        <span className="text-[11px] font-semibold text-text metric-number">
+                          {Math.round(payroll.traceAccrual / 1000).toLocaleString('ru-RU')}k
+                        </span>
+                        {payroll.salaryType === 'percent_of_sales' && s.revenue > 0 && (
+                          <span className="ml-auto text-[10px] text-muted">
+                            {Math.round((payroll.traceAccrual / s.revenue) * 100)}% {ru ? 'от выручки' : isUz ? 'tushumdan' : 'of revenue'}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* "What waiter sold what" drill-down */}
                   {isExpanded && (

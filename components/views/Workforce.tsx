@@ -4,21 +4,22 @@
 // Roster/Shifts/Swaps/Payroll/Rules tabs land in later phases as more tabs
 // added to the same `Tab` union, following this file's own pattern.
 import React, { useEffect, useRef, useState } from 'react';
-import { MapPin, Locate, ShieldCheck, ShieldAlert, Save, Plus, Send, Check, X, Calendar, Pin, FileText, Link as LinkIcon, MessageSquare, Trash2, Upload, Folder } from 'lucide-react';
+import { MapPin, Locate, ShieldCheck, ShieldAlert, Save, Plus, Send, Check, X, Calendar, Pin, FileText, Link as LinkIcon, MessageSquare, Trash2, Upload, Folder, BellOff } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Wallet } from 'lucide-react';
 import { Language, ChecklistRole, ChecklistEmployee } from '../../types';
 import { Lock, ShieldQuestion } from 'lucide-react';
 import {
   traceApi, WorkforceGeofenceSettings, checklistApi, RosterShift, SwapRequest, PayProfile, PayrollPeriod, Payslip, PayrollRule,
-  FeedPost, KnowledgeCategory, ChatChannel, ChatMessage,
+  RosterCoverageRow, ShiftSignal,
+  FeedPost, KnowledgeCategory, ChatChannel, ChatMessage, AuditLogEntry,
 } from '../../services/traceApi';
 
 function tr(lang: Language, ru: string, en: string, uz: string) {
   return lang === 'ru' ? ru : lang === 'uz' ? uz : en;
 }
 
-type Tab = 'geofence' | 'roster' | 'payroll' | 'feed' | 'knowledge' | 'chat';
+type Tab = 'geofence' | 'roster' | 'payroll' | 'feed' | 'knowledge' | 'chat' | 'hub';
 
 interface Props {
   lang: Language;
@@ -38,6 +39,7 @@ export function Workforce({ lang, onShowToast }: Props) {
           { id: 'feed' as Tab, label: tr(lang, 'Лента', 'Feed', 'Lenta') },
           { id: 'knowledge' as Tab, label: tr(lang, 'База знаний', 'Knowledge', 'Bilimlar') },
           { id: 'chat' as Tab, label: tr(lang, 'Чат', 'Chat', 'Chat') },
+          { id: 'hub' as Tab, label: tr(lang, 'Настройки хаба', 'Hub settings', 'Hub sozlamalari') },
         ]).map(t => (
           <button
             key={t.id}
@@ -57,6 +59,107 @@ export function Workforce({ lang, onShowToast }: Props) {
       {tab === 'feed' && <FeedTab lang={lang} onShowToast={onShowToast} />}
       {tab === 'knowledge' && <KnowledgeTab lang={lang} onShowToast={onShowToast} />}
       {tab === 'chat' && <ChatTab lang={lang} onShowToast={onShowToast} />}
+      {tab === 'hub' && <HubSettingsTab lang={lang} onShowToast={onShowToast} />}
+    </div>
+  );
+}
+
+// ── Hub settings (Phase 7, plan §6) ─────────────────────────────────────
+// Server-backed replacement for navConfig.ts's client-only localStorage
+// hiding — reads/writes tenant_modules.config via /settings/hub-config,
+// GM-reachable (no admin gate), never touches `enabled` (admin-only lever).
+function HubSettingsTab({ lang, onShowToast }: { lang: Language; onShowToast: (m: string, t: 'success' | 'error' | 'info') => void }) {
+  const [modules, setModules] = useState<{ moduleKey: string; enabled: boolean; config: Record<string, unknown> }[]>([]);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  // Employee Hub Phase 9 (plan §14) — audit-log review, CSV export.
+  const [auditRows, setAuditRows] = useState<AuditLogEntry[]>([]);
+  const [auditLoading, setAuditLoading] = useState(true);
+
+  const load = () => { traceApi.settings.hubConfig().then(d => setModules(d.modules)).catch(() => {}); };
+  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    traceApi.settings.auditLog(200).then(d => setAuditRows(d.rows)).catch(() => setAuditRows([])).finally(() => setAuditLoading(false));
+  }, []);
+
+  const exportAuditCsv = () => {
+    const header = ['created_at', 'actor_type', 'actor_label', 'action', 'entity_type', 'entity_id'];
+    const escape = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [header.join(','), ...auditRows.map(r => header.map(k => escape((r as any)[k])).join(','))];
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const feed = modules.find(m => m.moduleKey === 'feed');
+  const penaltyPolicy = (feed?.config?.penaltyFeedPolicy as string) ?? 'anonymized';
+
+  const savePenaltyPolicy = async (policy: 'anonymized' | 'named') => {
+    setBusyKey('feed');
+    try {
+      await traceApi.settings.saveHubConfig('feed', { penaltyFeedPolicy: policy });
+      onShowToast(tr(lang, 'Сохранено', 'Saved', 'Saqlandi'), 'success');
+      load();
+    } catch { onShowToast(tr(lang, 'Не удалось сохранить', 'Failed to save', "Saqlab bo'lmadi"), 'error'); }
+    finally { setBusyKey(null); }
+  };
+
+  return (
+    <div className="space-y-5">
+    <Card>
+      <h3 className="text-[14px] font-semibold text-text mb-1">{tr(lang, 'Настройки хаба', 'Hub settings', 'Hub sozlamalari')}</h3>
+      <p className="text-[12px] text-muted mb-4">{tr(lang, 'Поведение включённых модулей. Включение/выключение модулей — в Admin Panel.', 'Behavior of already-enabled modules. Turning modules on/off happens in the Admin Panel.', "Yoqilgan modullar xatti-harakati. Modullarni yoqish/o'chirish Admin Panelda.")}</p>
+
+      {!feed?.enabled ? (
+        <p className="text-[12px] text-muted">{tr(lang, 'Модуль "Лента" выключен', 'Feed module is disabled', "Lenta moduli o'chirilgan")}</p>
+      ) : (
+        <div className="p-3.5 rounded-xl border border-border bg-background space-y-2">
+          <p className="text-[13px] font-semibold text-text">{tr(lang, 'Публикация штрафов в ленту', 'Penalty posts in feed', 'Jarimalarni lentada e\'lon qilish')}</p>
+          <p className="text-[11px] text-muted">{tr(lang, 'Штрафы всегда публикуются; премии — всегда с именем. Этот флаг решает только видимость имени в штрафах.', 'Penalties always post; bonuses are always named. This flag only decides whether the penalized employee is named.', "Jarimalar har doim e'lon qilinadi; mukofotlar har doim ism bilan. Bu belgi faqat jarima uchun ism ko'rsatishni belgilaydi.")}</p>
+          <div className="flex items-center gap-2 pt-1">
+            <button onClick={() => savePenaltyPolicy('anonymized')} disabled={busyKey === 'feed'} className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold ${penaltyPolicy !== 'named' ? 'bg-primary text-white' : 'bg-card border border-border text-muted'}`}>
+              {tr(lang, 'Анонимно', 'Anonymized', 'Anonim')}
+            </button>
+            <button onClick={() => savePenaltyPolicy('named')} disabled={busyKey === 'feed'} className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold ${penaltyPolicy === 'named' ? 'bg-primary text-white' : 'bg-card border border-border text-muted'}`}>
+              {tr(lang, 'С именем', 'Named', 'Ism bilan')}
+            </button>
+          </div>
+        </div>
+      )}
+    </Card>
+
+    <Card>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-[14px] font-semibold text-text">{tr(lang, 'Журнал аудита', 'Audit log', 'Audit jurnali')}</h3>
+        <button
+          onClick={exportAuditCsv}
+          disabled={auditRows.length === 0}
+          className="px-3 py-1.5 rounded-lg bg-card border border-border text-[12px] font-semibold text-text disabled:opacity-50"
+        >
+          {tr(lang, 'Экспорт CSV', 'Export CSV', 'CSV eksport')}
+        </button>
+      </div>
+      {auditLoading ? (
+        <p className="text-[12px] text-muted">{tr(lang, 'Загрузка…', 'Loading…', 'Yuklanmoqda…')}</p>
+      ) : auditRows.length === 0 ? (
+        <p className="text-[12px] text-muted">{tr(lang, 'Записей нет', 'No entries yet', "Yozuvlar yo'q")}</p>
+      ) : (
+        <div className="space-y-1.5 max-h-96 overflow-y-auto">
+          {auditRows.map(r => (
+            <div key={r.id} className="flex items-center justify-between gap-2 p-2.5 rounded-lg border border-border bg-background text-[12px]">
+              <div className="min-w-0">
+                <p className="text-text font-medium truncate">{r.actor_label} · {r.action} · {r.entity_type}</p>
+                <p className="text-muted text-[11px]">{new Date(r.created_at).toLocaleString()}</p>
+              </div>
+              <span className="shrink-0 px-2 py-0.5 rounded bg-card border border-border text-[10px] text-muted uppercase">{r.actor_type}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
     </div>
   );
 }
@@ -355,8 +458,11 @@ function RosterTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['
   const [employees, setEmployees] = useState<ChecklistEmployee[]>([]);
   const [shifts, setShifts] = useState<RosterShift[]>([]);
   const [swaps, setSwaps] = useState<SwapRequest[]>([]);
+  const [coverage, setCoverage] = useState<RosterCoverageRow[]>([]);
+  const [signals, setSignals] = useState<ShiftSignal[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [conflictPending, setConflictPending] = useState<{ employeeId: string; roleId: string; plannedStart: string; plannedEnd: string } | null>(null);
 
   const [roleId, setRoleId] = useState('');
   const [employeeId, setEmployeeId] = useState('');
@@ -370,6 +476,10 @@ function RosterTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['
     checklistApi.roster.list().then(setShifts).catch(() => {});
     checklistApi.roster.swapRequests('open').then(setSwaps).catch(() => {});
     checklistApi.roster.swapRequests('claimed').then(claimed => setSwaps(prev => [...prev.filter(s => s.status !== 'claimed'), ...claimed])).catch(() => {});
+    const from = new Date().toISOString().slice(0, 10);
+    const to = new Date(Date.now() + 7 * 86400_000).toISOString().slice(0, 10);
+    checklistApi.roster.coverage(from, to).then(setCoverage).catch(() => {});
+    checklistApi.shifts.signals().then(setSignals).catch(() => {});
   };
   useEffect(() => { load(); }, []);
   useEffect(() => { if (!roleId && roles[0]) setRoleId(roles[0].id); }, [roles]);
@@ -382,21 +492,28 @@ function RosterTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['
   const roleName = (id: string) => roles.find(r => r.id === id)?.name ?? '—';
   const employeeName = (id: string) => employees.find(e => e.id === id)?.name ?? '—';
 
-  const addShift = async () => {
+  const addShift = async (force = false) => {
     if (!employeeId || !roleId || !date) {
       onShowToast(tr(lang, 'Укажите дату, роль и сотрудника', 'Enter a date, role and employee', "Sana, rol va xodimni kiriting"), 'error');
       return;
     }
     setBusy(true);
+    const plannedStart = new Date(`${date}T${startTime}:00`).toISOString();
+    const plannedEnd = new Date(`${date}T${endTime}:00`).toISOString();
     try {
-      const plannedStart = new Date(`${date}T${startTime}:00`).toISOString();
-      const plannedEnd = new Date(`${date}T${endTime}:00`).toISOString();
-      const created = await checklistApi.roster.create({ employeeId, roleId, plannedStart, plannedEnd });
+      const created = await checklistApi.roster.create({ employeeId, roleId, plannedStart, plannedEnd, force });
       await checklistApi.roster.publish([created.id]);
       setShowAdd(false);
+      setConflictPending(null);
       load();
       onShowToast(tr(lang, 'Смена опубликована', 'Shift published', 'Smena e\'lon qilindi'), 'success');
-    } catch { onShowToast(tr(lang, 'Не удалось создать смену', 'Failed to create shift', "Smena yaratib bo'lmadi"), 'error'); }
+    } catch (err: any) {
+      if (String(err?.message ?? '').includes('DOUBLE_BOOKED')) {
+        setConflictPending({ employeeId, roleId, plannedStart, plannedEnd });
+      } else {
+        onShowToast(tr(lang, 'Не удалось создать смену', 'Failed to create shift', "Smena yaratib bo'lmadi"), 'error');
+      }
+    }
     finally { setBusy(false); }
   };
 
@@ -443,13 +560,28 @@ function RosterTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['
               <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
             </div>
             <div className="flex items-center gap-2 pt-1">
-              <button onClick={addShift} disabled={busy} className="px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold flex items-center gap-1.5 disabled:opacity-50">
+              <button onClick={() => addShift(false)} disabled={busy} className="px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold flex items-center gap-1.5 disabled:opacity-50">
                 <Send size={14} /> {tr(lang, 'Опубликовать', 'Publish', "E'lon qilish")}
               </button>
               <button onClick={() => setShowAdd(false)} className="px-3.5 py-2 rounded-lg bg-card border border-border text-muted text-[13px] font-medium">
                 {tr(lang, 'Отмена', 'Cancel', 'Bekor qilish')}
               </button>
             </div>
+            {conflictPending && (
+              <div className="mt-2 p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-[12px] text-red-600 flex items-center justify-between gap-2">
+                <span>{tr(lang, 'У сотрудника уже есть смена в это время', 'This employee already has an overlapping shift', "Bu xodimning shu vaqtda smenasi bor")}</span>
+                <button onClick={() => addShift(true)} disabled={busy} className="px-2.5 py-1 rounded-md bg-red-500 text-white text-[11px] font-semibold whitespace-nowrap">
+                  {tr(lang, 'Всё равно создать', 'Create anyway', "Baribir yaratish")}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {coverage.some(c => c.days_with_coverage === 0 && c.active_employee_count > 0) && (
+          <div className="mt-3 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[12px] text-amber-700">
+            {tr(lang, 'Нет смен на ближайшие 7 дней для: ', 'No shifts in the next 7 days for: ', 'Keyingi 7 kun uchun smenalar yo\'q: ')}
+            {coverage.filter(c => c.days_with_coverage === 0 && c.active_employee_count > 0).map(c => c.role_name).join(', ')}
           </div>
         )}
 
@@ -511,6 +643,25 @@ function RosterTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['
           </div>
         )}
       </Card>
+
+      {signals.length > 0 && (
+        <Card>
+          <h3 className="text-[15px] font-semibold text-text tracking-tight mb-3">
+            {tr(lang, 'Сигналы геолокации', 'Location signals', 'Geolokatsiya signallari')}
+          </h3>
+          <div className="space-y-1.5">
+            {signals.slice(0, 20).map(s => (
+              <div key={s.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-background border border-border text-[12px]">
+                <span className="text-text font-medium">{s.employee_name}</span>
+                <span className="text-muted">
+                  {s.type === 'geo_fail' ? tr(lang, 'вне радиуса', 'outside radius', 'radiusdan tashqari') : tr(lang, 'подмена локации', 'mock location', 'soxta joylashuv')}
+                </span>
+                <span className="text-muted">{new Date(s.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
@@ -842,10 +993,18 @@ function FeedTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['on
                   <div className="flex items-center gap-1.5">
                     {p.pinned && <Pin size={12} className="text-primary" />}
                     {p.kind === 'birthday' && <span>🎂</span>}
+                    {p.kind === 'bonus' && <span>💰</span>}
+                    {p.kind === 'penalty' && <span>⚠️</span>}
+                    {p.kind === 'welcome' && <span>👋</span>}
                     <p className="text-[13px] font-semibold text-text">{p.title}</p>
                   </div>
                   {p.body && <p className="text-[12px] text-muted mt-1">{p.body}</p>}
-                  <p className="text-[10px] text-muted mt-1.5">{p.author_name} · {new Date(p.published_at).toLocaleDateString()}</p>
+                  <p className="text-[10px] text-muted mt-1.5">
+                    {p.author_name} · {new Date(p.published_at).toLocaleDateString()}
+                    {(p.reaction_count > 0 || p.comment_count > 0) && (
+                      <> · {p.reaction_count > 0 ? `👍 ${p.reaction_count}` : ''} {p.comment_count > 0 ? `💬 ${p.comment_count}` : ''}</>
+                    )}
+                  </p>
                 </div>
                 {p.kind !== 'birthday' && (
                   <button onClick={() => remove(p.id)} className="text-red-500 hover:text-red-600 shrink-0">
@@ -1023,6 +1182,23 @@ function ChatTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['on
     finally { setSending(false); }
   };
 
+  // GM moderation (plan §5). Delete is soft on the server (audit trail kept)
+  // — this just drops it from the local list optimistically.
+  const deleteMessage = async (messageId: string) => {
+    if (!activeChannelId) return;
+    setMessages(prev => prev.filter(m => m.id !== messageId));
+    try { await checklistApi.chat.deleteMessage(activeChannelId, messageId); }
+    catch { onShowToast(tr(lang, 'Не удалось удалить', 'Failed to delete', "O'chirib bo'lmadi"), 'error'); }
+  };
+
+  const muteEmployee = async (employeeId: string, minutes: number) => {
+    if (!activeChannelId) return;
+    try {
+      await checklistApi.chat.mute(activeChannelId, employeeId, minutes);
+      onShowToast(tr(lang, 'Сотрудник заглушён', 'Employee muted', 'Xodim ovozsiz qilindi'), 'success');
+    } catch { onShowToast(tr(lang, 'Не удалось заглушить', 'Failed to mute', "Ovozsiz qilib bo'lmadi"), 'error'); }
+  };
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       <Card className="md:col-span-1 !p-2">
@@ -1046,9 +1222,19 @@ function ChatTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['on
             <p className="text-[13px] text-muted">{tr(lang, 'Пока нет сообщений', 'No messages yet', "Hozircha xabar yo'q")}</p>
           ) : (
             messages.map(m => (
-              <div key={m.id} className={`max-w-[80%] p-2.5 rounded-xl text-[13px] ${m.sender_type === 'owner' || m.sender_type === 'manager' ? 'bg-primary/10 ml-auto text-text' : 'bg-background text-text'}`}>
+              <div key={m.id} className={`group max-w-[80%] p-2.5 rounded-xl text-[13px] relative ${m.sender_type === 'owner' || m.sender_type === 'manager' ? 'bg-primary/10 ml-auto text-text' : 'bg-background text-text'}`}>
                 <p className="text-[11px] font-semibold text-muted mb-0.5">{m.sender_name}</p>
                 <p>{m.body}</p>
+                {m.sender_type === 'employee' && m.sender_id && (
+                  <div className="hidden group-hover:flex items-center gap-2 absolute -top-2 right-1 bg-card border border-border rounded-md px-1.5 py-0.5">
+                    <button onClick={() => deleteMessage(m.id)} className="text-[10px] text-muted hover:text-red-500" title={tr(lang, 'Удалить', 'Delete', "O'chirish")}>
+                      <Trash2 size={11} />
+                    </button>
+                    <button onClick={() => muteEmployee(m.sender_id!, 60)} className="text-[10px] text-muted hover:text-amber-500" title={tr(lang, 'Заглушить на 1 час', 'Mute for 1h', '1 soatga ovozsiz')}>
+                      <BellOff size={11} />
+                    </button>
+                  </div>
+                )}
               </div>
             ))
           )}

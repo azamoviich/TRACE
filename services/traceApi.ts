@@ -1539,6 +1539,11 @@ export const traceApi = {
     // double-notifies the tenant's Telegram group. Confirm before calling.
     notifyExistingReviews: (token: string, id: string, platforms?: string[]) =>
       post<{ ok: boolean; sent: number }>(`/admin/tenants/${id}/notify-existing-reviews`, platforms ? { platforms } : {}, token),
+    // Employee Hub Phase 1 — per-module toggle matrix (plan §1/§6).
+    modules: (token: string, tenantId: string) =>
+      authedGet<TenantModulesResponse>(`/admin/tenants/${tenantId}/modules`, token),
+    updateModule: (token: string, tenantId: string, moduleKey: ModuleKey, enabled: boolean, updatedBy?: string) =>
+      patch<TenantModule>(`/admin/tenants/${tenantId}/modules/${moduleKey}`, { enabled, updatedBy }, token),
   },
   sales: {
     revenue: (range: 'today' | '7days' | '30days' | 'custom', customFrom?: string, customTo?: string, revenueType?: RevenueType): Promise<RevenueRow[]> => {
@@ -1782,6 +1787,21 @@ export const traceApi = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }).then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); }),
+    // Employee Hub Phase 7 (plan §6/§7) — hub config on top of the Phase 0
+    // module rows, server-backed (replaces navConfig.ts's localStorage hiding).
+    hubConfig: (): Promise<{ modules: { moduleKey: string; enabled: boolean; config: Record<string, unknown> }[] }> =>
+      apiFetch(`/settings/hub-config`).then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); }),
+    saveHubConfig: (moduleKey: string, config: Record<string, unknown>): Promise<{ moduleKey: string; enabled: boolean; config: Record<string, unknown> }> =>
+      apiFetch(`/settings/hub-config/${moduleKey}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config }),
+      }).then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); }),
+    // Employee Hub Phase 9 (plan §14) — review UI for the general audit_log
+    // table Phase 0 built (module toggles, payroll adjustments, permission
+    // grants, profile edits) but nothing ever read back until now.
+    auditLog: (limit = 100): Promise<{ rows: AuditLogEntry[]; limit: number; offset: number }> =>
+      apiFetch(`/settings/audit-log?limit=${limit}`).then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); }),
   },
   operations: {
     tableRevenue: (days = 30, range?: { from: string; to: string }, branchIdOverride?: string): Promise<{ table: number; revenue: number; orders: number }[]> => {
@@ -2148,6 +2168,11 @@ export interface StaffProfitabilityRow {
   profitabilityPct: number | null;
   roi: number | null;
   hasSalary: boolean;
+  // Employee Hub Phase 8 (plan §11) — TRACE's own payroll engine, joined by
+  // iiko_employee_id, additive to the iiko-derived salaryCost above.
+  traceEmployeeId?: string | null;
+  traceAccrual?: number | null;
+  salaryType?: string | null;
 }
 
 export interface StaffProfitabilityResult {
@@ -2282,6 +2307,22 @@ export interface PeakSlot {
   recommendedStaff: number | null;
   isPeak: boolean;
   understaffed: boolean;
+}
+
+// Employee Hub Phase 1 — per-restaurant module toggle row, mirrors the
+// backend's tenant_modules table (src/middleware/modules.ts's ModuleKey).
+export type ModuleKey = 'employee_app' | 'chat' | 'feed' | 'learn' | 'shift_maker' | 'payroll';
+export interface TenantModule {
+  moduleKey: ModuleKey;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+export interface TenantModulesResponse {
+  scopeId: string;
+  activeEmployeeCount: number;
+  modules: TenantModule[];
 }
 
 export interface Tenant {
@@ -2883,6 +2924,32 @@ export const checklistAuthApi = {
     }),
 };
 
+// Employee Hub Phase 1 — Employees dashboard (plan §2.2). Mirrors
+// GET /checklist/employees/dashboard's response shape exactly.
+export type EmployeeStatus = 'terminated' | 'suspended' | 'invited_not_logged_in' | 'on_shift' | 'onboarded_offline';
+export interface EmployeeDashboardRow {
+  id: string;
+  name: string;
+  roleId: string;
+  roleName: string;
+  photoUrl: string | null;
+  status: EmployeeStatus;
+  lastActiveAt: string | null;
+  invitedAt: string | null;
+  payroll: { accrued: number; pendingAdjustments: number } | null;
+}
+export interface EmployeeDashboard {
+  summary: {
+    total: number;
+    onboarded: number;
+    notYetOnboarded: number;
+    onShiftNow: number;
+    checklistsToday: { done: number; total: number };
+    payrollPeriod: { id: string; nextPayoutDate: string } | null;
+  };
+  employees: EmployeeDashboardRow[];
+}
+
 // Owner surface — plain apiFetch (implicit tenant), used from the normal
 // TRACE dashboard's Checklists tab. Owner routes trust tenantMiddleware alone.
 export const checklistApi = {
@@ -2909,6 +2976,20 @@ export const checklistApi = {
     iikoCandidates: () => checkedFetch<{ id: string; name: string; roleId: string | null }[]>('/checklist/employees/iiko-candidates'),
     linkIiko: (id: string, iikoEmployeeId: string | null, iikoRoleId: string | null) =>
       checkedFetch<ChecklistEmployee>(`/checklist/employees/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ iikoEmployeeId, iikoRoleId }) }),
+    // Employee Hub Phase 1 (plan §2.2).
+    dashboard: (query?: { q?: string; roleId?: string; status?: string }) => {
+      const params = new URLSearchParams(Object.entries(query ?? {}).filter(([, v]) => v) as [string, string][]);
+      const qs = params.toString();
+      return checkedFetch<EmployeeDashboard>(`/checklist/employees/dashboard${qs ? `?${qs}` : ''}`);
+    },
+    inviteBulk: (invites: { name: string; roleId: string; email?: string; phone?: string }[]) =>
+      post<{ results: { name?: string; ok: boolean; id?: string; error?: string }[] }>('/checklist/employees/invite-bulk', { invites }),
+    resendInvite: (id: string) => post<{ ok: boolean }>(`/checklist/employees/${id}/resend-invite`, {}),
+    // Employee Hub Phase 7 (plan §13) — web/EXE-only permission grants.
+    permissionScopes: () => checkedFetch<{ scopes: string[]; presets: Record<string, string[]> }>('/checklist/employees/permission-scopes'),
+    getPermissions: (id: string) => checkedFetch<{ scopes: string[] }>(`/checklist/employees/${id}/permissions`),
+    setPermissions: (id: string, scopes: string[]) =>
+      checkedFetch<{ scopes: string[] }>(`/checklist/employees/${id}/permissions`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scopes }) }),
   },
   managers: {
     list: () => checkedFetch<ChecklistManager[]>('/checklist/managers'),
@@ -2950,7 +3031,7 @@ export const checklistApi = {
       const q = new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) }).toString();
       return checkedFetch<RosterShift[]>(`/checklist/roster${q ? `?${q}` : ''}`);
     },
-    create: (data: { employeeId: string; roleId: string; plannedStart: string; plannedEnd: string }) =>
+    create: (data: { employeeId: string; roleId: string; plannedStart: string; plannedEnd: string; force?: boolean }) =>
       post<RosterShift>('/checklist/roster', data),
     publish: (ids: string[]) => post<RosterShift[]>('/checklist/roster/publish', { ids }),
     cancel: (id: string) => checkedFetch<RosterShift>(`/checklist/roster/${id}`, { method: 'DELETE' }),
@@ -2958,6 +3039,19 @@ export const checklistApi = {
       checkedFetch<SwapRequest[]>(`/checklist/roster/swap-requests${status ? `?status=${status}` : ''}`),
     approveSwap: (id: string) => post<SwapRequest>(`/checklist/roster/swap-requests/${id}/approve`, {}),
     rejectSwap: (id: string) => post<SwapRequest>(`/checklist/roster/swap-requests/${id}/reject`, {}),
+    // Phase 3 (plan §4.1-4.2): understaffing signal — active employees per
+    // role vs. how many days in range have at least one shift.
+    coverage: (from: string, to: string) =>
+      checkedFetch<RosterCoverageRow[]>(`/checklist/roster/coverage?from=${from}&to=${to}`),
+  },
+  shifts: {
+    // Failed geofence/mock-location attempts (Phase 3 §4.1's "surface them
+    // to the GM as a signal feed" — previously logged but never read back).
+    signals: () => checkedFetch<ShiftSignal[]>('/checklist/shifts/signals'),
+    attendancePolicies: () => checkedFetch<{ policies: AttendancePolicy[]; tenantDefaultLateMinutes: number }>('/checklist/shifts/attendance-policies'),
+    saveAttendancePolicy: (data: { employeeId?: string; roleId?: string; earlyMinutes: number; lateMinutes: number; lateBehavior: 'flag' | 'block' }) =>
+      checkedFetch<AttendancePolicy>('/checklist/shifts/attendance-policies', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
+    deleteAttendancePolicy: (id: string) => checkedFetch<{ ok: true }>(`/checklist/shifts/attendance-policies/${id}`, { method: 'DELETE' }),
   },
   payroll: {
     getPayProfile: (employeeId: string) => checkedFetch<PayProfile | null>(`/checklist/payroll/employees/${employeeId}/pay-profile`),
@@ -3001,19 +3095,67 @@ export const checklistApi = {
     channels: () => checkedFetch<ChatChannel[]>('/checklist/chat/channels'),
     messages: (channelId: string) => checkedFetch<ChatMessage[]>(`/checklist/chat/channels/${channelId}/messages`),
     send: (channelId: string, body: string) => post<ChatMessage>(`/checklist/chat/channels/${channelId}/messages`, { body }),
+    deleteMessage: (channelId: string, messageId: string) =>
+      checkedFetch<{ ok: true }>(`/checklist/chat/channels/${channelId}/messages/${messageId}`, { method: 'DELETE' }),
+    mute: (channelId: string, employeeId: string, minutes: number) =>
+      post<{ ok: true; mutedUntil: string | null }>(`/checklist/chat/channels/${channelId}/members/${employeeId}/mute`, { minutes }),
+  },
+  // Employee Hub Phase 7 (plan §9) — menu management, net-new (menu was
+  // analytics-only before this).
+  menu: {
+    list: () => checkedFetch<MenuItem[]>('/checklist/menu'),
+    candidates: () => checkedFetch<{ id: string; name: string }[]>('/checklist/menu/candidates'),
+    create: (data: {
+      source?: 'trace' | 'iiko'; iikoProductId?: string; name: string; description?: string;
+      ingredients?: string[]; allergens?: string[]; prepNotes?: string; upsellNotes?: string; photoUrl?: string; price?: number;
+    }) => post<MenuItem>('/checklist/menu', data),
+    update: (id: string, data: {
+      name?: string; description?: string; ingredients?: string[]; allergens?: string[];
+      prepNotes?: string; upsellNotes?: string; photoUrl?: string; price?: number; active?: boolean;
+    }) => checkedFetch<MenuItem>(`/checklist/menu/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
+    remove: (id: string) => checkedFetch<void>(`/checklist/menu/${id}`, { method: 'DELETE' }),
   },
 };
 
+export interface MenuItem {
+  id: string;
+  source: 'trace' | 'iiko';
+  iiko_product_id: string | null;
+  name: string;
+  description: string | null;
+  ingredients: string[];
+  allergens: string[];
+  prep_notes: string | null;
+  upsell_notes: string | null;
+  photo_url: string | null;
+  price: number | string | null;
+  active: boolean;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  actor_type: 'owner' | 'manager' | 'employee' | 'admin' | 'system';
+  actor_label: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  before: unknown;
+  after: unknown;
+  created_at: string;
+}
+
 export interface FeedPost {
   id: string;
-  author_type: 'owner' | 'manager' | 'system';
+  author_type: 'owner' | 'manager' | 'employee' | 'system';
   author_name: string | null;
-  kind: 'announcement' | 'birthday' | 'custom';
+  kind: 'announcement' | 'birthday' | 'custom' | 'bonus' | 'penalty' | 'welcome';
   title: string;
   body: string;
   photo_url: string | null;
   pinned: boolean;
   published_at: string;
+  reaction_count: number;
+  comment_count: number;
 }
 
 export interface KnowledgeItem {
@@ -3045,6 +3187,7 @@ export interface ChatMessage {
   id: string;
   channel_id: string;
   sender_type: 'employee' | 'manager' | 'owner';
+  sender_id: string | null;
   sender_name: string;
   body: string;
   created_at: string;
@@ -3061,6 +3204,33 @@ export interface RosterShift {
   status: 'draft' | 'published' | 'cancelled';
   employee_name?: string;
   role_name?: string;
+}
+
+export interface RosterCoverageRow {
+  role_id: string;
+  role_name: string;
+  active_employee_count: number;
+  days_with_coverage: number;
+}
+
+export interface ShiftSignal {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  type: 'geo_fail' | 'mock_location';
+  detail: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AttendancePolicy {
+  id: string;
+  employee_id: string | null;
+  role_id: string | null;
+  employee_name?: string;
+  role_name?: string;
+  early_minutes: number;
+  late_minutes: number;
+  late_behavior: 'flag' | 'block';
 }
 
 export interface PayProfile {
@@ -3148,6 +3318,17 @@ export const checklistManagerApi = {
       scopedFetch<{ created: { name: string; pin: string }[] }>('/checklist-manager/employees/import', tenantSubdomain, token, { method: 'POST', body: JSON.stringify({ roleId, names }) }),
     invite: (tenantSubdomain: string, token: string, name: string, roleId: string, contact: { email?: string; phone?: string }) =>
       scopedFetch<ChecklistEmployee>('/checklist-manager/employees/invite', tenantSubdomain, token, { method: 'POST', body: JSON.stringify({ name, roleId, ...contact }) }),
+    // Employee Hub Phase 1 — same endpoints as checklistApi.employees, scoped
+    // to this manager's assigned roles server-side (see managerCanAccessRole).
+    dashboard: (tenantSubdomain: string, token: string, query?: { q?: string; roleId?: string; status?: string }) => {
+      const params = new URLSearchParams(Object.entries(query ?? {}).filter(([, v]) => v) as [string, string][]);
+      const qs = params.toString();
+      return scopedFetch<EmployeeDashboard>(`/checklist-manager/employees/dashboard${qs ? `?${qs}` : ''}`, tenantSubdomain, token);
+    },
+    inviteBulk: (tenantSubdomain: string, token: string, invites: { name: string; roleId: string; email?: string; phone?: string }[]) =>
+      scopedFetch<{ results: { name?: string; ok: boolean; id?: string; error?: string }[] }>('/checklist-manager/employees/invite-bulk', tenantSubdomain, token, { method: 'POST', body: JSON.stringify({ invites }) }),
+    resendInvite: (tenantSubdomain: string, token: string, id: string) =>
+      scopedFetch<{ ok: boolean }>(`/checklist-manager/employees/${id}/resend-invite`, tenantSubdomain, token, { method: 'POST', body: JSON.stringify({}) }),
   },
   stats: (tenantSubdomain: string, token: string, params: { roleId?: string; from?: string; to?: string } = {}) => {
     const q = new URLSearchParams(params as Record<string, string>).toString();

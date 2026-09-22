@@ -4,11 +4,24 @@ import {
   Building2, Activity, LayoutGrid, Pencil, Settings2, KeyRound,
   Server, GripVertical, Loader2, RefreshCw, Send, Download,
 } from 'lucide-react';
-import { traceApi, Tenant, LiveStatus, RealtimeEvent, HallPlan, IikoSection, Organization, ConnectionTestResults } from '../../services/traceApi';
+import { traceApi, Tenant, LiveStatus, RealtimeEvent, HallPlan, IikoSection, Organization, ConnectionTestResults, ModuleKey, TenantModule } from '../../services/traceApi';
 import { Field, PasswordField, ServerField, SectionHeading, ReadRow, FieldLabel, Empty, PillToggle, inputBase } from './primitives';
 import { DOMAIN, tenantUrl, relativeTime, mask, copyToClipboard, BENEDICT_ORG_ID_MANAGER_PORTAL, TEST_KEY_LABELS } from './helpers';
 import { computeHealth } from './health';
 import { AddBranchModal } from './OnboardTenant';
+
+// Employee Hub Phase 1 (plan §1/§6) — the module toggle matrix. Order here
+// is the display order in the drawer's Employee Hub section.
+const MODULE_INFO: { key: ModuleKey; label: string; description: string }[] = [
+  { key: 'employee_app', label: 'Employee App', description: 'Master switch — everything below requires this on. Turning it off hides the whole Employee Hub from GM/manager accounts and blocks the API, but never deletes data.' },
+  { key: 'chat', label: 'Chat', description: 'Internal messenger — role groups, direct messages, broadcast channels.' },
+  { key: 'feed', label: 'Feed', description: 'Announcements, penalty transparency posts, bonus shout-outs.' },
+  { key: 'learn', label: 'Learn', description: 'Library, staff menu reference, and tests.' },
+  { key: 'shift_maker', label: 'Shift Maker', description: 'Schedule builder, roster publishing, shift swaps.' },
+  { key: 'payroll', label: 'Payroll', description: 'Salary configuration, penalties/bonuses, payslips.' },
+];
+
+const ADMIN_NAME_KEY = 'trace_admin_display_name';
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   order_opened: 'Order opened',
@@ -36,6 +49,7 @@ const EVENT_TYPE_COLORS: Record<string, string> = {
 const SECTIONS = [
   { id: 'health', label: 'Health' },
   { id: 'access', label: 'Access & POS' },
+  { id: 'modules', label: 'Employee Hub' },
   { id: 'reviews', label: 'Reviews' },
   { id: 'branches', label: 'Branches' },
   { id: 'halls', label: 'Floor plans' },
@@ -142,6 +156,20 @@ export const TenantDrawer: React.FC<{
   const [confirmNotify, setConfirmNotify] = useState(false);
   const [notifying, setNotifying] = useState(false);
   const [notifyMsg, setNotifyMsg] = useState('');
+  // Employee Hub Phase 1 — module toggle matrix state.
+  const [modules, setModules] = useState<TenantModule[]>([]);
+  const [activeEmployeeCount, setActiveEmployeeCount] = useState(0);
+  const [modulesLoading, setModulesLoading] = useState(false);
+  const [modulesErr, setModulesErr] = useState('');
+  const [togglingModule, setTogglingModule] = useState<ModuleKey | null>(null);
+  // Turning OFF employee_app while the restaurant has active accounts warns
+  // first (plan §1's suggested confirmation modal) — every other module
+  // toggles immediately, since only the master switch risks locking out
+  // people mid-shift.
+  const [confirmDisableEmployeeApp, setConfirmDisableEmployeeApp] = useState(false);
+  const [adminName, setAdminName] = useState(() => {
+    try { return localStorage.getItem(ADMIN_NAME_KEY) ?? ''; } catch { return ''; }
+  });
 
   const testResult = tenant ? testCache[tenant.id] : undefined;
 
@@ -157,6 +185,22 @@ export const TenantDrawer: React.FC<{
       if (activeTenantIdRef.current === tenantId) setSiblingBranches(branches);
     } catch {
       if (activeTenantIdRef.current === tenantId) setSiblingBranches([]);
+    }
+  }, [token]);
+
+  const loadModules = useCallback(async (tenantId: string) => {
+    setModulesLoading(true);
+    setModulesErr('');
+    try {
+      const res = await traceApi.admin.modules(token, tenantId);
+      if (activeTenantIdRef.current === tenantId) {
+        setModules(res.modules);
+        setActiveEmployeeCount(res.activeEmployeeCount);
+      }
+    } catch (e: any) {
+      if (activeTenantIdRef.current === tenantId) setModulesErr(e.message ?? 'Could not load module settings');
+    } finally {
+      if (activeTenantIdRef.current === tenantId) setModulesLoading(false);
     }
   }, [token]);
 
@@ -254,6 +298,11 @@ export const TenantDrawer: React.FC<{
     setPullReviewsMsg('');
     setConfirmNotify(false);
     setNotifyMsg('');
+    setModules([]);
+    setActiveEmployeeCount(0);
+    setModulesErr('');
+    setConfirmDisableEmployeeApp(false);
+    loadModules(tenant.id);
     loadHallPlans(tenant.id);
     loadBranches(tenant.id);
     if (tenant.pos_type !== 'poster') loadIikoSectionsReadOnly(tenant.id);
@@ -378,6 +427,33 @@ export const TenantDrawer: React.FC<{
       setToggleErr(ex.message ?? 'Could not change status');
     } finally {
       setToggling(false);
+    }
+  };
+
+  // Employee Hub Phase 1 — flips one module. `force` skips the
+  // active-employee confirmation (called after the modal's "yes, turn off"
+  // is clicked); a plain call always confirms for employee_app when there
+  // are active accounts and the change is a disable.
+  const handleToggleModule = async (moduleKey: ModuleKey, nextEnabled: boolean, force = false) => {
+    if (!tenant) return;
+    if (moduleKey === 'employee_app' && !nextEnabled && activeEmployeeCount > 0 && !force) {
+      setConfirmDisableEmployeeApp(true);
+      return;
+    }
+    setTogglingModule(moduleKey);
+    setModulesErr('');
+    try {
+      const label = adminName.trim() || 'Admin';
+      try { localStorage.setItem(ADMIN_NAME_KEY, label); } catch {}
+      const updated = await traceApi.admin.updateModule(token, tenant.id, moduleKey, nextEnabled, label);
+      setModules(prev => prev.some(m => m.moduleKey === moduleKey)
+        ? prev.map(m => m.moduleKey === moduleKey ? updated : m)
+        : [...prev, updated]);
+      setConfirmDisableEmployeeApp(false);
+    } catch (e: any) {
+      setModulesErr(e.message ?? `Could not toggle ${moduleKey}`);
+    } finally {
+      setTogglingModule(null);
     }
   };
 
@@ -766,6 +842,86 @@ export const TenantDrawer: React.FC<{
                       {tenant.organization_id === BENEDICT_ORG_ID_MANAGER_PORTAL && (
                         <p className="text-[10px] text-muted">Manager Portal PIN is set per-branch — edit to update.</p>
                       )}
+                    </div>
+                  )}
+                </section>
+
+                {/* ── Employee Hub modules ── */}
+                <section id="drawer-modules" className="p-5 border-b border-border">
+                  <SectionHeading icon={<LayoutGrid size={12} />} title="Employee Hub" hint="per-restaurant module toggles" />
+                  <div className="mb-3.5">
+                    <FieldLabel hint={'(shown as "last changed by" — no per-admin login exists yet, so this is a label you type once)'}>Your name</FieldLabel>
+                    <input
+                      value={adminName}
+                      onChange={e => setAdminName(e.target.value)}
+                      placeholder="Admin"
+                      className={`${inputBase} max-w-[220px]`}
+                    />
+                  </div>
+                  {modulesErr && <p className="text-danger text-[10px] mb-2">{modulesErr}</p>}
+                  {modulesLoading ? (
+                    <div className="space-y-2">{[...Array(3)].map((_, i) => <div key={i} className="h-12 bg-card-hover rounded-xl animate-pulse" />)}</div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {MODULE_INFO.map(info => {
+                        const row = modules.find(m => m.moduleKey === info.key);
+                        const enabled = row?.enabled ?? false;
+                        const isMaster = info.key === 'employee_app';
+                        const disabledByMaster = !isMaster && !(modules.find(m => m.moduleKey === 'employee_app')?.enabled ?? false);
+                        return (
+                          <div key={info.key} className={`p-3 rounded-xl border transition-colors ${enabled ? 'bg-success/5 border-success/20' : 'bg-card-hover border-border/60'}`}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-[12px] font-semibold text-text flex items-center gap-1.5">
+                                  {info.label}
+                                  {isMaster && <span className="text-[8px] uppercase tracking-[0.15em] text-muted bg-card px-1.5 py-0.5 rounded-full">master</span>}
+                                </p>
+                                <p className="text-[10px] text-muted mt-0.5 leading-relaxed">{info.description}</p>
+                                {row?.updatedAt && (
+                                  <p className="text-[9px] text-muted/60 mt-1">
+                                    Last changed by {row.updatedBy ?? 'Admin'} · {relativeTime(row.updatedAt)}
+                                  </p>
+                                )}
+                                {disabledByMaster && (
+                                  <p className="text-[9px] text-primary/70 mt-1">Employee App is off — this has no effect until it's on.</p>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => handleToggleModule(info.key, !enabled)}
+                                disabled={togglingModule === info.key}
+                                className={`flex-shrink-0 text-[11px] px-3 py-1.5 rounded-lg border font-medium transition-colors disabled:opacity-50 min-w-[64px] flex items-center justify-center
+                                  ${enabled ? 'border-border text-muted hover:text-text hover:border-muted' : 'border-success/30 text-success hover:border-success/70'}`}
+                              >
+                                {togglingModule === info.key ? <Loader2 size={12} className="animate-spin" /> : enabled ? 'Turn off' : 'Turn on'}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {activeEmployeeCount > 0 && (
+                    <p className="text-[10px] text-muted mt-3">{activeEmployeeCount} active employee account{activeEmployeeCount === 1 ? '' : 's'} at this restaurant.</p>
+                  )}
+
+                  {confirmDisableEmployeeApp && (
+                    <div className="mt-3 p-3 rounded-xl border border-danger/30 bg-danger/5 space-y-2">
+                      <p className="text-[11px] text-danger">
+                        {activeEmployeeCount} employee{activeEmployeeCount === 1 ? '' : 's'} will lose app access immediately. Their data is preserved — this doesn't delete anything, and can be turned back on any time.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleToggleModule('employee_app', false, true)}
+                          disabled={togglingModule === 'employee_app'}
+                          className="flex items-center gap-1.5 bg-danger/10 hover:bg-danger/20 border border-danger/40 text-danger text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+                        >
+                          {togglingModule === 'employee_app' && <Loader2 size={12} className="animate-spin" />}
+                          Yes, turn off
+                        </button>
+                        <button onClick={() => setConfirmDisableEmployeeApp(false)} className="text-muted hover:text-text text-[11px] px-3 py-1.5 border border-border rounded-lg transition-colors">
+                          Cancel
+                        </button>
+                      </div>
                     </div>
                   )}
                 </section>

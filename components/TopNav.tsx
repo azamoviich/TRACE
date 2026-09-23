@@ -65,7 +65,7 @@ export const TopNav: React.FC<TopNavProps> = ({
 
   return (
     <>
-      <header className={`fixed top-0 left-0 right-0 z-50 h-[52px] glass-strong flex items-center px-5 md:px-8 shadow-[0_4px_16px_rgba(0,0,0,0.06)] ${navStyle === 'side' ? 'lg:pl-[72px]' : ''}`}>
+      <header className={`fixed top-0 right-0 z-50 h-[52px] glass-strong flex items-center px-5 md:px-8 shadow-[0_4px_16px_rgba(0,0,0,0.06)] ${navStyle === 'side' ? 'left-0 lg:left-56' : 'left-0'}`}>
 
         {/* Mobile menu trigger — only when the phone nav is set to drawer mode */}
         {mobileNavStyle === 'drawer' && (
@@ -77,24 +77,28 @@ export const TopNav: React.FC<TopNavProps> = ({
           </button>
         )}
 
-        {/* Logo — a custom upload from Settings replaces the wordmark */}
-        {logoUrl ? (
-          <img
-            src={logoUrl}
-            alt="Logo"
-            onClick={() => handleNav('dashboard')}
-            className="h-7 w-auto max-w-[120px] object-contain cursor-pointer select-none mr-6 flex-shrink-0 rounded"
-          />
-        ) : (
-          <span
-            className="font-display font-black text-[16px] tracking-[0.22em] text-text cursor-pointer select-none mr-6 flex-shrink-0"
-            onClick={() => handleNav('dashboard')}
-          >
-            TRACE
-          </span>
-        )}
+        {/* Logo — a custom upload from Settings replaces the wordmark. Hidden
+            at the lg+ breakpoint when nav style is 'side': the Sidebar
+            already shows the logo there, so this would just duplicate it. */}
+        <div className={`flex items-center ${navStyle === 'side' ? 'lg:hidden' : ''}`}>
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt="Logo"
+              onClick={() => handleNav('dashboard')}
+              className="h-7 w-auto max-w-[120px] object-contain cursor-pointer select-none mr-6 flex-shrink-0 rounded"
+            />
+          ) : (
+            <span
+              className="font-display font-black text-[16px] tracking-[0.22em] text-text cursor-pointer select-none mr-6 flex-shrink-0"
+              onClick={() => handleNav('dashboard')}
+            >
+              TRACE
+            </span>
+          )}
 
-        <div className="hidden md:block w-px h-4 bg-border mr-6 flex-shrink-0" />
+          <div className="hidden md:block w-px h-4 bg-border mr-6 flex-shrink-0" />
+        </div>
 
         {/* Desktop nav — hidden when the desktop nav style is set to sidebar */}
         <nav

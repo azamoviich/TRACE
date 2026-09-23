@@ -3,9 +3,16 @@
   "identifier": "default",
   "description": "enables the default permissions",
   "windows": [
-    "main"
+    "main*"
   ],
+  "remote": {
+    "urls": [
+      "https://*.trace-os.uz"
+    ]
+  },
   "permissions": [
-    "core:default"
+    "core:default",
+    "allow-sign-out",
+    "allow-remembered-tenant"
   ]
 }

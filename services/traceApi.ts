@@ -2480,6 +2480,14 @@ export interface Organization {
   iiko_chain_server: string | null;
   iiko_chain_login: string | null;
   iiko_chain_password: string | null;
+  // The owner's TRACE dashboard login, shared across every branch tenant in
+  // this organization instead of each branch having its own — see
+  // /admin/login and /admin/tenant-auth. Writable via PATCH
+  // /admin/organizations/:id (app_password is hashed server-side into
+  // app_password_hash — never sent back).
+  app_login: string | null;
+  app_password_hash?: string | null;
+  app_password?: string;
 }
 
 export interface BranchCompareResult extends BranchSummary {
@@ -2587,6 +2595,33 @@ export async function tenantAuth(login: string, password: string): Promise<boole
       if (json.token) sessionStorage.setItem(TENANT_TOKEN_KEY, json.token);
     }
     return json.ok === true;
+  } catch { return false; }
+}
+
+// Exe only: the exe is one shared download for every restaurant, so a login
+// that doesn't match the tenant this window happens to be on (e.g. the device
+// last remembered rodena) may belong to another one. /admin/login resolves the
+// tenant from the credentials alone; on a match elsewhere, remember that
+// tenant on the Rust side and hand the token over the same way the launcher
+// does (?bootstrapToken=, see consumeBootstrapToken). Returns true once the
+// redirect is underway.
+export async function desktopCrossTenantLogin(login: string, password: string, remember: boolean): Promise<boolean> {
+  if (!isTauriApp()) return false;
+  try {
+    const r = await fetch(`${BASE}/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login, password }),
+    });
+    const json = await r.json();
+    if (!(json.ok && json.subdomain && json.token) || json.subdomain === getSubdomain()) return false;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('set_remembered_tenant', { tenant: remember ? json.subdomain : null });
+    } catch { /* older exe without the command — still redirect */ }
+    const params = new URLSearchParams({ bootstrapToken: json.token, bootstrapRemember: remember ? '1' : '0', bootstrapPlan: json.plan || 'pro' });
+    window.location.href = `https://${json.subdomain}.trace-os.uz/?${params.toString()}`;
+    return true;
   } catch { return false; }
 }
 

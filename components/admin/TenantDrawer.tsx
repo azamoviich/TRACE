@@ -84,7 +84,13 @@ function formFromTenant(tenant: Tenant, org: Organization | null): EditForm {
     iiko_server_host: raw.replace(/^https?:\/\//, ''), iiko_cloud_api: tenant.iiko_cloud_api ?? '',
     iiko_loyalty_app_id: tenant.iiko_loyalty_app_id ?? '', iiko_loyalty_client_secret: tenant.iiko_loyalty_client_secret ?? '',
     onec_base_url: tenant.onec_base_url ?? '', onec_login: tenant.onec_login ?? '', onec_password: tenant.onec_password ?? '',
-    app_login: tenant.app_login ?? '', app_password: '', manager_pin: '',
+    // A tenant in an organization shares its dashboard login with every
+    // sibling branch (see server.ts's /admin/login and /admin/tenant-auth) —
+    // but only once that org actually has app_login set; organization_id is
+    // also used for unrelated groupings (manager portal, iikoChain) that
+    // never opted into a shared login, so those keep reading their own
+    // app_login exactly like a standalone tenant.
+    app_login: ((tenant.organization_id && org?.app_login) ? org.app_login : tenant.app_login) ?? '', app_password: '', manager_pin: '',
     google_maps_url: tenant.google_maps_url ?? '', yandex_maps_url: tenant.yandex_maps_url ?? '',
     tripadvisor_url: tenant.tripadvisor_url ?? '', twogis_url: tenant.twogis_url ?? '',
     telegram_chat_id: tenant.telegram_chat_id ?? '',
@@ -324,6 +330,7 @@ export const TenantDrawer: React.FC<{
               iiko_chain_server_host: chainRaw.replace(/^https?:\/\//, ''),
               iiko_chain_login: org.iiko_chain_login ?? '',
               iiko_chain_password: org.iiko_chain_password ?? '',
+              app_login: org.app_login ?? '',
             } : f);
           }
         })
@@ -345,6 +352,13 @@ export const TenantDrawer: React.FC<{
     if (!tenant || !form) return;
     setSaving(true);
     setSaveErr('');
+
+    // Mirrors server.ts's usesOrgCreds: organization_id is also set for
+    // unrelated groupings (manager portal, iikoChain) that never opted a
+    // shared TRACE App Login onto the org — only defer app_login/app_password
+    // to the org when it actually already has one, else this tenant's own
+    // row is still authoritative.
+    const usesOrgLogin = !!(tenant.organization_id && organization?.app_login);
 
     let updated: Tenant;
     try {
@@ -380,8 +394,11 @@ export const TenantDrawer: React.FC<{
         review_refresh_yandex: parseCount(form.review_refresh_yandex),
         review_refresh_2gis: parseCount(form.review_refresh_2gis),
         review_refresh_tripadvisor: parseCount(form.review_refresh_tripadvisor),
-        ...(form.app_login ? { app_login: form.app_login } : {}),
-        ...(form.app_password ? { app_password: form.app_password } : {}),
+        // App login/password land on the tenant row unless this tenant's org
+        // already has a shared login of its own (see `usesOrgLogin` above and
+        // the `organization` block below), same as iikoChain.
+        ...(!usesOrgLogin && form.app_login ? { app_login: form.app_login } : {}),
+        ...(!usesOrgLogin && form.app_password ? { app_password: form.app_password } : {}),
         ...(form.manager_pin ? { manager_pin: form.manager_pin } : {}),
       });
     } catch (ex: any) {
@@ -404,6 +421,8 @@ export const TenantDrawer: React.FC<{
           iiko_chain_server,
           iiko_chain_login: form.iiko_chain_login || null,
           iiko_chain_password: form.iiko_chain_password || null,
+          ...(usesOrgLogin && form.app_login ? { app_login: form.app_login } : {}),
+          ...(usesOrgLogin && form.app_password ? { app_password: form.app_password } : {}),
         });
         setOrganization(updatedOrg);
       } catch (ex: any) {
@@ -825,7 +844,11 @@ export const TenantDrawer: React.FC<{
                     </div>
                   )}
 
-                  <SectionHeading icon={<KeyRound size={12} />} title="TRACE App Login" />
+                  <SectionHeading
+                    icon={<KeyRound size={12} />}
+                    title="TRACE App Login"
+                    hint={(tenant.organization_id && organization?.app_login) ? '(shared across every branch in this organization)' : undefined}
+                  />
                   {editing ? (
                     <div className="space-y-3">
                       <Field label="Login" mono placeholder="admin" value={form.app_login} onChange={v => setForm(f => f && ({ ...f, app_login: v }))} />
@@ -838,7 +861,9 @@ export const TenantDrawer: React.FC<{
                     </div>
                   ) : (
                     <div className="space-y-2.5">
-                      <ReadRow label="App Login" mono>{tenant.app_login || <span className="text-muted italic">admin (default)</span>}</ReadRow>
+                      <ReadRow label="App Login" mono>
+                        {((tenant.organization_id && organization?.app_login) ? organization.app_login : tenant.app_login) || <span className="text-muted italic">admin (default)</span>}
+                      </ReadRow>
                       {tenant.organization_id === BENEDICT_ORG_ID_MANAGER_PORTAL && (
                         <p className="text-[10px] text-muted">Manager Portal PIN is set per-branch — edit to update.</p>
                       )}

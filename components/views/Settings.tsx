@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card } from '../ui/Card';
 import { Language, ViewState } from '../../types';
-import { Mail, Loader2, Plus, Trash2, Send, Sun, Moon, Link2, PanelLeft, PanelTop, Rows3, PanelBottom, Eye, EyeOff, Palette, Check, ImagePlus, X, Home, Download } from 'lucide-react';
+import { Mail, Loader2, Plus, Trash2, Send, Sun, Moon, Link2, PanelLeft, PanelTop, Rows3, PanelBottom, Eye, EyeOff, Palette, Check, ImagePlus, X, Home, Download, Wand2 } from 'lucide-react';
 import { traceApi, isDemoTenant, ReportSubscription, ReportType, ReportChannel, TelegramStatus, uploadPhoto, getSubdomain, downloadUrl } from '../../services/traceApi';
 import { TRANSLATIONS } from '../../constants';
 import { NAV_ITEMS, HIDEABLE_PAGE_IDS, DEFAULT_PAGE_CHOICES, ACCENT_SWATCHES, NavStyle, MobileNavStyle } from '../navConfig';
@@ -231,12 +231,21 @@ export const Settings: React.FC<{
         </div>
       </Card>
 
-      <Card title={t.nav_settings_title} action={navStyle === 'side' ? <PanelLeft size={18} className="text-muted" /> : <PanelTop size={18} className="text-muted" />}>
+      <Card title={t.nav_settings_title} action={navStyle === 'side' ? <PanelLeft size={18} className="text-muted" /> : navStyle === 'top' ? <PanelTop size={18} className="text-muted" /> : <Wand2 size={18} className="text-muted" />}>
         <p className="text-[13px] text-muted -mt-1 mb-5">{t.nav_settings_desc}</p>
 
         <div className="mb-4">
           <label className="text-[11px] text-muted block mb-1.5">{t.nav_style_desktop}</label>
           <div className="flex gap-2">
+            <button
+              onClick={() => setNavStyle('auto')}
+              className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-[14px] font-semibold border transition-colors ${
+                navStyle === 'auto' ? 'bg-primary text-white border-primary' : 'bg-card border-border text-text hover:bg-card-hover'
+              }`}
+            >
+              <Wand2 size={16} />
+              {t.nav_style_auto}
+            </button>
             <button
               onClick={() => setNavStyle('top')}
               className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-[14px] font-semibold border transition-colors ${
@@ -551,7 +560,10 @@ export const Settings: React.FC<{
             : "Install TRACE as a desktop app — no need to open the browser every day."}
         </p>
         <a
-          href={downloadUrl('/downloads/TRACE-Setup.exe')}
+          // Tenant in the path, not just the download attribute: this link is
+          // cross-origin, so browsers ignore `download` and the backend's
+          // Content-Disposition is what names the file for the installer hook.
+          href={downloadUrl(`/downloads/TRACE-Setup-${getSubdomain()}.exe`)}
           download={`TRACE-Setup-${getSubdomain()}.exe`}
           className="inline-flex px-5 py-2 bg-primary text-white text-[12px] font-semibold rounded-lg hover:bg-primary/90 transition-colors items-center gap-2"
         >

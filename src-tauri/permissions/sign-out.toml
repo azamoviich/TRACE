@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-sign-out"
+description = "Permits invoking the sign_out command from the remote tenant origin"
+commands.allow = ["sign_out"]
+
+[[permission]]
+identifier = "allow-remembered-tenant"
+description = "Permits reading/writing the device's remembered tenant (tenant.txt) from the launcher and remote tenant pages"
+commands.allow = ["get_preset_tenant", "set_remembered_tenant"]

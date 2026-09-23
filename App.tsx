@@ -16,7 +16,7 @@ import { Compare } from './components/views/Compare';
 import { Checklists } from './components/views/Checklists';
 import { Globe, Sun, Moon } from 'lucide-react';
 import { TRANSLATIONS, nextLang, tr } from './constants';
-import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos, createQrSession, pollQrSession, QrSession, isTauriApp, consumeBootstrapToken } from './services/traceApi';
+import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, desktopCrossTenantLogin, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos, createQrSession, pollQrSession, QrSession, isTauriApp, consumeBootstrapToken } from './services/traceApi';
 import { ManagerPortal } from './components/ManagerPortal';
 import { ChecklistManagerPortal } from './components/ChecklistManagerPortal';
 import { EmployeeChecklistPortal } from './components/EmployeeChecklistPortal';
@@ -44,6 +44,8 @@ const Login: React.FC<{ onLogin: (remember: boolean) => void; lang: Language; se
     const ok = isDemoTenant()
       ? (trimmedLogin === 'admin' && passwordVal === '123')
       : await tenantAuth(trimmedLogin, passwordVal);
+    // Exe: credentials for a different restaurant redirect there instead.
+    if (!ok && await desktopCrossTenantLogin(trimmedLogin, passwordVal, rememberMe)) return;
     setLoading(false);
     if (ok) onLogin(rememberMe);
     else setError(tr(lang, 'Неверный логин или пароль', 'Invalid login or password', 'Login yoki parol noto\'g\'ri'));

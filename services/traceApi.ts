@@ -2520,6 +2520,33 @@ export async function tenantAuth(login: string, password: string): Promise<boole
   } catch { return false; }
 }
 
+// Exe only: the exe is one shared download for every restaurant, so a login
+// that doesn't match the tenant this window happens to be on (e.g. the device
+// last remembered rodena) may belong to another one. /admin/login resolves the
+// tenant from the credentials alone; on a match elsewhere, remember that
+// tenant on the Rust side and hand the token over the same way the launcher
+// does (?bootstrapToken=, see consumeBootstrapToken). Returns true once the
+// redirect is underway.
+export async function desktopCrossTenantLogin(login: string, password: string, remember: boolean): Promise<boolean> {
+  if (!isTauriApp()) return false;
+  try {
+    const r = await fetch(`${BASE}/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login, password }),
+    });
+    const json = await r.json();
+    if (!(json.ok && json.subdomain && json.token) || json.subdomain === getSubdomain()) return false;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('set_remembered_tenant', { tenant: remember ? json.subdomain : null });
+    } catch { /* older exe without the command — still redirect */ }
+    const params = new URLSearchParams({ bootstrapToken: json.token, bootstrapRemember: remember ? '1' : '0', bootstrapPlan: json.plan || 'pro' });
+    window.location.href = `https://${json.subdomain}.trace-os.uz/?${params.toString()}`;
+    return true;
+  } catch { return false; }
+}
+
 // Returns: true = verified, false = explicitly rejected (clear tokens), null = network error (keep tokens)
 export async function verifyTenantToken(): Promise<boolean | null> {
   const token = localStorage.getItem(TENANT_TOKEN_KEY) ?? sessionStorage.getItem(TENANT_TOKEN_KEY);

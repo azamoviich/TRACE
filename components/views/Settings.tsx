@@ -560,7 +560,10 @@ export const Settings: React.FC<{
             : "Install TRACE as a desktop app — no need to open the browser every day."}
         </p>
         <a
-          href={downloadUrl('/downloads/TRACE-Setup.exe')}
+          // Tenant in the path, not just the download attribute: this link is
+          // cross-origin, so browsers ignore `download` and the backend's
+          // Content-Disposition is what names the file for the installer hook.
+          href={downloadUrl(`/downloads/TRACE-Setup-${getSubdomain()}.exe`)}
           download={`TRACE-Setup-${getSubdomain()}.exe`}
           className="inline-flex px-5 py-2 bg-primary text-white text-[12px] font-semibold rounded-lg hover:bg-primary/90 transition-colors items-center gap-2"
         >

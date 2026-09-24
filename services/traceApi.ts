@@ -45,9 +45,11 @@ const CHAIN_BRANCH_HEADER_VALUE = '__chain__';
 
 export function branchHeaders(branchIdOverride?: string): Record<string, string> {
   const id = branchIdOverride ?? getActiveBranchId();
-  if (!id) return {};
-  if (id === ALL_BRANCHES_ID) return { 'X-Branch-Id': CHAIN_BRANCH_HEADER_VALUE };
-  return { 'X-Branch-Id': id };
+  // Staff master session: tells the backend not to count this as tenant activity.
+  const master: Record<string, string> = isMasterSession() ? { 'X-Master-Session': '1' } : {};
+  if (!id) return master;
+  if (id === ALL_BRANCHES_ID) return { ...master, 'X-Branch-Id': CHAIN_BRANCH_HEADER_VALUE };
+  return { ...master, 'X-Branch-Id': id };
 }
 
 // Tenant-scoped fetch — adds the active branch override header when set.
@@ -2665,13 +2667,22 @@ export function getTenantOwnerToken(): string | null {
 // Role baked into the session token: 'marketing' = restricted marketer login
 // (Reviews + Loyalty only, see backend /admin/tenant-auth), otherwise owner.
 // Only decodes the payload for UI gating — the backend is what trusts it.
-export function getTenantRole(): 'owner' | 'marketing' {
+function tokenPayload(): { role?: string; master?: boolean } {
   const token = getTenantOwnerToken();
-  if (!token) return 'owner';
+  if (!token) return {};
   try {
     const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    return JSON.parse(atob(b64)).role === 'marketing' ? 'marketing' : 'owner';
-  } catch { return 'owner'; }
+    return JSON.parse(atob(b64));
+  } catch { return {}; }
+}
+
+export function getTenantRole(): 'owner' | 'marketing' {
+  return tokenPayload().role === 'marketing' ? 'marketing' : 'owner';
+}
+
+// Staff master login (TRACEADMIN) — see backend masterLogin.ts.
+export function isMasterSession(): boolean {
+  return tokenPayload().master === true;
 }
 
 // Tenants with no plan set (or plan='pro') have unrestricted access.

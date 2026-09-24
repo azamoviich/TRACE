@@ -16,7 +16,7 @@ import { Compare } from './components/views/Compare';
 import { Checklists } from './components/views/Checklists';
 import { Globe, Sun, Moon } from 'lucide-react';
 import { TRANSLATIONS, nextLang, tr } from './constants';
-import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, desktopCrossTenantLogin, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos, createQrSession, pollQrSession, QrSession, isTauriApp, consumeBootstrapToken } from './services/traceApi';
+import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, desktopCrossTenantLogin, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos, createQrSession, pollQrSession, QrSession, isTauriApp, consumeBootstrapToken, getTenantRole } from './services/traceApi';
 import { ManagerPortal } from './components/ManagerPortal';
 import { ChecklistManagerPortal } from './components/ChecklistManagerPortal';
 import { EmployeeChecklistPortal } from './components/EmployeeChecklistPortal';
@@ -24,7 +24,7 @@ import { PWAInstallGuide } from './components/PWAInstallGuide';
 import { Sidebar } from './components/Sidebar';
 import { useWindowMaximized } from './hooks/useWindowMaximized';
 import {
-  NavStyle, MobileNavStyle, NAV_STYLE_KEY, MOBILE_NAV_STYLE_KEY, HIDDEN_PAGES_KEY, DEFAULT_PAGE_KEY, ACCENT_KEY, LOGO_URL_KEY,
+  NAV_ITEMS, NavStyle, MobileNavStyle, NAV_STYLE_KEY, MOBILE_NAV_STYLE_KEY, HIDDEN_PAGES_KEY, DEFAULT_PAGE_KEY, ACCENT_KEY, LOGO_URL_KEY,
   loadNavStyle, loadMobileNavStyle, loadHiddenPages, loadDefaultPage, loadAccent, applyAccent, loadLogoUrl,
 } from './components/navConfig';
 
@@ -385,13 +385,22 @@ export default function App() {
   const effectiveNavStyle: 'top' | 'side' = navStyle === 'auto' ? (isWindowMaximized ? 'side' : 'top') : navStyle;
   const [mobileNavStyle, setMobileNavStyleState] = useState<MobileNavStyle>(loadMobileNavStyle);
   const setMobileNavStyle = (s: MobileNavStyle) => { setMobileNavStyleState(s); localStorage.setItem(MOBILE_NAV_STYLE_KEY, s); };
-  const [hiddenPages, setHiddenPagesState] = useState<ViewState[]>(loadHiddenPages);
+  // Restricted marketer login: only Reviews + Loyalty exist for this account.
+  const isMarketing = isLoggedIn && !isDemoTenant() && getTenantRole() === 'marketing';
+  const [hiddenPagesState, setHiddenPagesState] = useState<ViewState[]>(loadHiddenPages);
+  const hiddenPages: ViewState[] = isMarketing
+    ? NAV_ITEMS.map(n => n.id).filter(id => id !== 'reviews' && id !== 'loyalty')
+    : hiddenPagesState;
   const setHiddenPages = (pages: ViewState[]) => { setHiddenPagesState(pages); localStorage.setItem(HIDDEN_PAGES_KEY, JSON.stringify(pages)); };
 
   // A page hidden while it was the active tab needs somewhere safe to land.
   useEffect(() => {
     if (hiddenPages.includes(currentView)) setCurrentView('dashboard');
   }, [hiddenPages]);
+
+  useEffect(() => {
+    if (isMarketing && currentView !== 'reviews' && currentView !== 'loyalty') setCurrentView('reviews');
+  }, [isMarketing, currentView]);
 
   const [defaultPage, setDefaultPageState] = useState<ViewState>(loadDefaultPage);
   const setDefaultPage = (p: ViewState) => { setDefaultPageState(p); localStorage.setItem(DEFAULT_PAGE_KEY, p); };
@@ -452,10 +461,10 @@ export default function App() {
 
   // Load sibling branches once (multi-branch orgs only — empty for single-branch tenants)
   useEffect(() => {
-    if (isDemoTenant()) return;
+    if (isDemoTenant() || isMarketing) return;
     traceApi.org.branches().then(setBranches).catch(() => {});
     traceApi.org.info().then(info => setHasChainServer(info.hasChainServer)).catch(() => {});
-  }, []);
+  }, [isMarketing]);
 
   // "All branches" only makes sense once there's more than one branch AND an
   // iikoChain server is configured for the org (see Admin.tsx Chain tab) —
@@ -512,7 +521,7 @@ export default function App() {
 
   const renderContent = () => {
     const branchKey = activeBranchId ?? 'self';
-    switch (currentView) {
+    switch (isMarketing && currentView !== 'loyalty' ? 'reviews' : currentView) {
       case 'dashboard':   return <Dashboard key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} />;
       case 'sales':       return <Sales key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} />;
       case 'operations':  return <Operations key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} branches={branches} isAllBranches={activeBranchId === ALL_BRANCHES_ID} />;
@@ -567,7 +576,7 @@ export default function App() {
         onLogout={handleLogout}
         lang={lang}
         setLang={setLang}
-        onOpenAI={() => setAiOpen(true)}
+        onOpenAI={isMarketing ? undefined : () => setAiOpen(true)}
         branches={branches}
         activeBranchId={activeBranchId}
         onSwitchBranch={handleSwitchBranch}
@@ -600,12 +609,12 @@ export default function App() {
         </div>
       </main>
 
-      <AskAI
+      {!isMarketing && <AskAI
         context={aiContext || (t[currentView as keyof typeof t] as string) || 'General'}
         lang={lang}
         isOpen={aiOpen}
         onClose={() => setAiOpen(false)}
-      />
+      />}
 
       {!isDemoTenant() && <PWAInstallGuide lang={lang} />}
     </div>

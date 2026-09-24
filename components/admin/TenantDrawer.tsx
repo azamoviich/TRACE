@@ -123,12 +123,13 @@ export const TenantDrawer: React.FC<{
   const [serverProto, setServerProto] = useState<'http' | 'https'>('http');
   const [chainProto, setChainProto] = useState<'http' | 'https'>('http');
   const [saving, setSaving] = useState(false);
-  const [mkLogin, setMkLogin] = useState(tenant.marketing_login ?? '');
+  const [mkLogin, setMkLogin] = useState(tenant?.marketing_login ?? '');
   const [mkPassword, setMkPassword] = useState('');
   const [mkBusy, setMkBusy] = useState(false);
   const [mkMsg, setMkMsg] = useState('');
-  useEffect(() => { setMkLogin(tenant.marketing_login ?? ''); setMkPassword(''); setMkMsg(''); }, [tenant.id]);
+  useEffect(() => { setMkLogin(tenant?.marketing_login ?? ''); setMkPassword(''); setMkMsg(''); }, [tenant?.id]);
   const saveMarketing = async () => {
+    if (!tenant) return;
     setMkBusy(true); setMkMsg('');
     try {
       const r = await traceApi.admin.setMarketingLogin(token, tenant.id, mkLogin.trim(), mkPassword);

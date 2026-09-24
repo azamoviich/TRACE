@@ -1528,6 +1528,9 @@ export const traceApi = {
       }),
     deleteHallPlan: (token: string, tenantId: string, planId: string) =>
       del(`/admin/tenants/${tenantId}/hall-plans/${planId}`, token),
+    // Restricted marketer login (Reviews + Loyalty pages only). Empty login clears it.
+    setMarketingLogin: (token: string, id: string, login: string, password?: string) =>
+      post<{ ok: boolean; marketing_login: string | null }>(`/admin/tenants/${id}/marketing-login`, { login, password }, token),
     // Manually kick a review pull for one tenant outside the daily cron —
     // useful right after onboarding to confirm scraping actually works.
     // Backend fires this async and returns immediately, so the result only
@@ -2361,6 +2364,7 @@ export interface Tenant {
   app_login?: string | null;
   app_password?: string;
   manager_pin?: string;
+  marketing_login?: string | null;
   billing_status: 'trial' | 'active' | 'past_due' | 'canceled';
   trial_ends_at: string | null;
   next_payment_due_at: string | null;
@@ -2731,6 +2735,18 @@ export async function pollQrSession(sessionId: string): Promise<'pending' | 'con
 // endpoints, gated server-side by requireOwnerToken.
 export function getTenantOwnerToken(): string | null {
   return localStorage.getItem(TENANT_TOKEN_KEY) ?? sessionStorage.getItem(TENANT_TOKEN_KEY);
+}
+
+// Role baked into the session token: 'marketing' = restricted marketer login
+// (Reviews + Loyalty only, see backend /admin/tenant-auth), otherwise owner.
+// Only decodes the payload for UI gating — the backend is what trusts it.
+export function getTenantRole(): 'owner' | 'marketing' {
+  const token = getTenantOwnerToken();
+  if (!token) return 'owner';
+  try {
+    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(b64)).role === 'marketing' ? 'marketing' : 'owner';
+  } catch { return 'owner'; }
 }
 
 // Tenants with no plan set (or plan='pro') have unrestricted access.

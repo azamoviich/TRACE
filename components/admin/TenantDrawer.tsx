@@ -137,6 +137,21 @@ export const TenantDrawer: React.FC<{
   const [serverProto, setServerProto] = useState<'http' | 'https'>('http');
   const [chainProto, setChainProto] = useState<'http' | 'https'>('http');
   const [saving, setSaving] = useState(false);
+  const [mkLogin, setMkLogin] = useState(tenant.marketing_login ?? '');
+  const [mkPassword, setMkPassword] = useState('');
+  const [mkBusy, setMkBusy] = useState(false);
+  const [mkMsg, setMkMsg] = useState('');
+  useEffect(() => { setMkLogin(tenant.marketing_login ?? ''); setMkPassword(''); setMkMsg(''); }, [tenant.id]);
+  const saveMarketing = async () => {
+    setMkBusy(true); setMkMsg('');
+    try {
+      const r = await traceApi.admin.setMarketingLogin(token, tenant.id, mkLogin.trim(), mkPassword);
+      setMkPassword('');
+      setMkMsg(r.marketing_login ? 'Saved' : 'Removed');
+    } catch (e: any) {
+      setMkMsg(String(e?.message ?? 'Failed').replace(/^\d+:\s*/, ''));
+    } finally { setMkBusy(false); }
+  };
   const [saveErr, setSaveErr] = useState('');
   const [toggling, setToggling] = useState(false);
   const [toggleErr, setToggleErr] = useState('');
@@ -869,6 +884,18 @@ export const TenantDrawer: React.FC<{
                       )}
                     </div>
                   )}
+                  <div className="mt-5 pt-4 border-t border-border space-y-3">
+                    <SectionHeading icon={<KeyRound size={12} />} title="Marketer Login" hint="(Reviews + Loyalty pages only — empty login removes it)" />
+                    <Field label="Login" mono placeholder="marketing" value={mkLogin} onChange={setMkLogin} />
+                    <PasswordField label="Password" hint="(min 6 chars)" value={mkPassword} onChange={setMkPassword} />
+                    <div className="flex items-center gap-3">
+                      <button type="button" onClick={saveMarketing} disabled={mkBusy}
+                        className="px-3 py-1.5 rounded-lg text-[12px] font-semibold bg-primary text-white disabled:opacity-50">
+                        {mkBusy ? 'Saving…' : 'Save marketer login'}
+                      </button>
+                      {mkMsg && <span className="text-[11px] text-muted">{mkMsg}</span>}
+                    </div>
+                  </div>
                 </section>
 
                 {/* ── Employee Hub modules ── */}

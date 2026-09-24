@@ -2287,6 +2287,9 @@ export interface Tenant {
   app_password?: string;
   manager_pin?: string;
   marketing_login?: string | null;
+  // Set by the backend: last web login, and last dashboard request (throttled ~5min).
+  last_login_at?: string | null;
+  last_active_at?: string | null;
   billing_status: 'trial' | 'active' | 'past_due' | 'canceled';
   trial_ends_at: string | null;
   next_payment_due_at: string | null;

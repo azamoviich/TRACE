@@ -544,6 +544,14 @@ export const TenantDrawer: React.FC<{
                       {copied ? <Check size={11} className="text-success" /> : <Copy size={11} />}
                     </button>
                   </div>
+                  <div className="flex items-center gap-3 mt-1 text-[10px] text-muted">
+                    <span title={tenant.last_active_at ? new Date(tenant.last_active_at).toLocaleString() : ''}>
+                      Last active: <span className="text-text">{tenant.last_active_at ? relativeTime(tenant.last_active_at) : 'never'}</span>
+                    </span>
+                    <span title={tenant.last_login_at ? new Date(tenant.last_login_at).toLocaleString() : ''}>
+                      Last login: <span className="text-text">{tenant.last_login_at ? relativeTime(tenant.last_login_at) : 'never'}</span>
+                    </span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0 ml-3">
                   <button

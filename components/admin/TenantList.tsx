@@ -122,6 +122,9 @@ export const TenantItem: React.FC<{
           {status !== undefined && (
             <span className="text-[10px] text-muted/70 flex-shrink-0">{relativeTime(status.lastEventAt)}</span>
           )}
+          <span className="text-[10px] text-muted/70 flex-shrink-0" title={tenant.last_active_at ? `Last active ${new Date(tenant.last_active_at).toLocaleString()}` : 'No web activity recorded yet'}>
+            {tenant.last_active_at ? `Active ${relativeTime(tenant.last_active_at)}` : 'No activity yet'}
+          </span>
         </div>
       </div>
 

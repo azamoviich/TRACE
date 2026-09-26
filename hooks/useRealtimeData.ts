@@ -24,7 +24,14 @@ export type RealtimeEventType =
   | 'delivery_changed'
   // Terminal
   | 'terminal_opened'
-  | 'terminal_closed';
+  | 'terminal_closed'
+  // Poster — pushed by the backend's posterWebhook.ts (Poster's own
+  // Marketplace webhook, re-broadcast over this same socket), not
+  // TRACEPLUGIN. Named `poster.<object>.<action>` after Poster's own
+  // webhook shape (e.g. `poster.transaction.changed`) rather than one of
+  // the plugin's fixed event names above, since Poster's entity set is
+  // different and only loosely maps onto it.
+  | `poster.${string}`;
 
 export interface RealtimeOrderData {
   orderId: string;
@@ -77,10 +84,22 @@ export interface DeliveryData {
   sum: number;
 }
 
+// Shape of a Poster-sourced event's `data` field — set by the backend's
+// posterWebhook.ts, one level of indirection removed from Poster's own raw
+// webhook body (object/object_id/action/data) since `data` there is
+// Poster's own per-entity payload (undocumented/varies by entity), passed
+// through as-is rather than reshaped into one of the plugin types above.
+export interface PosterWebhookData {
+  object: string; // Poster's webhook entity name, e.g. 'transaction', 'incoming_order', 'stock'
+  objectId: string;
+  action: 'added' | 'changed' | 'removed' | 'transformed';
+  data?: unknown;
+}
+
 export interface RealtimeEvent {
   type: RealtimeEventType;
   timestamp: string;
-  data: RealtimeOrderData | StopListUpdateData | KitchenOrderData | ReserveData | DeliveryData | Record<string, never>;
+  data: RealtimeOrderData | StopListUpdateData | KitchenOrderData | ReserveData | DeliveryData | PosterWebhookData | Record<string, never>;
 }
 
 interface UseRealtimeDataOptions {

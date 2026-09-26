@@ -7,7 +7,7 @@ import { PLUGIN_ENABLED } from '../ui/ComingSoon';
 import { useOccupiedTables } from '../../hooks/useOccupiedTables';
 import { Language } from '../../types';
 import { TRANSLATIONS, tr, formatMinutes, formatMinutesShort } from '../../constants';
-import { useRealtimeData, RealtimeEvent, StopListUpdateData } from '../../hooks/useRealtimeData';
+import { useRealtimeData, RealtimeEvent, StopListUpdateData, PosterWebhookData } from '../../hooks/useRealtimeData';
 import { Clock, Trash2, Users, CreditCard, Banknote, AlertTriangle, CheckCircle, Timer, X, Plug, Radio, ChefHat, CalendarClock, Bell, TrendingDown, TrendingUp, Zap, Sparkles, ChevronRight, FileDown, FileSpreadsheet, Send, Calendar as CalendarIcon, Crown, Receipt, Grid2x2, Wallet } from 'lucide-react';
 import { DateRangePicker } from '../ui/DateRangePicker';
 import * as XLSX from 'xlsx';
@@ -712,6 +712,11 @@ export const Operations: React.FC<{
   // regardless of POS type) reads as "plugin connected" with zero real events
   // ever arriving — a permanent "waiting..." state, not an honest empty one.
   const [isPoster, setIsPoster] = useState(false);
+  // True once a real Poster Marketplace webhook arrives over the WS — proof
+  // the push path flows for this account, not just that our socket is open.
+  const [posterLive, setPosterLive] = useState(false);
+  // Bumped on each Poster `transaction` webhook: reload orders/occupancy now.
+  const [posterOrdersTick, setPosterOrdersTick] = useState(0);
   // Whether the (single-branch) hall map has a real plan to show — default
   // true so the card doesn't flash visible-then-gone while HallMap's own
   // fetch is still in flight; HallMap reports the real answer once known.
@@ -857,6 +862,18 @@ export const Operations: React.FC<{
     backendWsUrl: wsUrl ?? '',
     enabled: !!wsUrl && !demo,
     onEvent: useCallback((event: RealtimeEvent) => {
+      // Poster Marketplace webhooks (posterWebhook.ts), namespaced
+      // `poster.<object>.<action>`. The body is a bare ping, so each object
+      // refetches the REST endpoint behind its widget.
+      if (event.type.startsWith('poster.')) {
+        setPosterLive(true);
+        const obj = (event.data as PosterWebhookData)?.object;
+        if (obj === 'transaction') setPosterOrdersTick(t => t + 1);
+        else if (obj === 'incoming_order') traceApi.operations.reservations().then(setReservations).catch(() => {});
+        else if (obj === 'stock') traceApi.operations.stopList().then(setStopList).catch(() => {});
+        return;
+      }
+
       // Stop list — live push from plugin. The raw event only carries product
       // ids, so refetch the REST endpoint which resolves human product names.
       if (event.type === 'stop_list_updated') {
@@ -908,7 +925,7 @@ export const Operations: React.FC<{
   // Same source Dashboard's occupancy stat uses — the hall heatmap and the
   // "Загрузка зала" % always agree instead of drifting apart from separate
   // event-replay logic.
-  const { tables: occupiedTables, info: tableInfo } = useOccupiedTables(true);
+  const { tables: occupiedTables, info: tableInfo } = useOccupiedTables(true, 30_000, posterOrdersTick);
 
   const mergedActiveOrders = useMemo(() => {
     return Array.from(rtOrders.entries()).map(([id, o]) => ({
@@ -920,26 +937,41 @@ export const Operations: React.FC<{
   }, [rtOrders, lang, now]);
 
   // rtOrders above is a WebSocket replay (TRACEPLUGIN-only) and stays empty
-  // for Poster tenants — Poster has no push feed, so poll the same REST
-  // endpoint useOccupiedTables already re-fetches every 30s, same pattern
-  // as the "all branches" combinedActiveOrders effect below.
+  // for Poster tenants. Poll every 30s as a self-healing baseline and reload
+  // instantly on a Poster `transaction` webhook (posterOrdersTick).
   const [posterActiveOrders, setPosterActiveOrders] = useState<ActiveOrderRow[]>([]);
+  const loadPosterOrdersRef = useRef<() => void>(() => {});
   useEffect(() => {
     if (!isPoster || isAllBranches) { setPosterActiveOrders([]); return; }
     let cancelled = false;
     const load = () => { traceApi.operations.activeOrders().then(rows => { if (!cancelled) setPosterActiveOrders(rows); }).catch(() => {}); };
+    loadPosterOrdersRef.current = load;
     load();
     const id = setInterval(load, 30_000);
     return () => { cancelled = true; clearInterval(id); };
   }, [isPoster, isAllBranches]);
+  const posterOrdersTickMounted = useRef(false);
+  useEffect(() => {
+    if (!isPoster || isAllBranches) return;
+    if (!posterOrdersTickMounted.current) { posterOrdersTickMounted.current = true; return; }
+    loadPosterOrdersRef.current();
+  }, [posterOrdersTick, isPoster, isAllBranches]);
 
   // Poster only — incomingOrders.getReservations, no iiko-side equivalent.
+  // Polls every 60s, plus an instant reload on an `incoming_order` webhook.
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
   const [reservationsLoading, setReservationsLoading] = useState(false);
   useEffect(() => {
     if (!isPoster || isAllBranches) { setReservations([]); return; }
+    let cancelled = false;
     setReservationsLoading(true);
-    traceApi.operations.reservations().then(setReservations).catch(() => setReservations([])).finally(() => setReservationsLoading(false));
+    const load = () => traceApi.operations.reservations()
+      .then(rows => { if (!cancelled) setReservations(rows); })
+      .catch(() => { if (!cancelled) setReservations([]); })
+      .finally(() => { if (!cancelled) setReservationsLoading(false); });
+    load();
+    const id = setInterval(load, 60_000);
+    return () => { cancelled = true; clearInterval(id); };
   }, [isPoster, isAllBranches]);
 
   // "All branches" combined active orders — polls the REST snapshot per
@@ -1154,6 +1186,7 @@ export const Operations: React.FC<{
           <div className="sub"><span>{nowLabel.replace(/^./, c => c.toUpperCase())}.</span>
             <span className="faint">{isAllBranches ? tr(lang, `Все филиалы (${branches.length}), обновление раз в 30 секунд.`, `All branches (${branches.length}), refreshed every 30 seconds.`, `Barcha filiallar (${branches.length}), har 30 soniyada yangilanadi.`)
               : pluginConnected ? tr(lang, 'Данные с кассы идут в реальном времени.', 'Till data arrives in real time.', 'Kassa maʼlumotlari real vaqtda keladi.')
+              : isPoster && posterLive ? tr(lang, 'Данные Poster идут в реальном времени.', 'Poster data arrives in real time.', 'Poster maʼlumotlari real vaqtda keladi.')
               : isPoster ? tr(lang, 'Poster, обновление раз в 30 секунд.', 'Poster, refreshed every 30 seconds.', 'Poster, har 30 soniyada yangilanadi.')
               : tr(lang, 'Касса iikoFront не на связи: живые данные недоступны.', 'The iikoFront till is offline: no live data.', 'iikoFront kassasi ulanmagan.')}</span>
           </div>
@@ -1172,7 +1205,7 @@ export const Operations: React.FC<{
       <div className="floor rise" style={{ animationDelay: '.12s', ...(showHall ? {} : { gridTemplateColumns: '1fr' }) }}>
         {showHall && (
           <section className="card-ph" aria-labelledby="h-hall">
-            <div className="sec-head"><h2 id="h-hall">{tr(lang, 'Зал', 'Floor', 'Zal')}</h2>{PLUGIN_ENABLED && pluginConnected && <span className="state">{tr(lang, 'Live', 'Live', 'Live')}</span>}</div>
+            <div className="sec-head"><h2 id="h-hall">{tr(lang, 'Зал', 'Floor', 'Zal')}</h2>{((PLUGIN_ENABLED && pluginConnected) || (isPoster && posterLive)) && <span className="state">{tr(lang, 'Live', 'Live', 'Live')}</span>}</div>
             {isAllBranches ? branches.filter(b => branchHasHallPlan.get(b.id) === true).map(b => {
               const occ = perBranchOccupancy.get(b.id);
               return (

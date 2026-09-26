@@ -12,11 +12,18 @@ export interface OccupiedTableInfo {
  * backend's full-day computation on an interval instead of only replaying
  * live WebSocket events — a purely event-driven Map drifts from reality
  * whenever a send is lost (reconnects, restarts) and never self-corrects.
+ *
+ * `refreshSignal`: bump this (e.g. a counter) to force an immediate reload
+ * without waiting for the next interval tick — callers use this to react to
+ * a push notification (a Poster webhook event arriving over the same
+ * WebSocket the plugin feed uses) instead of only ever finding out up to
+ * `intervalMs` late.
  */
-export function useOccupiedTables(enabled: boolean, intervalMs = 30_000) {
+export function useOccupiedTables(enabled: boolean, intervalMs = 30_000, refreshSignal?: number) {
   const [tables, setTables] = useState<Set<number>>(new Set());
   const [info, setInfo] = useState<Map<number, OccupiedTableInfo>>(new Map());
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const loadRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (!enabled) return;
@@ -47,10 +54,22 @@ export function useOccupiedTables(enabled: boolean, intervalMs = 30_000) {
         .catch(() => {});
     };
 
+    loadRef.current = load;
     load();
     timerRef.current = setInterval(load, intervalMs);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [enabled, intervalMs]);
+
+  // Separate effect so a refreshSignal bump doesn't reset the interval timer
+  // above — it only asks for one extra, immediate load in between ticks.
+  // Skips the signal's initial value (undefined/0 on mount) since the effect
+  // above already loads once.
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (!enabled || refreshSignal === undefined) return;
+    if (!mountedRef.current) { mountedRef.current = true; return; }
+    loadRef.current();
+  }, [refreshSignal, enabled]);
 
   return { tables, info };
 }

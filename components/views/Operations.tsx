@@ -5,7 +5,7 @@ import { PLUGIN_ENABLED } from '../ui/ComingSoon';
 import { useOccupiedTables } from '../../hooks/useOccupiedTables';
 import { Language } from '../../types';
 import { TRANSLATIONS, tr, formatMinutes, formatMinutesShort } from '../../constants';
-import { useRealtimeData, RealtimeEvent, StopListUpdateData } from '../../hooks/useRealtimeData';
+import { useRealtimeData, RealtimeEvent, StopListUpdateData, PosterWebhookData } from '../../hooks/useRealtimeData';
 import { Clock, Trash2, Users, CreditCard, Banknote, AlertTriangle, CheckCircle, Timer, X, Plug, Radio, ChefHat, CalendarClock, Bell, TrendingDown, TrendingUp, Zap, Sparkles, ChevronRight, FileDown, FileSpreadsheet, Send, Calendar as CalendarIcon, Crown, Receipt, Grid2x2 } from 'lucide-react';
 import { DateRangePicker } from '../ui/DateRangePicker';
 import * as XLSX from 'xlsx';
@@ -1199,6 +1199,16 @@ export const Operations: React.FC<{
   // regardless of POS type) reads as "plugin connected" with zero real events
   // ever arriving — a permanent "waiting..." state, not an honest empty one.
   const [isPoster, setIsPoster] = useState(false);
+  // Flips true the first time a real Poster Marketplace webhook event
+  // arrives over the WS (see onEvent below) — proof the push path is
+  // actually flowing for this account, not just that our own socket is
+  // open (which says nothing about Poster's side of the webhook setup).
+  // Drives the Active Orders "Live" badge below instead of the flat
+  // "Опрос · 30с" one, and never resets once true for the session.
+  const [posterLive, setPosterLive] = useState(false);
+  // Bumped on every `transaction` webhook event to force an immediate
+  // active-orders/occupancy reload instead of waiting for the 30s poll.
+  const [posterOrdersTick, setPosterOrdersTick] = useState(0);
   // Whether the (single-branch) hall map has a real plan to show — default
   // true so the card doesn't flash visible-then-gone while HallMap's own
   // fetch is still in flight; HallMap reports the real answer once known.
@@ -1344,6 +1354,27 @@ export const Operations: React.FC<{
     backendWsUrl: wsUrl ?? '',
     enabled: !!wsUrl && !demo,
     onEvent: useCallback((event: RealtimeEvent) => {
+      // Poster Marketplace webhook events (posterWebhook.ts on the backend),
+      // re-broadcast over this same socket, namespaced `poster.<object>.
+      // <action>`. Poster's own webhook body is a bare ping — no item/table
+      // detail — so each relevant object just triggers an immediate refetch
+      // of the REST endpoint that already backs the corresponding widget,
+      // rather than trying to reshape it into a plugin-style event.
+      if (event.type.startsWith('poster.')) {
+        setPosterLive(true);
+        const obj = (event.data as PosterWebhookData)?.object;
+        if (obj === 'transaction') {
+          // Active Orders + hall occupancy both read the same
+          // dash.getTransactions-backed snapshot — one tick covers both.
+          setPosterOrdersTick(t => t + 1);
+        } else if (obj === 'incoming_order') {
+          traceApi.operations.reservations().then(setReservations).catch(() => {});
+        } else if (obj === 'stock') {
+          traceApi.operations.stopList().then(setStopList).catch(() => {});
+        }
+        return;
+      }
+
       // Stop list — live push from plugin. The raw event only carries product
       // ids, so refetch the REST endpoint which resolves human product names.
       if (event.type === 'stop_list_updated') {
@@ -1394,8 +1425,10 @@ export const Operations: React.FC<{
 
   // Same source Dashboard's occupancy stat uses — the hall heatmap and the
   // "Загрузка зала" % always agree instead of drifting apart from separate
-  // event-replay logic.
-  const { tables: occupiedTables, info: tableInfo } = useOccupiedTables(true);
+  // event-replay logic. posterOrdersTick forces an immediate reload the
+  // instant a Poster `transaction` webhook lands, instead of only ever
+  // finding out up to 30s late.
+  const { tables: occupiedTables, info: tableInfo } = useOccupiedTables(true, 30_000, posterOrdersTick);
 
   const mergedActiveOrders = useMemo(() => {
     return Array.from(rtOrders.entries()).map(([id, o]) => ({
@@ -1407,26 +1440,49 @@ export const Operations: React.FC<{
   }, [rtOrders, lang, now]);
 
   // rtOrders above is a WebSocket replay (TRACEPLUGIN-only) and stays empty
-  // for Poster tenants — Poster has no push feed, so poll the same REST
-  // endpoint useOccupiedTables already re-fetches every 30s, same pattern
-  // as the "all branches" combinedActiveOrders effect below.
+  // for Poster tenants — Poster has no plugin push, but it does have its own
+  // Marketplace webhook now (posterWebhook.ts), so this still polls every
+  // 30s as a self-healing baseline (a missed/unconfigured webhook shouldn't
+  // mean a permanently stale board) AND reloads instantly on posterOrdersTick
+  // (bumped by the WS handler above on a `transaction` webhook event).
   const [posterActiveOrders, setPosterActiveOrders] = useState<ActiveOrderRow[]>([]);
+  const loadPosterOrdersRef = useRef<() => void>(() => {});
   useEffect(() => {
     if (!isPoster || isAllBranches) { setPosterActiveOrders([]); return; }
     let cancelled = false;
     const load = () => { traceApi.operations.activeOrders().then(rows => { if (!cancelled) setPosterActiveOrders(rows); }).catch(() => {}); };
+    loadPosterOrdersRef.current = load;
     load();
     const id = setInterval(load, 30_000);
     return () => { cancelled = true; clearInterval(id); };
   }, [isPoster, isAllBranches]);
+  // Separate effect (not a dep of the one above) so a tick bump triggers one
+  // extra immediate load without resetting the 30s interval. Skips the tick's
+  // initial value since the effect above already loads once on mount.
+  const posterOrdersTickMounted = useRef(false);
+  useEffect(() => {
+    if (!isPoster || isAllBranches) return;
+    if (!posterOrdersTickMounted.current) { posterOrdersTickMounted.current = true; return; }
+    loadPosterOrdersRef.current();
+  }, [posterOrdersTick, isPoster, isAllBranches]);
 
   // Poster only — incomingOrders.getReservations, no iiko-side equivalent.
+  // Polls every 60s as a self-healing baseline, same reasoning as active
+  // orders above, plus an instant reload on a Poster `incoming_order`
+  // webhook event (see the WS onEvent handler).
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
   const [reservationsLoading, setReservationsLoading] = useState(false);
   useEffect(() => {
     if (!isPoster || isAllBranches) { setReservations([]); return; }
+    let cancelled = false;
     setReservationsLoading(true);
-    traceApi.operations.reservations().then(setReservations).catch(() => setReservations([])).finally(() => setReservationsLoading(false));
+    const load = () => traceApi.operations.reservations()
+      .then(rows => { if (!cancelled) setReservations(rows); })
+      .catch(() => { if (!cancelled) setReservations([]); })
+      .finally(() => { if (!cancelled) setReservationsLoading(false); });
+    load();
+    const id = setInterval(load, 60_000);
+    return () => { cancelled = true; clearInterval(id); };
   }, [isPoster, isAllBranches]);
 
   // "All branches" combined active orders — polls the REST snapshot per
@@ -1783,7 +1839,7 @@ export const Operations: React.FC<{
         <Card title={
           <div className="flex items-center gap-2">
             <span>{t.hall_heatmap}</span>
-            {PLUGIN_ENABLED && pluginConnected && (
+            {((PLUGIN_ENABLED && pluginConnected) || (isPoster && posterLive)) && (
               <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-[3px] bg-success/10 text-success text-[9px] font-semibold uppercase tracking-[0.12em]"><Radio size={8} className="animate-pulse" />{tr(lang, 'Live', 'Live', 'Live')}</span>
             )}
           </div>
@@ -1793,7 +1849,10 @@ export const Operations: React.FC<{
       )}
 
       {/* ── ACTIVE ORDERS ── */}
-      {/* Poster path is poll-based (dash.getTransactions?status=1, re-fetched every 30s), not TRACEPLUGIN's push feed — labeled accordingly below, not shown as "Live" */}
+      {/* Poster path polls every 30s as a self-healing baseline, but also reloads
+          instantly on a Poster Marketplace `transaction` webhook (posterOrdersTick) —
+          the "Live" badge only lights up once posterLive proves a real webhook has
+          actually arrived for this account, not just that our own socket is open. */}
       {(() => {
         const displayOrders: any[] = isAllBranches ? combinedActiveOrders : isPoster ? posterActiveOrders : mergedActiveOrders;
         return (
@@ -1804,7 +1863,7 @@ export const Operations: React.FC<{
             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-[3px] bg-primary/10 text-primary text-[9px] font-semibold uppercase tracking-[0.12em]">
               {tr(lang, `Все филиалы (${branches.length})`, `All branches (${branches.length})`, `Barcha filiallar (${branches.length})`)}
             </span>
-          ) : PLUGIN_ENABLED && pluginConnected ? (
+          ) : (PLUGIN_ENABLED && pluginConnected) || (isPoster && posterLive) ? (
             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-[3px] bg-success/10 text-success text-[9px] font-semibold uppercase tracking-[0.12em]"><Radio size={8} className="animate-pulse" />{tr(lang, 'Live', 'Live', 'Live')}</span>
           ) : isPoster && (
             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-[3px] bg-muted/10 text-muted text-[9px] font-semibold uppercase tracking-[0.12em]">{tr(lang, 'Опрос · 30с', 'Poll · 30s', "So'rov · 30s")}</span>

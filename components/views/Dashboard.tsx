@@ -4,7 +4,7 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts';
 import { ArrowUpRight, ArrowDownRight, Calendar, Zap, TrendingUp, Sparkles, AlertTriangle, Users, BarChart2, CheckCircle, X, RefreshCw, SlidersHorizontal, Receipt, ChevronDown } from 'lucide-react';
-import { useRealtimeData, RealtimeEvent, RealtimeOrderData } from '../../hooks/useRealtimeData';
+import { useRealtimeData, RealtimeEvent, RealtimeOrderData, PosterWebhookData } from '../../hooks/useRealtimeData';
 import { Card } from '../ui/Card';
 import { ChartTooltip } from '../ui/ChartTooltip';
 import { ComparisonSelector } from '../ui/ComparisonSelector';
@@ -575,9 +575,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ lang, onShowToast, branch,
   const [feedVisible, setFeedVisible] = useState(5);
 
   const [totalTables, setTotalTables] = useState<number>(demo ? 14 : 0);
+  // Bumped on a Poster `transaction` webhook event (see onEvent below) to
+  // force an immediate occupancy reload instead of waiting up to 30s.
+  const [posterOrdersTick, setPosterOrdersTick] = useState(0);
   // Same source the Operations hall heatmap uses — keeps the two in sync
   // instead of maintaining separate occupancy logic that can drift apart.
-  const { tables: occupiedTableNums } = useOccupiedTables(!demo);
+  const { tables: occupiedTableNums } = useOccupiedTables(!demo, 30_000, posterOrdersTick);
 
   // Denominator for occupancy %: tables in hall plans. Plans are seeded from
   // iiko's real section list but curated by the owner — raw sections include
@@ -638,6 +641,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ lang, onShowToast, branch,
     backendWsUrl: wsUrl ?? '',
     enabled: !!wsUrl && !demo,
     onEvent: useCallback((event: RealtimeEvent) => {
+      // Poster Marketplace webhook (posterWebhook.ts on the backend) — a
+      // `transaction` event means the occupancy-driving active-orders
+      // snapshot changed, so nudge it now instead of waiting for the next
+      // 30s poll. See Operations.tsx's onEvent for the fuller version of
+      // this (Active Orders board + reservations + stop list); Dashboard
+      // only needs the occupancy stat.
+      if (event.type.startsWith('poster.')) {
+        if ((event.data as PosterWebhookData)?.object === 'transaction') {
+          setPosterOrdersTick(t => t + 1);
+        }
+        return;
+      }
+
       // Feed shows business moments only — order_updated fires on every item
       // keystroke and stop_list/kitchen events have their own panels.
       const FEED_TYPES = new Set([

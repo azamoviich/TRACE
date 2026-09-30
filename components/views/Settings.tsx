@@ -45,6 +45,8 @@ export const Settings: React.FC<{
   const ru = lang === 'ru';
   const isUz = lang === 'uz';
   const t = TRANSLATIONS[lang];
+  // Which download to highlight and which install warning to explain.
+  const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent);
 
   // Report subscriptions (email + telegram) and the tenant's one shared
   // Telegram connection they all ride on.
@@ -550,7 +552,7 @@ export const Settings: React.FC<{
 
       <Card className="p-5 sm:p-6">
         <h3 className="text-[14px] font-semibold text-text mb-1">
-          {ru ? 'Приложение для Windows' : isUz ? 'Windows uchun ilova' : 'Windows App'}
+          {ru ? 'Приложение для компьютера' : isUz ? 'Kompyuter uchun ilova' : 'Desktop App'}
         </h3>
         <p className="text-[12px] text-muted mb-4">
           {ru
@@ -559,43 +561,80 @@ export const Settings: React.FC<{
             ? 'TRACE dasturini kompyuteringizga o‘rnating — har kuni brauzer ochmasdan.'
             : "Install TRACE as a desktop app — no need to open the browser every day."}
         </p>
-        <a
-          // Tenant in the path, not just the download attribute: this link is
-          // cross-origin, so browsers ignore `download` and the backend's
-          // Content-Disposition is what names the file for the installer hook.
-          href={downloadUrl(`/downloads/TRACE-Setup-${getSubdomain()}.exe`)}
-          download={`TRACE-Setup-${getSubdomain()}.exe`}
-          className="inline-flex px-5 py-2 bg-primary text-white text-[12px] font-semibold rounded-lg hover:bg-primary/90 transition-colors items-center gap-2"
-        >
-          <Download size={13} />
-          {ru ? 'Скачать для Windows' : isUz ? 'Windows uchun yuklab olish' : 'Download for Windows'}
-        </a>
-        {/* The installer isn't code-signed yet, so browsers and SmartScreen
-            warn on first download/run — tell users how to get past it. */}
+        <div className="flex flex-wrap gap-2">
+          <a
+            // Tenant in the path, not just the download attribute: this link is
+            // cross-origin, so browsers ignore `download` and the backend's
+            // Content-Disposition is what names the file for the installer hook.
+            href={downloadUrl(`/downloads/TRACE-Setup-${getSubdomain()}.exe`)}
+            download={`TRACE-Setup-${getSubdomain()}.exe`}
+            className={`inline-flex px-5 py-2 text-[12px] font-semibold rounded-lg transition-colors items-center gap-2 ${
+              isMac ? 'bg-card border border-border text-text hover:bg-card-hover' : 'bg-primary text-white hover:bg-primary/90'
+            }`}
+          >
+            <Download size={13} />
+            {ru ? 'Скачать для Windows' : isUz ? 'Windows uchun yuklab olish' : 'Download for Windows'}
+          </a>
+          {/* One shared dmg for every tenant: a dmg has no install hook to read
+              the tenant from its filename, so the launcher's login picks it. */}
+          <a
+            href={downloadUrl('/downloads/TRACE.dmg')}
+            download="TRACE.dmg"
+            className={`inline-flex px-5 py-2 text-[12px] font-semibold rounded-lg transition-colors items-center gap-2 ${
+              isMac ? 'bg-primary text-white hover:bg-primary/90' : 'bg-card border border-border text-text hover:bg-card-hover'
+            }`}
+          >
+            <Download size={13} />
+            {ru ? 'Скачать для Mac' : isUz ? 'Mac uchun yuklab olish' : 'Download for Mac'}
+          </a>
+        </div>
+        {/* Neither build is code-signed yet, so browsers, SmartScreen and
+            Gatekeeper warn on first download/run — tell users how to get past it. */}
         <div className="mt-4 p-3 rounded-lg border border-border bg-background text-[12px] text-muted space-y-1">
           <p className="font-semibold text-text">
             {ru ? 'Если появится предупреждение:' : isUz ? 'Agar ogohlantirish chiqsa:' : 'If you see a warning:'}
           </p>
-          <p>
-            {ru
-              ? '• В браузере нажмите «Сохранить» / «Всё равно скачать».'
-              : isUz
-              ? '• Brauzerda «Saqlash» / «Baribir yuklab olish» tugmasini bosing.'
-              : '• In the browser, click "Keep" / "Download anyway".'}
-          </p>
-          <p>
-            {ru
-              ? '• В окне «Windows защитила ваш компьютер» нажмите «Подробнее» → «Выполнить в любом случае».'
-              : isUz
-              ? '• «Windows kompyuteringizni himoya qildi» oynasida «Batafsil» → «Baribir ishga tushirish» ni bosing.'
-              : '• On "Windows protected your PC", click "More info" → "Run anyway".'}
-          </p>
+          {isMac ? (
+            <>
+              <p>
+                {ru
+                  ? '• Откройте TRACE.dmg и перетащите TRACE в папку «Программы».'
+                  : isUz
+                  ? '• TRACE.dmg ni oching va TRACE ni «Dasturlar» (Applications) papkasiga torting.'
+                  : '• Open TRACE.dmg and drag TRACE into Applications.'}
+              </p>
+              <p>
+                {ru
+                  ? '• Если Mac пишет, что не может проверить приложение, нажмите «Готово», затем откройте Системные настройки → Конфиденциальность и безопасность → внизу нажмите «Всё равно открыть».'
+                  : isUz
+                  ? '• Agar Mac ilovani tekshira olmasligini yozsa, «Tayyor» ni bosing, so‘ng Tizim sozlamalari → Maxfiylik va xavfsizlik → pastda «Baribir ochish» ni bosing.'
+                  : '• If your Mac says it can\'t verify the app, click "Done", then go to System Settings → Privacy & Security and click "Open Anyway" at the bottom.'}
+              </p>
+            </>
+          ) : (
+            <>
+              <p>
+                {ru
+                  ? '• В браузере нажмите «Сохранить» / «Всё равно скачать».'
+                  : isUz
+                  ? '• Brauzerda «Saqlash» / «Baribir yuklab olish» tugmasini bosing.'
+                  : '• In the browser, click "Keep" / "Download anyway".'}
+              </p>
+              <p>
+                {ru
+                  ? '• В окне «Windows защитила ваш компьютер» нажмите «Подробнее» → «Выполнить в любом случае».'
+                  : isUz
+                  ? '• «Windows kompyuteringizni himoya qildi» oynasida «Batafsil» → «Baribir ishga tushirish» ni bosing.'
+                  : '• On "Windows protected your PC", click "More info" → "Run anyway".'}
+              </p>
+            </>
+          )}
           <p>
             {ru
               ? 'Это официальное приложение TRACE, оно безопасно — предупреждение появляется только для новых программ.'
               : isUz
               ? 'Bu TRACE ning rasmiy ilovasi va xavfsiz — ogohlantirish faqat yangi dasturlar uchun chiqadi.'
-              : 'This is the official TRACE app and it is safe — Windows shows this for new apps.'}
+              : 'This is the official TRACE app and it is safe — your computer shows this for new apps.'}
           </p>
         </div>
       </Card>

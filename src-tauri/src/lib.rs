@@ -55,14 +55,15 @@ async fn sign_out(app: tauri::AppHandle, window: tauri::WebviewWindow) -> Result
   // hardcoded https://tauri.localhost URL is refused outright.
   let url = tauri::WebviewUrl::App("index.html?switchAccount=1".into());
   let label = format!("main-{}", WINDOW_SEQ.fetch_add(1, Ordering::SeqCst) + 1);
-  tauri::WebviewWindowBuilder::new(&app, label, url)
+  let builder = tauri::WebviewWindowBuilder::new(&app, label, url)
     .title("TRACE")
     .inner_size(1280.0, 820.0)
     .min_inner_size(900.0, 600.0)
-    .resizable(true)
-    .additional_browser_args("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu --disable-gpu-compositing")
-    .build()
-    .map_err(|e| e.to_string())?;
+    .resizable(true);
+  // WebView2 flags -- meaningless to WKWebView on the Mac build.
+  #[cfg(windows)]
+  let builder = builder.additional_browser_args("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu --disable-gpu-compositing");
+  builder.build().map_err(|e| e.to_string())?;
   window.close().map_err(|e| e.to_string())
 }
 

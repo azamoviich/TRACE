@@ -32,3 +32,30 @@ jobs:
         with:
           name: TRACE-Setup
           path: TRACE-Setup.exe
+
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Install frontend deps
+        run: npm install
+      # Universal binary runs natively on both Apple Silicon and Intel Macs.
+      # Ad-hoc signed only (signingIdentity "-") until the Developer ID
+      # certificate exists -- then add APPLE_CERTIFICATE / APPLE_ID secrets
+      # here for signing + notarization.
+      - name: Build Tauri app
+        run: npx tauri build --target universal-apple-darwin --bundles dmg
+      - name: Locate built dmg
+        run: |
+          DMG=$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -name "*.dmg" | head -n 1)
+          cp "$DMG" TRACE.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TRACE-mac
+          path: TRACE.dmg

@@ -570,6 +570,34 @@ export const Settings: React.FC<{
           <Download size={13} />
           {ru ? 'Скачать для Windows' : isUz ? 'Windows uchun yuklab olish' : 'Download for Windows'}
         </a>
+        {/* The installer isn't code-signed yet, so browsers and SmartScreen
+            warn on first download/run — tell users how to get past it. */}
+        <div className="mt-4 p-3 rounded-lg border border-border bg-background text-[12px] text-muted space-y-1">
+          <p className="font-semibold text-text">
+            {ru ? 'Если появится предупреждение:' : isUz ? 'Agar ogohlantirish chiqsa:' : 'If you see a warning:'}
+          </p>
+          <p>
+            {ru
+              ? '• В браузере нажмите «Сохранить» / «Всё равно скачать».'
+              : isUz
+              ? '• Brauzerda «Saqlash» / «Baribir yuklab olish» tugmasini bosing.'
+              : '• In the browser, click "Keep" / "Download anyway".'}
+          </p>
+          <p>
+            {ru
+              ? '• В окне «Windows защитила ваш компьютер» нажмите «Подробнее» → «Выполнить в любом случае».'
+              : isUz
+              ? '• «Windows kompyuteringizni himoya qildi» oynasida «Batafsil» → «Baribir ishga tushirish» ni bosing.'
+              : '• On "Windows protected your PC", click "More info" → "Run anyway".'}
+          </p>
+          <p>
+            {ru
+              ? 'Это официальное приложение TRACE, оно безопасно — предупреждение появляется только для новых программ.'
+              : isUz
+              ? 'Bu TRACE ning rasmiy ilovasi va xavfsiz — ogohlantirish faqat yangi dasturlar uchun chiqadi.'
+              : 'This is the official TRACE app and it is safe — Windows shows this for new apps.'}
+          </p>
+        </div>
       </Card>
     </div>
   );

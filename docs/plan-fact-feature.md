@@ -191,4 +191,4 @@ Each phase gets committed and pushed separately.
 - [x] Phase 2 backend: `/progress`, `/variance`, nightly fact top-up (`cron/planFacts.ts`, 22:30 UTC), live today pace from `hourly_snapshots`
 - [x] Phase 3 frontend page: `components/views/Plan.tsx` + `plan/` (editor, progress, format, warnings), `lib/planEngine.ts` mirror, demo via `services/planDemo.ts`
 - [x] Phase 4 drill-down (`GET /plan/drilldown`, `services/planDrilldown.ts`, `plan/DrilldownDrawer.tsx`) + dashboard widget (`plan/PlanWidget.tsx`)
-- [ ] Phase 5 Telegram + AI + history
+- [x] Phase 5: morning Telegram pace message (`cron/planMorning.ts`, 09:00 Tashkent, `services/planMessage.ts`, toggle `/plan/settings`), AI context (page), 12-month history (`/plan/history`, `plan/PlanHistory.tsx`)

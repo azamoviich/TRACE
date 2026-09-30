@@ -1525,6 +1525,17 @@ export interface DrillResult {
   groups: DrillGroup[];
 }
 
+// Mirrors PlanHistoryRow in TRACEBACKEND/src/services/planData.ts.
+export interface PlanHistoryRow {
+  month: string;
+  plan: { revenue: number; netProfit: number; status: 'draft' | 'active' } | null;
+  fact: { revenue: number; checks: number; avgCheck: number; foodCostPct: number | null; netProfit: number | null };
+  pct: number | null;
+  partial: boolean;
+}
+
+export interface PlanSettings { telegramDaily: boolean; telegramConnected: boolean; }
+
 export class PlanUnsupportedError extends Error {
   constructor(public reason: PlanUnsupportedReason) { super(reason); }
 }
@@ -1824,6 +1835,19 @@ export const traceApi = {
       isDemoTenant()
         ? Promise.resolve(planDemo.demoDrilldown(month, driver))
         : apiFetch(`/plan/drilldown?month=${month}&driver=${driver}`).then(r => planJson<{ drilldown: DrillResult }>(r)).then(d => d.drilldown),
+    history: (months = 12): Promise<PlanHistoryRow[]> =>
+      isDemoTenant()
+        ? Promise.resolve(planDemo.demoHistory(months))
+        : apiFetch(`/plan/history?months=${months}`).then(r => planJson<{ history: PlanHistoryRow[] }>(r)).then(d => d.history),
+    settings: (): Promise<PlanSettings> =>
+      isDemoTenant()
+        ? Promise.resolve(planDemo.demoSettings())
+        : apiFetch('/plan/settings').then(r => planJson<PlanSettings>(r)),
+    saveSettings: (telegramDaily: boolean): Promise<PlanSettings> =>
+      isDemoTenant()
+        ? Promise.resolve(planDemo.demoSaveSettings(telegramDaily))
+        : apiFetch('/plan/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ telegramDaily }) })
+            .then(r => planJson<PlanSettings>(r)),
     variance: (month: string): Promise<VarianceResult | null> =>
       isDemoTenant()
         ? Promise.resolve(planDemo.demoVariance(month))

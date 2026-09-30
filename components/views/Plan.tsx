@@ -1,15 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Pencil, RefreshCw, Sparkles, PenLine, Check, Target } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, RefreshCw, Sparkles, PenLine, Check, Target, Send } from 'lucide-react';
 import { Language } from '../../types';
 import { tr } from '../../constants';
 import { Card } from '../ui/Card';
-import { traceApi, SavedPlan, PlanUnsupportedError, PlanUnsupportedReason, DrillDriver } from '../../services/traceApi';
+import { traceApi, SavedPlan, PlanUnsupportedError, PlanUnsupportedReason, DrillDriver, PlanSettings } from '../../services/traceApi';
 import type { Suggestion, ProgressResult, VarianceResult } from '../../lib/planEngine';
 import { shiftMonth } from '../../lib/planEngine';
 import { tashkentDateStr } from '../../utils/tz';
 import { PlanEditor, EditorStep } from './plan/PlanEditor';
 import { PlanProgress } from './plan/PlanProgress';
 import { DrilldownDrawer } from './plan/DrilldownDrawer';
+import { PlanHistory } from './plan/PlanHistory';
 import { WarningList } from './plan/Warnings';
 import { money, pct, monthLabel, monthName, full } from './plan/format';
 
@@ -174,6 +175,13 @@ export const Plan: React.FC<Props> = ({ lang, onShowToast, onContextReady }) => 
 
       {state.kind === 'ready' && <PlanProgress lang={lang} plan={state.plan} progress={state.progress} variance={state.variance} onDrill={setDrill} />}
 
+      {(state.kind === 'ready' || state.kind === 'empty') && (
+        <>
+          <TelegramToggle lang={lang} onShowToast={onShowToast} />
+          <PlanHistory lang={lang} selected={month} onSelect={setMonth} reloadKey={plan?.updatedAt ?? state.kind} />
+        </>
+      )}
+
       {drill && <DrilldownDrawer lang={lang} month={month} driver={drill} onClose={() => setDrill(null)} />}
 
       {editor && (
@@ -265,6 +273,46 @@ const SuggestionCard: React.FC<{
         </button>
       </div>
     </Card>
+  );
+};
+
+// Morning pace message in the reports Telegram chat (09:00 Tashkent).
+const TelegramToggle: React.FC<{ lang: Language; onShowToast?: Props['onShowToast'] }> = ({ lang, onShowToast }) => {
+  const [s, setS] = useState<PlanSettings | null>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { traceApi.plan.settings().then(setS).catch(() => {}); }, []);
+  if (!s) return null;
+
+  const toggle = async () => {
+    setSaving(true);
+    try { setS(await traceApi.plan.saveSettings(!s.telegramDaily)); }
+    catch { onShowToast?.(tr(lang, 'Не удалось сохранить', 'Could not save', 'Saqlab bo‘lmadi'), 'error'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="glass rounded-3xl p-4 flex items-center gap-3">
+      <div className="p-2 rounded-xl bg-secondary/10 text-secondary flex-shrink-0"><Send size={16} /></div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[13px] font-semibold text-text">{tr(lang, 'Утренняя сводка в Telegram', 'Morning summary in Telegram', 'Telegram’da ertalabki xulosa')}</p>
+        <p className="text-[11px] text-muted">
+          {s.telegramConnected
+            ? tr(lang, 'Каждый день в 9:00: вчера, темп месяца, прогноз, сколько нужно сегодня и предупреждение, если план под угрозой.', 'Every day at 9:00: yesterday, month pace, forecast, today’s target and a warning if the plan is at risk.', 'Har kuni 9:00 da: kecha, oy sur’ati, prognoz, bugungi maqsad va reja xavf ostida bo‘lsa ogohlantirish.')
+            : tr(lang, 'Подключите Telegram в Настройках → Отчёты, чтобы получать сводку по плану каждое утро.', 'Connect Telegram in Settings → Reports to get the plan summary every morning.', 'Har kuni ertalab reja xulosasini olish uchun Sozlamalar → Hisobotlar’da Telegram’ni ulang.')}
+        </p>
+      </div>
+      {s.telegramConnected && (
+        <button
+          role="switch"
+          aria-checked={s.telegramDaily}
+          onClick={toggle}
+          disabled={saving}
+          className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${s.telegramDaily ? 'bg-primary' : 'bg-border'}`}
+        >
+          <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${s.telegramDaily ? 'translate-x-5' : ''}`} />
+        </button>
+      )}
+    </div>
   );
 };
 

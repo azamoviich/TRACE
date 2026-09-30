@@ -9,7 +9,7 @@ import {
   addDays, monthDays, shiftMonth, weekday, weekdayProfile, weekdayWeights, buildSuggestion,
   splitDays, computePL, computeProgress, computeVariance, foodCostByMonth, DEFAULT_GROWTH_PCT,
 } from '../lib/planEngine';
-import type { SavedPlan, PlanSavePayload, DrillDriver, DrillResult, DrillRow } from './traceApi';
+import type { SavedPlan, PlanSavePayload, DrillDriver, DrillResult, DrillRow, PlanHistoryRow, PlanSettings } from './traceApi';
 
 // Base revenue by weekday (Sun..Sat), UZS — a mid-size Tashkent restaurant.
 const WEEKDAY_BASE = [27e6, 17e6, 18e6, 19e6, 21e6, 31e6, 35e6];
@@ -226,3 +226,34 @@ export function demoDrilldown(month: string, driver: DrillDriver): DrillResult {
     ],
   };
 }
+
+// Past months get a plan too (LY + 6%), so the history chart has something
+// to compare; saved demo plans override them.
+export function demoHistory(months = 12): PlanHistoryRow[] {
+  const cur = tashkentDateStr().slice(0, 7);
+  return Array.from({ length: months }, (_, i) => shiftMonth(cur, i - months + 1)).map(month => {
+    const f = monthFacts(month);
+    let revenue = 0, checks = 0, cogs = 0;
+    for (const x of f.values()) { revenue += x.revenue; checks += x.checks; cogs += x.cogs; }
+    const saved = store.get(month) ?? (month === cur ? demoGetPlan(month) : null);
+    const planDrivers = saved?.drivers ?? (month >= shiftMonth(cur, -5) ? demoSuggest(month).drivers : null);
+    const partial = month === cur;
+    const pl = planDrivers ? computePL(planDrivers, monthDays(month).length) : null;
+    return {
+      month,
+      plan: planDrivers && pl ? { revenue: planDrivers.revenue, netProfit: pl.netProfit, status: saved?.status ?? 'active' } : null,
+      fact: {
+        revenue, checks,
+        avgCheck: checks > 0 ? Math.round(revenue / checks) : 0,
+        foodCostPct: revenue > 0 ? Math.round((cogs / revenue) * 1000) / 10 : null,
+        netProfit: planDrivers && !partial ? Math.round(revenue - cogs - 151e6 - 45e6 - 15.2e6 - 19e6) : null,
+      },
+      pct: planDrivers && !partial && planDrivers.revenue > 0 ? Math.round((revenue / planDrivers.revenue) * 1000) / 10 : null,
+      partial,
+    };
+  });
+}
+
+let demoTelegramDaily = true;
+export function demoSettings(): PlanSettings { return { telegramDaily: demoTelegramDaily, telegramConnected: true }; }
+export function demoSaveSettings(v: boolean): PlanSettings { demoTelegramDaily = v; return demoSettings(); }

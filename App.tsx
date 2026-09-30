@@ -9,6 +9,7 @@ import { Loyalty } from './components/views/Loyalty';
 import { Sales } from './components/views/Sales';
 import { Operations } from './components/views/Operations';
 import { Financial } from './components/views/Financial';
+import { Plan } from './components/views/Plan';
 import { Reports } from './components/views/Reports';
 import { Settings } from './components/views/Settings';
 import { Admin } from './components/views/Admin';
@@ -360,7 +361,7 @@ export default function App() {
   const [authChecking, setAuthChecking] = useState(() => !isDemoTenant() && !bootstrapped && localStorage.getItem('trace_remember') === '1');
   const [currentView, setCurrentView] = useState<ViewState>(() => {
     const v = new URLSearchParams(window.location.search).get('view');
-    const valid: ViewState[] = ['dashboard', 'sales', 'operations', 'financial', 'reviews', 'loyalty', 'reports', 'settings', 'compare', 'checklists', 'workforce'];
+    const valid: ViewState[] = ['dashboard', 'sales', 'operations', 'financial', 'plan', 'reviews', 'loyalty', 'reports', 'settings', 'compare', 'checklists', 'workforce'];
     return valid.includes(v as ViewState) ? (v as ViewState) : loadDefaultPage();
   });
   const [lang, setLangState] = useState<Language>(() => {
@@ -389,13 +390,17 @@ export default function App() {
   // Restricted marketer login: only Reviews + Loyalty exist for this account.
   const isMarketing = isLoggedIn && !isDemoTenant() && getTenantRole() === 'marketing';
   const [hiddenPagesState, setHiddenPagesState] = useState<ViewState[]>(loadHiddenPages);
+  // План и факт exists only for iiko restaurants (GET /plan/meta); hidden
+  // from the nav until that's confirmed so other venues never see it flash.
+  const [planAvailable, setPlanAvailable] = useState<boolean | null>(null);
   const hiddenPages: ViewState[] = isMarketing
     ? NAV_ITEMS.map(n => n.id).filter(id => id !== 'reviews' && id !== 'loyalty')
-    : hiddenPagesState;
+    : planAvailable ? hiddenPagesState : [...hiddenPagesState, 'plan'];
   const setHiddenPages = (pages: ViewState[]) => { setHiddenPagesState(pages); localStorage.setItem(HIDDEN_PAGES_KEY, JSON.stringify(pages)); };
 
   // A page hidden while it was the active tab needs somewhere safe to land.
   useEffect(() => {
+    if (currentView === 'plan' && planAvailable === null) return; // still checking — don't bounce a ?view=plan deep link
     if (hiddenPages.includes(currentView)) setCurrentView('dashboard');
   }, [hiddenPages]);
 
@@ -459,6 +464,14 @@ export default function App() {
 
   // Reset AI context when switching views so stale data doesn't bleed across sections
   useEffect(() => { setAiContext(''); }, [currentView]);
+
+  // "All branches" keeps the page visible — it explains plans are per-branch.
+  useEffect(() => {
+    if (!isLoggedIn || isMarketing) return;
+    traceApi.plan.meta()
+      .then(m => setPlanAvailable(m.supported || m.reason === 'all_branches'))
+      .catch(() => setPlanAvailable(false));
+  }, [isLoggedIn, isMarketing, activeBranchId]);
 
   // Load sibling branches once (multi-branch orgs only — empty for single-branch tenants)
   useEffect(() => {
@@ -527,6 +540,7 @@ export default function App() {
       case 'sales':       return <Sales key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} />;
       case 'operations':  return <Operations key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} branches={branches} isAllBranches={activeBranchId === ALL_BRANCHES_ID} />;
       case 'financial':   return <Financial key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} />;
+      case 'plan':        return <Plan key={branchKey} lang={lang} onShowToast={showToast} onContextReady={setAiContext} />;
       case 'reviews':     return <Reviews key={branchKey} lang={lang} onContextReady={setAiContext} />;
       case 'loyalty':     return <Loyalty key={branchKey} lang={lang} />;
       case 'checklists':  return <Checklists key={branchKey} lang={lang} onShowToast={showToast} />;

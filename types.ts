@@ -50,6 +50,7 @@ export type ViewState =
   | 'sales'
   | 'operations'
   | 'financial'
+  | 'plan'
   | 'reviews'
   | 'loyalty'
   | 'reports'

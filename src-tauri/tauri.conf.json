@@ -37,6 +37,10 @@
     "android": {
       "debugApplicationIdSuffix": ".debug"
     },
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "10.15"
+    },
     "windows": {
       "nsis": {
         "installerHooks": "../installer/hooks.nsh",

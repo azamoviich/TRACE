@@ -3,12 +3,13 @@ import { ChevronLeft, ChevronRight, Pencil, RefreshCw, Sparkles, PenLine, Check,
 import { Language } from '../../types';
 import { tr } from '../../constants';
 import { Card } from '../ui/Card';
-import { traceApi, SavedPlan, PlanUnsupportedError, PlanUnsupportedReason } from '../../services/traceApi';
+import { traceApi, SavedPlan, PlanUnsupportedError, PlanUnsupportedReason, DrillDriver } from '../../services/traceApi';
 import type { Suggestion, ProgressResult, VarianceResult } from '../../lib/planEngine';
 import { shiftMonth } from '../../lib/planEngine';
 import { tashkentDateStr } from '../../utils/tz';
 import { PlanEditor, EditorStep } from './plan/PlanEditor';
 import { PlanProgress } from './plan/PlanProgress';
+import { DrilldownDrawer } from './plan/DrilldownDrawer';
 import { WarningList } from './plan/Warnings';
 import { money, pct, monthLabel, monthName, full } from './plan/format';
 
@@ -35,6 +36,7 @@ export const Plan: React.FC<Props> = ({ lang, onShowToast, onContextReady }) => 
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [accepting, setAccepting] = useState(false);
+  const [drill, setDrill] = useState<DrillDriver | null>(null);
   const reqId = useRef(0);
 
   const load = useCallback(async (m: string, quiet = false) => {
@@ -170,7 +172,9 @@ export const Plan: React.FC<Props> = ({ lang, onShowToast, onContextReady }) => 
         />
       )}
 
-      {state.kind === 'ready' && <PlanProgress lang={lang} plan={state.plan} progress={state.progress} variance={state.variance} />}
+      {state.kind === 'ready' && <PlanProgress lang={lang} plan={state.plan} progress={state.progress} variance={state.variance} onDrill={setDrill} />}
+
+      {drill && <DrilldownDrawer lang={lang} month={month} driver={drill} onClose={() => setDrill(null)} />}
 
       {editor && (
         <PlanEditor

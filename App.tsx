@@ -536,7 +536,7 @@ export default function App() {
   const renderContent = () => {
     const branchKey = activeBranchId ?? 'self';
     switch (isMarketing && currentView !== 'loyalty' ? 'reviews' : currentView) {
-      case 'dashboard':   return <Dashboard key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} />;
+      case 'dashboard':   return <Dashboard key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} onOpenPlan={planAvailable && !hiddenPages.includes('plan') ? () => setCurrentView('plan') : undefined} />;
       case 'sales':       return <Sales key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} />;
       case 'operations':  return <Operations key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} branches={branches} isAllBranches={activeBranchId === ALL_BRANCHES_ID} />;
       case 'financial':   return <Financial key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} />;

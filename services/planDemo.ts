@@ -9,7 +9,7 @@ import {
   addDays, monthDays, shiftMonth, weekday, weekdayProfile, weekdayWeights, buildSuggestion,
   splitDays, computePL, computeProgress, computeVariance, foodCostByMonth, DEFAULT_GROWTH_PCT,
 } from '../lib/planEngine';
-import type { SavedPlan, PlanSavePayload } from './traceApi';
+import type { SavedPlan, PlanSavePayload, DrillDriver, DrillResult, DrillRow } from './traceApi';
 
 // Base revenue by weekday (Sun..Sat), UZS — a mid-size Tashkent restaurant.
 const WEEKDAY_BASE = [27e6, 17e6, 18e6, 19e6, 21e6, 31e6, 35e6];
@@ -147,4 +147,82 @@ export function demoVariance(month: string): VarianceResult | null {
   const plan = demoGetPlan(month);
   if (!plan) return null;
   return computeVariance({ month, today: tashkentDateStr(), drivers: plan.drivers, planDays: plan.days, facts: monthFacts(month) });
+}
+
+// Hand-shaped breakdown that matches the demo's story (soft month: fewer
+// checks on weekdays, drinks attach rate down, grill food cost up). Weekday
+// rows are computed from the demo plan vs facts, so they agree with the page.
+export function demoDrilldown(month: string, driver: DrillDriver): DrillResult {
+  const today = tashkentDateStr();
+  const dates = monthDays(month);
+  const closed = dates.filter(d => d < today);
+  const baseTo = addDays(dates[0], -1);
+  const baseline = { from: addDays(baseTo, -27), to: baseTo, days: 28 };
+  if (!closed.length) {
+    return { driver, period: null, baseline, summary: { now: null, base: null, unit: driver === 'food_cost' ? 'pct' : driver === 'avg_check' ? 'money' : 'count' }, groups: [] };
+  }
+  const period = { from: closed[0], to: closed[closed.length - 1], days: closed.length };
+  const k = closed.length / 30; // scale the canned impacts to the elapsed part of the month
+  const row = (name: string, now: number, base: number | null, impact: number, share?: number): DrillRow => ({ name, now, base, impact: Math.round(impact * k), share });
+
+  if (driver === 'food_cost') {
+    return {
+      driver, period, baseline, summary: { now: 32.9, base: 31.6, unit: 'pct' },
+      groups: [
+        { key: 'categories', unit: 'pct', rows: [
+          row('Гриль', 38.4, 34.9, -5.8e6, 27.1), row('Горячие блюда', 33.2, 32.1, -1.9e6, 21.4),
+          row('Салаты', 29.8, 29.1, -0.6e6, 11.2), row('Десерты', 27.5, 28.4, 0.4e6, 6.3), row('Бар', 21.9, 23.0, 1.1e6, 18.6),
+        ] },
+        { key: 'dishes', unit: 'pct', rows: [
+          row('Стейк рибай', 46.1, 37.8, -3.4e6, 6.2), row('Шашлык из баранины', 41.0, 36.5, -1.6e6, 5.4),
+          row('Лагман', 31.2, 28.9, -0.7e6, 4.8), row('Плов', 30.4, 29.6, -0.3e6, 7.9), row('Цезарь с курицей', 27.0, 27.9, 0.2e6, 3.1),
+        ] },
+        { key: 'writeoffs', unit: 'money', rows: [
+          row('__total__', Math.round(7.4e6 * k), Math.round(4.6e6 * k), -2.8e6),
+          row('Говядина вырезка', Math.round(2.9e6 * k), Math.round(1.1e6 * k), -1.8e6), row('Молоко', Math.round(0.9e6 * k), Math.round(0.6e6 * k), -0.3e6),
+          row('Зелень', Math.round(0.7e6 * k), Math.round(0.5e6 * k), -0.2e6),
+        ] },
+      ],
+    };
+  }
+  if (driver === 'avg_check') {
+    return {
+      driver, period, baseline, summary: { now: 171_300, base: 178_900, unit: 'money' },
+      groups: [
+        { key: 'waiters', unit: 'money', rows: [
+          row('Азиз', 152_400, 176_800, -4.1e6, 17.8), row('Шахзод', 163_900, 172_100, -1.3e6, 14.2),
+          row('Мадина', 169_000, 170_500, -0.2e6, 12.9), row('Дилноза', 188_700, 181_200, 1.2e6, 16.4),
+        ] },
+        { key: 'categories', unit: 'money', rows: [
+          row('Напитки', 21_400, 27_900, -5.2e6, 12.5), row('Десерты', 7_100, 9_300, -1.7e6, 4.1),
+          row('Гриль', 46_800, 45_900, 0.7e6, 27.1), row('Горячие блюда', 36_900, 35_800, 0.9e6, 21.4),
+        ] },
+      ],
+    };
+  }
+  const plan = demoGetPlan(month);
+  const facts = monthFacts(month);
+  const wk = Array.from({ length: 7 }, () => ({ plan: 0, fact: 0, planRev: 0, days: 0 }));
+  const planBy = new Map((plan?.days ?? []).map(d => [d.date, d]));
+  for (const d of closed) {
+    const w = wk[weekday(d)]; const p = planBy.get(d);
+    w.plan += p?.checks ?? 0; w.planRev += p?.revenue ?? 0; w.fact += facts.get(d)?.checks ?? 0; w.days++;
+  }
+  const weekdays = wk.map((w, i) => ({
+    name: String(i), now: w.days ? Math.round(w.fact / w.days) : null, base: w.days ? Math.round(w.plan / w.days) : null,
+    impact: w.plan > 0 ? Math.round((w.fact - w.plan) * (w.planRev / w.plan)) : 0,
+  })).filter(r => r.now != null).sort((a, b) => a.impact - b.impact);
+  const baseFacts = demoFacts(baseline.from, baseline.to);
+  const perDay = (m: Map<string, DayFact>, days: number) => Math.round([...m.values()].reduce((s, f) => s + f.checks, 0) / days * 10) / 10;
+  const closedFacts = new Map(closed.map(d => [d, facts.get(d)!]).filter(([, f]) => f) as [string, DayFact][]);
+  return {
+    driver, period, baseline, summary: { now: perDay(closedFacts, closed.length), base: perDay(baseFacts, baseline.days), unit: 'count' },
+    groups: [
+      { key: 'weekdays', unit: 'count', rows: weekdays },
+      { key: 'hours', unit: 'count', rows: [
+        row('13', 14.2, 18.9, -9.1e6), row('14', 12.8, 15.6, -5.4e6), row('20', 19.7, 21.0, -2.5e6),
+        row('12', 9.9, 10.8, -1.7e6), row('21', 17.4, 16.9, 1.0e6),
+      ] },
+    ],
+  };
 }

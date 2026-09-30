@@ -1513,6 +1513,18 @@ export interface PlanSavePayload {
   overrides?: DayOverride[]; // full list of pinned days; omit to keep the current pins
 }
 
+// Mirrors TRACEBACKEND/src/services/planDrilldown.ts.
+export type DrillDriver = 'food_cost' | 'avg_check' | 'checks';
+export interface DrillRow { name: string; now: number | null; base: number | null; impact: number; share?: number; }
+export interface DrillGroup { key: 'categories' | 'dishes' | 'writeoffs' | 'waiters' | 'weekdays' | 'hours'; unit: 'pct' | 'money' | 'count'; rows: DrillRow[]; }
+export interface DrillResult {
+  driver: DrillDriver;
+  period: { from: string; to: string; days: number } | null;
+  baseline: { from: string; to: string; days: number };
+  summary: { now: number | null; base: number | null; unit: 'pct' | 'money' | 'count' };
+  groups: DrillGroup[];
+}
+
 export class PlanUnsupportedError extends Error {
   constructor(public reason: PlanUnsupportedReason) { super(reason); }
 }
@@ -1808,6 +1820,10 @@ export const traceApi = {
       isDemoTenant()
         ? Promise.resolve(planDemo.demoProgress(month))
         : apiFetch(`/plan/progress?month=${month}`).then(r => planJson<{ plan: SavedPlan | null; progress: ProgressResult | null }>(r)),
+    drilldown: (month: string, driver: DrillDriver): Promise<DrillResult> =>
+      isDemoTenant()
+        ? Promise.resolve(planDemo.demoDrilldown(month, driver))
+        : apiFetch(`/plan/drilldown?month=${month}&driver=${driver}`).then(r => planJson<{ drilldown: DrillResult }>(r)).then(d => d.drilldown),
     variance: (month: string): Promise<VarianceResult | null> =>
       isDemoTenant()
         ? Promise.resolve(planDemo.demoVariance(month))

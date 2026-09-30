@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { ComposedChart, Area, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { TrendingUp, TrendingDown, Clock, Target, Flag, ChevronDown } from 'lucide-react';
+import { TrendingUp, TrendingDown, Clock, Target, Flag, ChevronDown, ChevronRight } from 'lucide-react';
 import { Language } from '../../../types';
 import { tr } from '../../../constants';
 import { Card } from '../../ui/Card';
 import { ChartTooltip } from '../../ui/ChartTooltip';
-import type { SavedPlan } from '../../../services/traceApi';
+import type { SavedPlan, DrillDriver } from '../../../services/traceApi';
 import type { ProgressResult, VarianceResult } from '../../../lib/planEngine';
 import { money, full, pct, dayLabel, weekdayShort, statusColor, statusBg } from './format';
 
@@ -14,15 +14,16 @@ interface Props {
   plan: SavedPlan;
   progress: ProgressResult;
   variance: VarianceResult | null;
+  onDrill?: (driver: DrillDriver) => void;
 }
 
-export const PlanProgress: React.FC<Props> = ({ lang, plan, progress: p, variance }) => (
+export const PlanProgress: React.FC<Props> = ({ lang, plan, progress: p, variance, onDrill }) => (
   <div className="space-y-5">
     <Hero lang={lang} p={p} />
     {p.todayLive && <TodayCard lang={lang} p={p} />}
-    <KpiGrid lang={lang} p={p} />
+    <KpiGrid lang={lang} p={p} onDrill={p.closedDays > 0 ? onDrill : undefined} />
     <ProgressChart lang={lang} p={p} />
-    {variance && variance.period.days > 0 && <VarianceCard lang={lang} v={variance} />}
+    {variance && variance.period.days > 0 && <VarianceCard lang={lang} v={variance} onDrill={onDrill} />}
     <PLTable lang={lang} p={p} plan={plan} />
     {p.needed.days.length > 0 && <RemainingDays lang={lang} p={p} />}
   </div>
@@ -140,9 +141,15 @@ const Stat: React.FC<{ label: string; value: React.ReactNode; sub?: React.ReactN
 
 // ── KPI grid ──────────────────────────────────────────────────────────────────
 
-const Kpi: React.FC<{ label: string; fact: string; plan: string; pctValue: number | null; inverse?: boolean; foot?: React.ReactNode }> = ({ label, fact, plan, pctValue, inverse, foot }) => (
-  <div className="glass rounded-3xl p-4">
-    <p className="text-[10px] uppercase tracking-[0.16em] text-muted font-medium mb-2">{label}</p>
+const Kpi: React.FC<{ label: string; fact: string; plan: string; pctValue: number | null; inverse?: boolean; foot?: React.ReactNode; onClick?: () => void }> = ({ label, fact, plan, pctValue, inverse, foot, onClick }) => (
+  <div
+    className={`glass rounded-3xl p-4 ${onClick ? 'cursor-pointer glass-hover transition-colors' : ''}`}
+    onClick={onClick}
+    role={onClick ? 'button' : undefined}
+    tabIndex={onClick ? 0 : undefined}
+    onKeyDown={onClick ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+  >
+    <p className="text-[10px] uppercase tracking-[0.16em] text-muted font-medium mb-2 flex items-center justify-between gap-1">{label}{onClick && <ChevronRight size={12} className="text-muted/60" />}</p>
     <div className="flex items-baseline justify-between gap-2">
       <p className="metric-number text-[22px] font-bold text-text leading-none tracking-tight">{fact}</p>
       {pctValue != null && (
@@ -157,7 +164,7 @@ const Kpi: React.FC<{ label: string; fact: string; plan: string; pctValue: numbe
   </div>
 );
 
-const KpiGrid: React.FC<{ lang: Language; p: ProgressResult }> = ({ lang, p }) => {
+const KpiGrid: React.FC<{ lang: Language; p: ProgressResult; onDrill?: (d: DrillDriver) => void }> = ({ lang, p, onDrill }) => {
   const planWord = tr(lang, 'план', 'plan', 'reja');
   const fc = p.foodCost;
   const be = p.breakEven;
@@ -172,10 +179,12 @@ const KpiGrid: React.FC<{ lang: Language; p: ProgressResult }> = ({ lang, p }) =
         label={tr(lang, 'Чеки', 'Checks', 'Cheklar')}
         fact={full(p.checks.factMtd)} plan={`${planWord} ${full(p.checks.planMtd)}`} pctValue={p.checks.pct}
         foot={`${tr(lang, 'гостей', 'guests', 'mehmon')}: ${full(p.guests.factMtd)}`}
+        onClick={onDrill && (() => onDrill('checks'))}
       />
       <Kpi
         label={tr(lang, 'Средний чек', 'Average check', 'O‘rtacha chek')}
         fact={full(p.avgCheck.factMtd)} plan={`${planWord} ${full(p.avgCheck.planMtd)}`} pctValue={p.avgCheck.pct}
+        onClick={onDrill && (() => onDrill('avg_check'))}
       />
       <Kpi
         label={tr(lang, 'Фудкост', 'Food cost', 'Oziq-ovqat tannarxi')}
@@ -183,6 +192,7 @@ const KpiGrid: React.FC<{ lang: Language; p: ProgressResult }> = ({ lang, p }) =
         pctValue={fc.known && fc.factPct != null && fc.planPct > 0 ? Math.round((fc.factPct / fc.planPct) * 1000) / 10 : null}
         inverse
         foot={fc.known ? `${money(fc.factCogsMtd, lang)} ${tr(lang, 'себестоимость', 'cost of goods', 'tannarx')}` : tr(lang, 'нет себестоимости в iiko', 'no dish costs in iiko', 'iiko’da tannarx yo‘q')}
+        onClick={onDrill && fc.known ? () => onDrill('food_cost') : undefined}
       />
       <Kpi
         label={tr(lang, 'Чистая прибыль', 'Net profit', 'Sof foyda')}
@@ -262,7 +272,9 @@ const ProgressChart: React.FC<{ lang: Language; p: ProgressResult }> = ({ lang, 
 
 // ── Variance: why we're off ───────────────────────────────────────────────────
 
-const VarianceCard: React.FC<{ lang: Language; v: VarianceResult }> = ({ lang, v }) => {
+const DRILLABLE: Record<string, DrillDriver> = { checks: 'checks', avg_check: 'avg_check', food_cost: 'food_cost' };
+
+const VarianceCard: React.FC<{ lang: Language; v: VarianceResult; onDrill?: (d: DrillDriver) => void }> = ({ lang, v, onDrill }) => {
   const d = v.drivers;
   const label = (key: string): { title: string; detail: string } => {
     switch (key) {
@@ -302,10 +314,15 @@ const VarianceCard: React.FC<{ lang: Language; v: VarianceResult }> = ({ lang, v
         </div>
         {items.map(i => {
           const l = label(i.key);
+          const drill = onDrill && DRILLABLE[i.key] && (i.key !== 'food_cost' || v.foodCostKnown) ? DRILLABLE[i.key] : null;
           return (
-            <div key={i.key} className="py-2 border-b border-border/60">
+            <div
+              key={i.key}
+              className={`py-2 border-b border-border/60 ${drill ? 'cursor-pointer hover:bg-card-hover/60 -mx-2 px-2 rounded-lg transition-colors' : ''}`}
+              onClick={drill ? () => onDrill!(drill) : undefined}
+            >
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-[12px] text-text">{l.title}</span>
+                <span className="text-[12px] text-text flex items-center gap-1">{l.title}{drill && <ChevronRight size={11} className="text-muted/60" />}</span>
                 <span className={`font-mono text-[12px] font-semibold ${i.value > 0 ? 'text-success' : i.value < 0 ? 'text-danger' : 'text-muted'}`}>{i.value === 0 ? '0' : money(i.value, lang, true)}</span>
               </div>
               <div className="flex items-center justify-between gap-3 mt-1">

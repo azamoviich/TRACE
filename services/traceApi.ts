@@ -2370,6 +2370,7 @@ export interface Tenant {
   next_payment_due_at: string | null;
   last_payment_at: string | null;
   monthly_price: number | null;
+  venue_type: 'restaurant' | 'fastfood' | 'coffeeshop' | null;
 }
 
 export interface ConnectionTestResults {

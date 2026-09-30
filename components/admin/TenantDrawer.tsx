@@ -71,7 +71,11 @@ type EditForm = {
   iiko_chain_server_host: string; iiko_chain_login: string; iiko_chain_password: string;
   billing_status: 'trial' | 'active' | 'past_due' | 'canceled';
   trial_ends_at: string; next_payment_due_at: string; last_payment_at: string; monthly_price: string;
+  venue_type: VenueType | '';
 };
+
+type VenueType = 'restaurant' | 'fastfood' | 'coffeeshop';
+const VENUE_TYPES: readonly VenueType[] = ['restaurant', 'fastfood', 'coffeeshop'];
 
 function formFromTenant(tenant: Tenant, org: Organization | null): EditForm {
   const raw = tenant.iiko_server ?? '';
@@ -102,6 +106,7 @@ function formFromTenant(tenant: Tenant, org: Organization | null): EditForm {
     billing_status: tenant.billing_status ?? 'trial',
     trial_ends_at: toDateInput(tenant.trial_ends_at), next_payment_due_at: toDateInput(tenant.next_payment_due_at),
     last_payment_at: toDateInput(tenant.last_payment_at), monthly_price: tenant.monthly_price != null ? String(tenant.monthly_price) : '',
+    venue_type: tenant.venue_type ?? '',
   };
 }
 
@@ -406,6 +411,7 @@ export const TenantDrawer: React.FC<{
         next_payment_due_at: form.next_payment_due_at ? new Date(form.next_payment_due_at).toISOString() : null,
         last_payment_at: form.last_payment_at ? new Date(form.last_payment_at).toISOString() : null,
         monthly_price: form.monthly_price.trim() === '' ? null : parseFloat(form.monthly_price),
+        venue_type: form.venue_type || null,
         review_refresh_google: parseCount(form.review_refresh_google),
         review_refresh_yandex: parseCount(form.review_refresh_yandex),
         review_refresh_2gis: parseCount(form.review_refresh_2gis),
@@ -769,6 +775,10 @@ export const TenantDrawer: React.FC<{
                   <SectionHeading icon={<Server size={12} />} title="POS Connection" />
                   {editing ? (
                     <div className="space-y-3 mb-5">
+                      <div>
+                        <FieldLabel>Venue type</FieldLabel>
+                        <PillToggle<VenueType | ''> options={VENUE_TYPES} value={form.venue_type} onChange={v => setForm(f => f && ({ ...f, venue_type: v }))} />
+                      </div>
                       <PillToggle options={['iiko', 'poster'] as const} value={form.pos_type} onChange={p => setForm(f => f && ({ ...f, pos_type: p }))} />
                       {form.pos_type === 'iiko' && (
                         <div className="space-y-3 pt-2">
@@ -788,6 +798,7 @@ export const TenantDrawer: React.FC<{
                     </div>
                   ) : (
                     <div className="space-y-2.5 mb-5">
+                      <ReadRow label="Venue type">{tenant.venue_type ?? <Empty />}</ReadRow>
                       <ReadRow label="POS System">
                         <span className="text-[10px] font-semibold uppercase tracking-[0.1em] px-2 py-0.5 rounded bg-muted/15 text-muted">
                           {(tenant.pos_type ?? 'iiko') === 'poster' ? 'Poster' : 'iiko'}

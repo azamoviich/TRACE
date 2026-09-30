@@ -35,6 +35,16 @@
     background: #F7F5F2; color: #1A1A1A; font-size: 13px; font-family: inherit;
   }
   input[type="text"]:focus, input[type="password"]:focus { outline: none; border-color: #FF6B35; }
+  /* Prevent Safari auto-zoom on input focus */
+  input, textarea, select { font-size: max(16px, 1em); }
+  .pw-wrap { position: relative; }
+  .pw-wrap input { padding-right: 40px; }
+  .pw-toggle {
+    position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+    width: 30px; height: 30px; padding: 0; display: flex; align-items: center; justify-content: center;
+    background: none; border-radius: 6px; color: #9a9a9a;
+  }
+  .pw-toggle:hover { background: none; color: #1A1A1A; }
   .remember { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; cursor: pointer; user-select: none; }
   .remember input[type="checkbox"] { accent-color: #FF6B35; width: 15px; height: 15px; cursor: pointer; }
   .remember span { font-size: 12px; color: #5F5F5F; }
@@ -79,7 +89,13 @@
           </div>
           <div class="field">
             <label data-i18n="password">Password</label>
-            <input type="password" id="password" autocomplete="current-password" />
+            <div class="pw-wrap">
+              <input type="password" id="password" autocomplete="current-password" />
+              <button type="button" class="pw-toggle" id="pwToggle" aria-label="Show password">
+                <svg id="eyeOpen" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg id="eyeClosed" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c6.5 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3.5 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+              </button>
+            </div>
           </div>
           <label class="remember">
             <input type="checkbox" id="remember" checked />
@@ -171,6 +187,14 @@
     }
 
     // ── Password login ──
+    const pwInput = document.getElementById('password');
+    document.getElementById('pwToggle').addEventListener('click', () => {
+      const show = pwInput.type === 'password';
+      pwInput.type = show ? 'text' : 'password';
+      document.getElementById('eyeOpen').style.display = show ? 'none' : '';
+      document.getElementById('eyeClosed').style.display = show ? '' : 'none';
+      pwInput.focus();
+    });
     const loginForm = document.getElementById('loginForm');
     const loginBtn = document.getElementById('loginBtn');
     const loginError = document.getElementById('loginError');

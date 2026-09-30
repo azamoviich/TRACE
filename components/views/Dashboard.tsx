@@ -18,12 +18,14 @@ import { useCountUp } from '../../hooks/useCountUp';
 import { traceApi, isDemoTenant, demoLiveOrderFeed, branchHeaders, RevenueRow, DishRow, IntegrationStatus, AIDailyBriefing, HourlyRow, RevenueType } from '../../services/traceApi';
 import { useOccupiedTables } from '../../hooks/useOccupiedTables';
 import { tashkentDateStr, tashkentHours } from '../../utils/tz';
+import { PlanWidget } from './plan/PlanWidget';
 
 interface DashboardProps {
   lang: Language;
   onShowToast: (msg: string, type: 'success' | 'error' | 'info') => void;
   branch?: string | null;
   onContextReady?: (ctx: string) => void;
+  onOpenPlan?: () => void;
 }
 
 function parseNum(value: string): { num: number; suffix: string; isDecimal: boolean } {
@@ -438,7 +440,7 @@ function comparisonDateRange(timeRange: TimeRange, comparison: ComparisonPeriod)
   return { from: d(shift + periodDays - 1), to: d(shift) };
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ lang, onShowToast, branch, onContextReady }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ lang, onShowToast, branch, onContextReady, onOpenPlan }) => {
   const t = TRANSLATIONS[lang];
   const [timeRange, setTimeRange] = useState<TimeRange>('today');
   const [comparison, setComparison] = useState<ComparisonPeriod>('yesterday');
@@ -941,6 +943,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ lang, onShowToast, branch,
           ) : null}
         </div>
       </div>
+
+      {onOpenPlan && <PlanWidget lang={lang} onOpen={onOpenPlan} />}
 
       {/* ── CHART + TOP SELLING ───────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

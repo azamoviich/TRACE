@@ -1,5 +1,7 @@
 import { Language } from '../types';
 import { tashkentDateStr as tzDateStr } from '../utils/tz';
+import type { PlanDrivers, PlanDay, PlanPL, DayOverride, Suggestion, ProgressResult, VarianceResult } from '../lib/planEngine';
+import * as planDemo from './planDemo';
 
 const BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -1480,6 +1482,75 @@ function demoMenuAnalysis(): MenuAnalysisRow[] {
   }).sort((a, b) => b.revenue - a.revenue);
 }
 
+// ── План и факт ───────────────────────────────────────────────────────────────
+export type PlanUnsupportedReason = 'not_iiko' | 'no_credentials' | 'not_restaurant' | 'all_branches';
+
+export interface PlanMeta {
+  supported: boolean;
+  reason: PlanUnsupportedReason | null;
+  venueType: 'restaurant' | 'fastfood' | 'coffeeshop' | null;
+  today: string;
+}
+
+export interface SavedPlan {
+  id: string;
+  month: string;
+  status: 'draft' | 'active';
+  method: 'ly' | 'trend' | 'manual';
+  growthPct: number | null;
+  drivers: PlanDrivers;
+  baseline: Partial<Suggestion['baseline']> & Record<string, unknown>;
+  updatedAt: string;
+  days: PlanDay[];
+  pl: PlanPL;
+}
+
+export interface PlanSavePayload {
+  month: string;
+  status: 'draft' | 'active';
+  method: 'ly' | 'trend' | 'manual';
+  growthPct: number | null;
+  baseline?: unknown;
+  drivers: PlanDrivers;
+  overrides?: DayOverride[]; // full list of pinned days; omit to keep the current pins
+}
+
+// Mirrors TRACEBACKEND/src/services/planDrilldown.ts.
+export type DrillDriver = 'food_cost' | 'avg_check' | 'checks';
+export interface DrillRow { name: string; now: number | null; base: number | null; impact: number; share?: number; }
+export interface DrillGroup { key: 'categories' | 'dishes' | 'writeoffs' | 'waiters' | 'weekdays' | 'hours'; unit: 'pct' | 'money' | 'count'; rows: DrillRow[]; }
+export interface DrillResult {
+  driver: DrillDriver;
+  period: { from: string; to: string; days: number } | null;
+  baseline: { from: string; to: string; days: number };
+  summary: { now: number | null; base: number | null; unit: 'pct' | 'money' | 'count' };
+  groups: DrillGroup[];
+}
+
+// Mirrors PlanHistoryRow in TRACEBACKEND/src/services/planData.ts.
+export interface PlanHistoryRow {
+  month: string;
+  plan: { revenue: number; netProfit: number; status: 'draft' | 'active' } | null;
+  fact: { revenue: number; checks: number; avgCheck: number; foodCostPct: number | null; netProfit: number | null };
+  pct: number | null;
+  partial: boolean;
+}
+
+export interface PlanSettings { telegramDaily: boolean; telegramConnected: boolean; }
+
+export class PlanUnsupportedError extends Error {
+  constructor(public reason: PlanUnsupportedReason) { super(reason); }
+}
+
+// Every /plan response carries `supported`; an unsupported one becomes a
+// typed error so the page can render the right explanation.
+async function planJson<T>(res: Response): Promise<T> {
+  const body = await res.json().catch(() => ({}));
+  if (body && body.supported === false) throw new PlanUnsupportedError(body.reason);
+  if (!res.ok) throw new Error(body?.detail || body?.error || `HTTP ${res.status}`);
+  return body as T;
+}
+
 export const traceApi = {
   realtimeEvents: (): Promise<RealtimeEvent[]> => Promise.resolve(demoRealtimeEvents()),
   admin: {
@@ -1727,6 +1798,57 @@ export const traceApi = {
     },
     menuAnalysis: (range: 'today' | '7days' | '30days' = '7days'): Promise<MenuAnalysisRow[]> =>
       isDemoTenant() ? Promise.resolve(demoMenuAnalysis()) : apiFetch(`/financial/menu-analysis?range=${range}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+  },
+  plan: {
+    meta: (): Promise<PlanMeta> =>
+      isDemoTenant()
+        ? Promise.resolve({ supported: getDemoPos() === 'iiko', reason: getDemoPos() === 'iiko' ? null : 'not_iiko', venueType: 'restaurant', today: tzDateStr() })
+        : apiFetch('/plan/meta').then(r => r.json()),
+    suggest: (month: string, growthPct?: number, method?: 'ly' | 'trend'): Promise<Suggestion> => {
+      if (isDemoTenant()) return Promise.resolve(planDemo.demoSuggest(month, growthPct, method));
+      const q = new URLSearchParams({ month });
+      if (growthPct != null) q.set('growth', String(growthPct));
+      if (method) q.set('method', method);
+      return apiFetch(`/plan/suggest?${q}`).then(r => planJson<Suggestion>(r));
+    },
+    get: (month: string): Promise<SavedPlan | null> =>
+      isDemoTenant()
+        ? Promise.resolve(planDemo.demoGetPlan(month))
+        : apiFetch(`/plan?month=${month}`).then(r => planJson<{ plan: SavedPlan | null }>(r)).then(d => d.plan),
+    save: (payload: PlanSavePayload): Promise<SavedPlan> =>
+      isDemoTenant()
+        ? Promise.resolve(planDemo.demoSavePlan(payload))
+        : apiFetch('/plan', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+            .then(r => planJson<{ plan: SavedPlan }>(r)).then(d => d.plan),
+    remove: (month: string): Promise<void> =>
+      isDemoTenant()
+        ? Promise.resolve(planDemo.demoDeletePlan(month))
+        : apiFetch(`/plan?month=${month}`, { method: 'DELETE' }).then(r => planJson<unknown>(r)).then(() => undefined),
+    progress: (month: string): Promise<{ plan: SavedPlan | null; progress: ProgressResult | null }> =>
+      isDemoTenant()
+        ? Promise.resolve(planDemo.demoProgress(month))
+        : apiFetch(`/plan/progress?month=${month}`).then(r => planJson<{ plan: SavedPlan | null; progress: ProgressResult | null }>(r)),
+    drilldown: (month: string, driver: DrillDriver): Promise<DrillResult> =>
+      isDemoTenant()
+        ? Promise.resolve(planDemo.demoDrilldown(month, driver))
+        : apiFetch(`/plan/drilldown?month=${month}&driver=${driver}`).then(r => planJson<{ drilldown: DrillResult }>(r)).then(d => d.drilldown),
+    history: (months = 12): Promise<PlanHistoryRow[]> =>
+      isDemoTenant()
+        ? Promise.resolve(planDemo.demoHistory(months))
+        : apiFetch(`/plan/history?months=${months}`).then(r => planJson<{ history: PlanHistoryRow[] }>(r)).then(d => d.history),
+    settings: (): Promise<PlanSettings> =>
+      isDemoTenant()
+        ? Promise.resolve(planDemo.demoSettings())
+        : apiFetch('/plan/settings').then(r => planJson<PlanSettings>(r)),
+    saveSettings: (telegramDaily: boolean): Promise<PlanSettings> =>
+      isDemoTenant()
+        ? Promise.resolve(planDemo.demoSaveSettings(telegramDaily))
+        : apiFetch('/plan/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ telegramDaily }) })
+            .then(r => planJson<PlanSettings>(r)),
+    variance: (month: string): Promise<VarianceResult | null> =>
+      isDemoTenant()
+        ? Promise.resolve(planDemo.demoVariance(month))
+        : apiFetch(`/plan/variance?month=${month}`).then(r => planJson<{ variance: VarianceResult | null }>(r)).then(d => d.variance),
   },
   settings: {
     listReportSubscriptions: (): Promise<ReportSubscription[]> =>
@@ -2297,6 +2419,7 @@ export interface Tenant {
   next_payment_due_at: string | null;
   last_payment_at: string | null;
   monthly_price: number | null;
+  venue_type: 'restaurant' | 'fastfood' | 'coffeeshop' | null;
 }
 
 export interface ConnectionTestResults {

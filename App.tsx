@@ -18,6 +18,7 @@ import { Compare } from './components/views/Compare';
 import { Checklists } from './components/views/Checklists';
 import { Workforce } from './components/views/Workforce';
 import { Employees } from './components/views/Employees';
+import { Booking } from './components/views/Booking';
 import { Globe, Sun, Moon } from 'lucide-react';
 import { TRANSLATIONS, nextLang, tr } from './constants';
 import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, desktopCrossTenantLogin, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos, createQrSession, pollQrSession, QrSession, isTauriApp, consumeBootstrapToken, getTenantRole } from './services/traceApi';
@@ -363,7 +364,7 @@ export default function App() {
   const [authChecking, setAuthChecking] = useState(() => !isDemoTenant() && !bootstrapped && localStorage.getItem('trace_remember') === '1');
   const [currentView, setCurrentView] = useState<ViewState>(() => {
     const v = new URLSearchParams(window.location.search).get('view');
-    const valid: ViewState[] = ['dashboard', 'sales', 'operations', 'financial', 'plan', 'reviews', 'loyalty', 'reports', 'settings', 'compare', 'checklists', 'employees', 'workforce'];
+    const valid: ViewState[] = ['dashboard', 'sales', 'operations', 'financial', 'plan', 'reviews', 'loyalty', 'reports', 'settings', 'compare', 'checklists', 'employees', 'workforce', 'booking'];
     return valid.includes(v as ViewState) ? (v as ViewState) : loadDefaultPage();
   });
   const [lang, setLangState] = useState<Language>(() => {
@@ -391,6 +392,9 @@ export default function App() {
   const setMobileNavStyle = (s: MobileNavStyle) => { setMobileNavStyleState(s); localStorage.setItem(MOBILE_NAV_STYLE_KEY, s); };
   // Restricted marketer login: only Reviews + Loyalty exist for this account.
   const isMarketing = isLoggedIn && !isDemoTenant() && getTenantRole() === 'marketing';
+  // Restricted hostess login: only Booking exists for this account.
+  const isHostess = isLoggedIn && !isDemoTenant() && getTenantRole() === 'hostess';
+  const isRestricted = isMarketing || isHostess;
   const [hiddenPagesState, setHiddenPagesState] = useState<ViewState[]>(loadHiddenPages);
   // План и факт exists only for iiko restaurants (GET /plan/meta); hidden
   // from the nav until that's confirmed so other venues never see it flash.
@@ -406,6 +410,8 @@ export default function App() {
   ];
   const hiddenPages: ViewState[] = isMarketing
     ? NAV_ITEMS.map(n => n.id).filter(id => id !== 'reviews' && id !== 'loyalty')
+    : isHostess
+    ? NAV_ITEMS.map(n => n.id).filter(id => id !== 'booking')
     : [...hiddenPagesState, ...unavailablePages];
   const setHiddenPages = (pages: ViewState[]) => { setHiddenPagesState(pages); localStorage.setItem(HIDDEN_PAGES_KEY, JSON.stringify(pages)); };
 
@@ -418,7 +424,8 @@ export default function App() {
 
   useEffect(() => {
     if (isMarketing && currentView !== 'reviews' && currentView !== 'loyalty') setCurrentView('reviews');
-  }, [isMarketing, currentView]);
+    if (isHostess && currentView !== 'booking') setCurrentView('booking');
+  }, [isMarketing, isHostess, currentView]);
 
   const [defaultPage, setDefaultPageState] = useState<ViewState>(loadDefaultPage);
   const setDefaultPage = (p: ViewState) => { setDefaultPageState(p); localStorage.setItem(DEFAULT_PAGE_KEY, p); };
@@ -479,25 +486,25 @@ export default function App() {
 
   // "All branches" keeps the page visible — it explains plans are per-branch.
   useEffect(() => {
-    if (!isLoggedIn || isMarketing) return;
+    if (!isLoggedIn || isRestricted) return;
     traceApi.plan.meta()
       .then(m => setPlanAvailable(m.supported || m.reason === 'all_branches'))
       .catch(() => setPlanAvailable(false));
-  }, [isLoggedIn, isMarketing, activeBranchId]);
+  }, [isLoggedIn, isRestricted, activeBranchId]);
 
   useEffect(() => {
-    if (!isLoggedIn || isMarketing) return;
+    if (!isLoggedIn || isRestricted) return;
     traceApi.settings.featureFlags()
       .then(f => setEmployeeAppEnabled(!!f.employeeAppEnabled))
       .catch(() => setEmployeeAppEnabled(false));
-  }, [isLoggedIn, isMarketing]);
+  }, [isLoggedIn, isRestricted]);
 
   // Load sibling branches once (multi-branch orgs only — empty for single-branch tenants)
   useEffect(() => {
-    if (isDemoTenant() || isMarketing) return;
+    if (isDemoTenant() || isRestricted) return;
     traceApi.org.branches().then(setBranches).catch(() => {});
     traceApi.org.info().then(info => setHasChainServer(info.hasChainServer)).catch(() => {});
-  }, [isMarketing]);
+  }, [isRestricted]);
 
   // "All branches" only makes sense once there's more than one branch AND an
   // iikoChain server is configured for the org (see Admin.tsx Chain tab) —
@@ -557,7 +564,8 @@ export default function App() {
     // Add-on off (or flag still loading on a ?view= deep link) — never mount
     // these views, they'd only fire requests the backend refuses.
     if (EMPLOYEE_APP_PAGE_IDS.includes(currentView) && !employeeAppEnabled) return null;
-    switch (isMarketing && currentView !== 'loyalty' ? 'reviews' : currentView) {
+    const view: ViewState = isMarketing && currentView !== 'loyalty' ? 'reviews' : isHostess ? 'booking' : currentView;
+    switch (view) {
       case 'dashboard':   return <Dashboard key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} onOpenPlan={planAvailable && !hiddenPages.includes('plan') ? () => setCurrentView('plan') : undefined} onNavigate={setCurrentView} />;
       case 'sales':       return <Sales key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} />;
       case 'operations':  return <Operations key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} branches={branches} isAllBranches={activeBranchId === ALL_BRANCHES_ID} />;
@@ -568,6 +576,7 @@ export default function App() {
       case 'checklists':  return <Checklists key={branchKey} lang={lang} onShowToast={showToast} />;
       case 'employees':   return <Employees key={branchKey} lang={lang} onShowToast={showToast} />;
       case 'workforce':   return <Workforce key={branchKey} lang={lang} onShowToast={showToast} />;
+      case 'booking':     return <Booking key={branchKey} lang={lang} onShowToast={showToast} />;
       case 'reports':     return <Reports lang={lang} onShowToast={showToast} onNavigate={setCurrentView} />;
       case 'settings':    return (
         <Settings
@@ -611,7 +620,7 @@ export default function App() {
           onLogout={handleLogout}
           lang={lang}
           setLang={setLang}
-          onOpenAI={isMarketing ? undefined : () => setAiOpen(true)}
+          onOpenAI={isRestricted ? undefined : () => setAiOpen(true)}
           branches={branches}
           activeBranchId={activeBranchId}
           onSwitchBranch={handleSwitchBranch}
@@ -639,10 +648,10 @@ export default function App() {
       <div className="rd">
         <RdFooter lang={lang} />
         <RdTabbar currentView={currentView} onNavigate={setCurrentView} lang={lang} hiddenPages={hiddenPages}
-          hasBranches={branches.length > 1} onOpenAI={isMarketing ? undefined : () => setAiOpen(true)} />
+          hasBranches={branches.length > 1} onOpenAI={isRestricted ? undefined : () => setAiOpen(true)} />
       </div>
 
-      {!isMarketing && <AskAI
+      {!isRestricted && <AskAI
         context={aiContext || (t[currentView as keyof typeof t] as string) || 'General'}
         lang={lang}
         isOpen={aiOpen}

@@ -58,7 +58,8 @@ export type ViewState =
   | 'compare'
   | 'checklists'
   | 'employees'
-  | 'workforce';
+  | 'workforce'
+  | 'booking';
 
 export type TimeRange = 'today' | '7days' | '30days' | 'month' | 'custom';
 

@@ -8,6 +8,11 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
+        // .localtest.me is a public wildcard DNS -> 127.0.0.1, used here to
+        // get a real subdomain locally (getSubdomain() in traceApi.ts needs
+        // 3+ host parts) so dev can hit a specific tenant instead of always
+        // landing on the admin panel that bare "localhost" resolves to.
+        allowedHosts: ['.localtest.me'],
       },
       plugins: [react()],
       define: {

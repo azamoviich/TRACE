@@ -2788,7 +2788,8 @@ export function getTenantOwnerToken(): string | null {
 }
 
 // Role baked into the session token: 'marketing' = restricted marketer login
-// (Reviews + Loyalty only, see backend /admin/tenant-auth), otherwise owner.
+// (Reviews + Loyalty only, see backend /admin/tenant-auth), 'hostess' =
+// restricted hostess login (Booking only), otherwise owner.
 // Only decodes the payload for UI gating — the backend is what trusts it.
 function tokenPayload(): { role?: string; master?: boolean } {
   const token = getTenantOwnerToken();
@@ -2799,8 +2800,9 @@ function tokenPayload(): { role?: string; master?: boolean } {
   } catch { return {}; }
 }
 
-export function getTenantRole(): 'owner' | 'marketing' {
-  return tokenPayload().role === 'marketing' ? 'marketing' : 'owner';
+export function getTenantRole(): 'owner' | 'marketing' | 'hostess' {
+  const role = tokenPayload().role;
+  return role === 'marketing' || role === 'hostess' ? role : 'owner';
 }
 
 // Staff master login (TRACEADMIN) — see backend masterLogin.ts.
@@ -2957,11 +2959,14 @@ async function compressForUpload(file: File, maxWidth = 1600, quality = 0.82): P
   }
 }
 
-export async function uploadPhoto(subdomain: string, file: File): Promise<string> {
+// folder: storage folder on the backend's fixed list (upload.ts UPLOAD_FOLDERS);
+// omitted = the original shift-reports folder.
+export async function uploadPhoto(subdomain: string, file: File, folder?: 'booking-table' | 'booking-plan'): Promise<string> {
   const toSend = await compressForUpload(file);
   const fd = new FormData();
   fd.append('file', toSend);
-  const r = await fetch(`${BASE}/upload`, { method: 'POST', headers: { 'X-Tenant': subdomain }, body: fd });
+  const qs = folder ? `?folder=${folder}` : '';
+  const r = await fetch(`${BASE}/upload${qs}`, { method: 'POST', headers: { 'X-Tenant': subdomain }, body: fd });
   if (!r.ok) throw new Error(`upload failed: ${r.status}`);
   const { url } = await r.json();
   return url as string;
@@ -3192,3 +3197,79 @@ export async function managerShiftReportCreate(
   if (!r.ok) throw new Error(`${r.status}`);
   return r.json();
 }
+
+// ── Booking ───────────────────────────────────────────────────────────────
+// Table reservations (TRACE-BACKEND src/routes/booking.ts). Unlike most
+// traceApi namespaces, every call carries the session's bearer token — the
+// backend refuses /booking without it, since it holds guest names/phones.
+
+export type BookingTableShape = 'rect' | 'circle';
+export const BOOKING_TABLE_TAGS = ['window', 'terrace', 'sofa', 'smoking', 'kids'] as const;
+export type BookingTableTag = typeof BOOKING_TABLE_TAGS[number];
+
+export interface BookingTable {
+  id: string;
+  hall_id: string;
+  name: string;
+  seats: number;
+  min_guests: number;
+  shape: BookingTableShape;
+  x: number; y: number; w: number; h: number;
+  rotation: number;
+  photos: string[];
+  tags: BookingTableTag[];
+  is_bookable: boolean;
+  is_active: boolean;
+  pos_table_id: string | null;
+}
+
+export interface BookingHall {
+  id: string;
+  name: string;
+  sort_order: number;
+  background_image: string | null;
+  width: number;
+  height: number;
+  tables: BookingTable[];
+}
+
+// Table as the editor holds it before saving — new tables have no id yet.
+export type BookingTableDraft = Omit<BookingTable, 'id' | 'hall_id' | 'is_active'> & { id?: string; client_id?: string };
+
+export class BookingApiError extends Error {
+  constructor(public status: number, public code: string | undefined, message: string, public body: any) {
+    super(message);
+  }
+}
+
+async function bookingFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const token = getTenantOwnerToken();
+  const r = await apiFetch(`/booking${path}`, {
+    ...init,
+    headers: {
+      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init.headers ?? {}),
+    },
+  });
+  const body = await r.json().catch(() => null);
+  if (!r.ok) throw new BookingApiError(r.status, body?.code, body?.error ?? `HTTP ${r.status}`, body);
+  return body as T;
+}
+
+export const bookingApi = {
+  halls: {
+    list: () => bookingFetch<BookingHall[]>('/halls'),
+    create: (data: Partial<Pick<BookingHall, 'name' | 'sort_order' | 'background_image' | 'width' | 'height'>>) =>
+      bookingFetch<BookingHall>('/halls', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<Pick<BookingHall, 'name' | 'sort_order' | 'background_image' | 'width' | 'height'>>) =>
+      bookingFetch<BookingHall>(`/halls/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    remove: (id: string) => bookingFetch<{ ok: true }>(`/halls/${id}`, { method: 'DELETE' }),
+    // One atomic save of every table in the hall (the editor's Save button).
+    saveLayout: (id: string, tables: BookingTableDraft[], deletedIds: string[]) =>
+      bookingFetch<{ ok: true; tables: BookingTable[]; created: Record<string, string> }>(`/halls/${id}/layout`, {
+        method: 'PUT', body: JSON.stringify({ tables, deleted_ids: deletedIds }),
+      }),
+  },
+  importHallPlans: () => bookingFetch<{ ok: true; halls: number; tables: number }>('/import-hall-plans', { method: 'POST' }),
+};

@@ -56,7 +56,8 @@ export type ViewState =
   | 'reports'
   | 'settings'
   | 'compare'
-  | 'checklists';
+  | 'checklists'
+  | 'booking';
 
 export type TimeRange = 'today' | '7days' | '30days' | 'month' | 'custom';
 

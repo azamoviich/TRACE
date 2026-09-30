@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, TrendingUp, Activity, DollarSign,
-  Star, Heart, FileText, Settings2, ClipboardCheck, Target,
+  Star, Heart, FileText, Settings2, ClipboardCheck, Target, CalendarCheck,
 } from 'lucide-react';
 import { ViewState } from '../types';
 
@@ -15,6 +15,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', icon: LayoutDashboard },
   { id: 'sales', icon: TrendingUp },
   { id: 'operations', icon: Activity },
+  { id: 'booking', icon: CalendarCheck },
   { id: 'financial', icon: DollarSign },
   { id: 'plan', icon: Target },
   { id: 'reviews', icon: Star },
@@ -27,7 +28,7 @@ export const NAV_ITEMS: NavItem[] = [
 // Pages the user is allowed to hide from Settings. Dashboard and Settings
 // stay pinned so there's always a way in and a way back to this screen.
 export const HIDEABLE_PAGE_IDS: ViewState[] = [
-  'sales', 'operations', 'financial', 'plan', 'reviews', 'loyalty', 'reports', 'checklists',
+  'sales', 'operations', 'booking', 'financial', 'plan', 'reviews', 'loyalty', 'reports', 'checklists',
 ];
 
 export const NAV_STYLE_KEY = 'trace_nav_style';
@@ -64,7 +65,7 @@ export function loadHiddenPages(): ViewState[] {
 // The page a user lands on right after opening the app — must be one of the
 // pages they haven't hidden, so this is re-validated against hiddenPages at
 // use time rather than trusted blindly.
-export const DEFAULT_PAGE_CHOICES: ViewState[] = ['dashboard', 'sales', 'operations', 'financial', 'plan', 'reviews', 'loyalty', 'reports'];
+export const DEFAULT_PAGE_CHOICES: ViewState[] = ['dashboard', 'sales', 'operations', 'booking', 'financial', 'plan', 'reviews', 'loyalty', 'reports'];
 
 export function loadDefaultPage(): ViewState {
   const saved = localStorage.getItem(DEFAULT_PAGE_KEY);

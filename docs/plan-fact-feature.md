@@ -188,7 +188,7 @@ Each phase gets committed and pushed separately.
 ## 10. Progress
 
 - [x] Phase 1 backend: schema, `planEngine.ts`, `planData.ts`, `routes/plan.ts` (`/meta`, `/suggest`, `GET/PUT/DELETE /plan`), admin venue type
-- [ ] Phase 2 backend: `/progress`, `/variance`, nightly fact top-up
+- [x] Phase 2 backend: `/progress`, `/variance`, nightly fact top-up (`cron/planFacts.ts`, 22:30 UTC), live today pace from `hourly_snapshots`
 - [ ] Phase 3 frontend page
 - [ ] Phase 4 drill-down + dashboard widget
 - [ ] Phase 5 Telegram + AI + history

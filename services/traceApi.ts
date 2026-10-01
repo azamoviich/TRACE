@@ -3277,7 +3277,152 @@ export const bookingApi = {
     save: (patch: Partial<Omit<BookingSettings, 'tenant_id'>>) =>
       bookingFetch<BookingSettings>('/settings', { method: 'PUT', body: JSON.stringify(patch) }),
   },
+  // Live table states "now" (hostess map) — with guest names, staff only.
+  status: () => bookingFetch<{ at: string; tables: StaffTableStatus[] }>('/status'),
+  reservations: {
+    // date = YYYY-MM-DD in the restaurant's timezone, or an explicit range.
+    list: (q: { date: string } | { from: string; to: string }, statuses?: ReservationStatus[]) => {
+      const qs = new URLSearchParams(q as Record<string, string>);
+      if (statuses?.length) qs.set('status', statuses.join(','));
+      return bookingFetch<StaffReservation[]>(`/reservations?${qs}`);
+    },
+    create: (data: {
+      source: 'phone' | 'walk_in'; table_id: string; party_size: number; guest_name?: string; guest_phone?: string;
+      start_at?: string; duration_min?: number; comment?: string;
+    }) => bookingFetch<StaffReservation>('/reservations', { method: 'POST', body: JSON.stringify(data) }),
+    // Move (table/time), extend (extend_min), or edit guest details.
+    update: (id: string, patch: Partial<{
+      table_id: string; start_at: string; end_at: string; extend_min: number;
+      guest_name: string; guest_phone: string; party_size: number; comment: string;
+    }>) => bookingFetch<StaffReservation>(`/reservations/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    setStatus: (id: string, status: ReservationStatus) =>
+      bookingFetch<StaffReservation>(`/reservations/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+  },
+  blocks: {
+    list: (date: string) => bookingFetch<TableBlock[]>(`/blocks?date=${date}`),
+    create: (data: { table_id: string; from_at: string; to_at: string; reason?: string }) =>
+      bookingFetch<TableBlock>('/blocks', { method: 'POST', body: JSON.stringify(data) }),
+    remove: (id: string) => bookingFetch<{ ok: true }>(`/blocks/${id}`, { method: 'DELETE' }),
+  },
+  guests: {
+    search: (q: string) => bookingFetch<GuestSummary[]>(`/guests?q=${encodeURIComponent(q)}`),
+    history: (phone: string) => bookingFetch<StaffReservation[]>(`/guests/history?phone=${encodeURIComponent(phone)}`),
+  },
+  hostessLogin: {
+    get: () => bookingFetch<{ hostess_login: string | null }>('/hostess-login'),
+    // Empty login removes the hostess access.
+    set: (login: string, password?: string) =>
+      bookingFetch<{ ok: true; hostess_login: string | null }>('/hostess-login', { method: 'PUT', body: JSON.stringify({ login, password }) }),
+  },
 };
+
+export type ReservationStatus = 'pending' | 'confirmed' | 'seated' | 'completed' | 'cancelled' | 'no_show';
+
+export interface StaffReservation {
+  id: string;
+  table_id: string;
+  table_name?: string;
+  hall_id?: string;
+  guest_name: string;
+  guest_phone: string;
+  party_size: number;
+  start_at: string;
+  end_at: string;
+  status: ReservationStatus;
+  source: 'online' | 'phone' | 'walk_in';
+  comment: string;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface StaffTableStatus {
+  table_id: string;
+  state: PublicTableState;
+  free_until: string | null;
+  next_start: string | null;
+  until: string | null;
+  unavailable_reason?: 'not_bookable' | 'blocked';
+  reservation?: Pick<StaffReservation, 'id' | 'guest_name' | 'guest_phone' | 'party_size' | 'start_at' | 'end_at' | 'status' | 'source' | 'comment'>;
+  block_reason?: string;
+}
+
+export interface TableBlock {
+  id: string;
+  table_id: string;
+  from_at: string;
+  to_at: string;
+  reason: string;
+}
+
+export interface GuestSummary {
+  guest_phone: string;
+  guest_name: string;
+  total: number;
+  visits: number;
+  no_shows: number;
+  cancelled: number;
+  upcoming: number;
+  last_visit_at: string | null;
+}
+
+export interface BookingChangeEvent {
+  action: string;                // created / updated / status / block_created / block_deleted / layout
+  reservation_id?: string;
+  source?: 'online' | 'phone' | 'walk_in';
+  status?: ReservationStatus;
+  table_id?: string;
+}
+
+// Hostess panel realtime: reads /booking/events (SSE) with fetch, so the
+// bearer token and X-Branch-Id go along — EventSource can't send headers.
+// Reconnects by itself; onConnected(false) tells the caller to poll instead.
+export function subscribeBookingEvents(
+  onEvent: (e: BookingChangeEvent) => void,
+  onConnected: (connected: boolean) => void,
+): () => void {
+  let stopped = false;
+  let ctrl: AbortController | null = null;
+  let retry: ReturnType<typeof setTimeout> | null = null;
+
+  const run = async () => {
+    ctrl = new AbortController();
+    try {
+      const token = getTenantOwnerToken();
+      const r = await apiFetch('/booking/events', {
+        signal: ctrl.signal,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
+      onConnected(true);
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let sep: number;
+        while ((sep = buf.indexOf('\n\n')) >= 0) {
+          const chunk = buf.slice(0, sep);
+          buf = buf.slice(sep + 2);
+          const data = chunk.split('\n').filter(l => l.startsWith('data:')).map(l => l.slice(5).trim()).join('\n');
+          if (!data) continue;
+          try { onEvent(JSON.parse(data)); } catch { /* malformed — ignore */ }
+        }
+      }
+    } catch { /* network error / aborted — fall through to reconnect */ }
+    if (stopped) return;
+    onConnected(false);
+    retry = setTimeout(run, 5000);
+  };
+  run();
+
+  return () => {
+    stopped = true;
+    if (retry) clearTimeout(retry);
+    ctrl?.abort();
+  };
+}
 
 export type BookingWeekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 

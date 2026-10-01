@@ -154,6 +154,75 @@ export function BookingSettingsPanel({ lang, onShowToast }: { lang: Language; on
         {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
         {tr(lang, 'Сохранить', 'Save', 'Saqlash')}
       </button>
+
+      <HostessLoginCard lang={lang} onShowToast={onShowToast} subdomain={subdomain} />
+    </div>
+  );
+}
+
+// Separate login for the hostess of this branch — sees only Booking. Saved on
+// its own (not with the settings above): a password is never read back.
+function HostessLoginCard({ lang, onShowToast, subdomain }: { lang: Language; onShowToast: Toast; subdomain: string }) {
+  const [current, setCurrent] = useState<string | null | undefined>(undefined);
+  const [login, setLogin] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    bookingApi.hostessLogin.get()
+      .then(r => { setCurrent(r.hostess_login); setLogin(r.hostess_login ?? ''); })
+      .catch(() => setCurrent(null));
+  }, []);
+
+  const save = async (remove = false) => {
+    setBusy(true);
+    try {
+      const r = await bookingApi.hostessLogin.set(remove ? '' : login.trim(), remove ? undefined : password);
+      setCurrent(r.hostess_login);
+      setLogin(r.hostess_login ?? '');
+      setPassword('');
+      onShowToast(remove
+        ? tr(lang, 'Доступ хостес отключён', 'Hostess access removed', "Xostes kirishi o'chirildi")
+        : tr(lang, 'Логин хостес сохранён', 'Hostess login saved', 'Xostes logini saqlandi'), 'success');
+    } catch (e) {
+      onShowToast((e as Error).message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (current === undefined) return null;
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+      <div>
+        <p className="text-[14px] font-semibold text-text">{tr(lang, 'Вход для хостес', 'Hostess login', 'Xostes uchun kirish')}</p>
+        <p className="text-[12px] text-muted">{tr(lang,
+          `Хостес входит на ${subdomain}.trace-os.uz (или в приложении) и видит только бронирование — без выручки и аналитики.`,
+          `The hostess signs in at ${subdomain}.trace-os.uz (or in the app) and sees only bookings — no revenue or analytics.`,
+          `Xostes ${subdomain}.trace-os.uz (yoki ilova) orqali kiradi va faqat bronlarni ko'radi — tushum va tahlilsiz.`)}</p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <input value={login} onChange={e => setLogin(e.target.value)} autoComplete="off" maxLength={100}
+          placeholder={tr(lang, 'Логин', 'Login', 'Login')} className={inputCls} />
+        <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password"
+          placeholder={current ? tr(lang, 'Новый пароль (от 6 символов)', 'New password (6+ chars)', 'Yangi parol (6+ belgi)') : tr(lang, 'Пароль (от 6 символов)', 'Password (6+ chars)', 'Parol (6+ belgi)')}
+          className={inputCls} />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button onClick={() => save()} disabled={busy || !login.trim() || password.length < 6}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-white text-[13px] font-semibold disabled:opacity-40">
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+          {current ? tr(lang, 'Сменить логин/пароль', 'Change login/password', "Login/parolni o'zgartirish") : tr(lang, 'Создать вход', 'Create login', 'Kirish yaratish')}
+        </button>
+        {current && (
+          <button onClick={() => { if (window.confirm(tr(lang, 'Отключить вход хостес?', 'Remove hostess access?', "Xostes kirishini o'chirish?"))) save(true); }} disabled={busy}
+            className="px-4 py-2 rounded-xl border border-border text-[13px] text-red-500 font-semibold">
+            {tr(lang, 'Отключить', 'Remove', "O'chirish")}
+          </button>
+        )}
+      </div>
+      {current && <p className="text-[12px] text-muted">{tr(lang, `Сейчас: «${current}». После смены пароля хостес нужно войти заново.`, `Current: "${current}". After a password change the hostess must sign in again.`, `Hozir: «${current}». Parol o'zgargach xostes qayta kirishi kerak.`)}</p>}
     </div>
   );
 }

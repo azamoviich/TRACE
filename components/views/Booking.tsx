@@ -3,14 +3,15 @@ import { Language } from '../../types';
 import { isDemoTenant, getTenantRole } from '../../services/traceApi';
 import { HallLayoutEditor } from '../booking/HallLayoutEditor';
 import { BookingSettingsPanel } from '../booking/BookingSettingsPanel';
+import { HostessPanel } from '../booking/HostessPanel';
 
 function tr(lang: Language, ru: string, en: string, uz: string) {
   return lang === 'ru' ? ru : lang === 'uz' ? uz : en;
 }
 
-// "Бронирование" section: floor-plan editor + booking settings. The hostess
-// live map and timeline join these tabs in Phase 4.
-type Tab = 'layout' | 'settings';
+// "Бронирование" section: the hostess panel (live map, timeline, guests),
+// the floor-plan editor and booking settings.
+type Tab = 'live' | 'layout' | 'settings';
 
 interface Props {
   lang: Language;
@@ -18,7 +19,7 @@ interface Props {
 }
 
 export function Booking({ lang, onShowToast }: Props) {
-  const [tab, setTab] = useState<Tab>('layout');
+  const [tab, setTab] = useState<Tab>('live');
   const isHostess = getTenantRole() === 'hostess';
 
   if (isDemoTenant()) {
@@ -30,14 +31,17 @@ export function Booking({ lang, onShowToast }: Props) {
   }
 
   const tabs: { id: Tab; label: string }[] = [
-    { id: 'layout', label: tr(lang, 'Схема зала', 'Floor plan', 'Zal sxemasi') },
-    // Settings are owner/manager-only (the API refuses hostess writes anyway).
-    ...(isHostess ? [] : [{ id: 'settings' as Tab, label: tr(lang, 'Настройки', 'Settings', 'Sozlamalar') }]),
+    { id: 'live', label: tr(lang, 'Хостес', 'Hostess', 'Xostes') },
+    // Floor editor and settings are owner/manager-only (the API refuses hostess writes anyway).
+    ...(isHostess ? [] : [
+      { id: 'layout' as Tab, label: tr(lang, 'Схема зала', 'Floor plan', 'Zal sxemasi') },
+      { id: 'settings' as Tab, label: tr(lang, 'Настройки', 'Settings', 'Sozlamalar') },
+    ]),
   ];
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-1.5 overflow-x-auto pb-1">
+      {tabs.length > 1 && <div className="flex gap-1.5 overflow-x-auto pb-1">
         {tabs.map(t => (
           <button
             key={t.id}
@@ -47,9 +51,10 @@ export function Booking({ lang, onShowToast }: Props) {
             {t.label}
           </button>
         ))}
-      </div>
+      </div>}
 
-      {tab === 'layout' && <HallLayoutEditor lang={lang} onShowToast={onShowToast} readOnly={isHostess} />}
+      {tab === 'live' && <HostessPanel lang={lang} onShowToast={onShowToast} />}
+      {tab === 'layout' && !isHostess && <HallLayoutEditor lang={lang} onShowToast={onShowToast} />}
       {tab === 'settings' && !isHostess && <BookingSettingsPanel lang={lang} onShowToast={onShowToast} />}
     </div>
   );

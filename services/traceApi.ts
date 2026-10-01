@@ -3513,6 +3513,8 @@ export interface GuestReservation {
   timezone: string;
   can_cancel: boolean;
   cancel_token?: string;
+  // t.me deep link to the guest booking bot; null when the bot is off.
+  telegram_link?: string | null;
 }
 
 async function publicFetch<T>(path: string, init: RequestInit = {}): Promise<T> {

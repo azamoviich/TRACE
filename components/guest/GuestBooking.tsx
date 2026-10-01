@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Minus, Plus, Users, Clock, MapPin, ChevronLeft, Check, Copy, Loader2, X, CalendarDays, Radio } from 'lucide-react';
+import { Minus, Plus, Users, Clock, MapPin, ChevronLeft, Check, Copy, Loader2, X, CalendarDays, Radio, Send } from 'lucide-react';
 import {
   publicBookingApi, parseBookingLocation, BookingApiError, PublicMap, PublicDaySlots, PublicResolve,
   GuestReservation, PublicTable,
@@ -600,6 +600,22 @@ function ReservationView({ token, lang, t, go }: { token: string; lang: GuestLan
         <p className="flex items-center gap-2 text-[14px]"><MapPin size={15} className="text-muted" />{t.table} {r.table_name} · {r.hall_name}</p>
         <p className="text-[13px] text-muted pt-1">{statusText[r.status]}</p>
       </div>
+
+      {r.telegram_link && (r.status === 'pending' || r.status === 'confirmed') && (
+        <div className="rounded-2xl border border-[#229ED9]/40 bg-[#229ED9]/10 p-4 space-y-3">
+          <div className="flex gap-3">
+            <Send size={20} className="text-[#229ED9] shrink-0 mt-0.5" />
+            <div>
+              <p className="text-[14px] font-semibold">{t.tg_title}</p>
+              <p className="text-[12px] text-muted">{t.tg_hint}</p>
+            </div>
+          </div>
+          <a href={r.telegram_link} target="_blank" rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-[#229ED9] text-white text-[14px] font-semibold">
+            <Send size={16} />{t.tg_button}
+          </a>
+        </div>
+      )}
 
       {r.status !== 'cancelled' && (
         <div className="rounded-2xl border border-border bg-card p-4 space-y-2">

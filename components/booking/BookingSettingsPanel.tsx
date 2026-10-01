@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Save, Copy, Check, ExternalLink } from 'lucide-react';
 import { Language } from '../../types';
-import { bookingApi, BookingSettings, BookingWeekday, getSubdomain, BranchSummary, getActiveBranchId, traceApi } from '../../services/traceApi';
+import { bookingApi, BookingSettings, BookingWeekday, getSubdomain } from '../../services/traceApi';
 
 function tr(lang: Language, ru: string, en: string, uz: string) {
   return lang === 'ru' ? ru : lang === 'uz' ? uz : en;
@@ -22,24 +22,22 @@ export function BookingSettingsPanel({ lang, onShowToast }: { lang: Language; on
   const [s, setS] = useState<BookingSettings | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [branch, setBranch] = useState<BranchSummary | null>(null);
 
   useEffect(() => {
     bookingApi.settings.get().then(setS).catch(e => onShowToast((e as Error).message, 'error'));
-    // The branch switcher only re-points API calls; the link must name the branch actually being edited.
-    traceApi.org.branches().then(list => {
-      const id = getActiveBranchId();
-      setBranch(list.find(b => b.id === id) ?? list.find(b => b.subdomain === getSubdomain()) ?? null);
-    }).catch(() => {});
   }, []);
 
   if (!s) return <div className="flex justify-center py-16"><Loader2 className="animate-spin text-muted" size={22} /></div>;
 
   const set = (patch: Partial<BookingSettings>) => { setS({ ...s, ...patch }); setDirty(true); };
   const hoursOn = Object.keys(s.working_hours ?? {}).length > 0;
-  const subdomain = branch?.subdomain ?? getSubdomain();
-  const link = `https://book.trace-os.uz/${subdomain}`;
+  // book-{slug}.trace-os.uz — covered by the *.trace-os.uz certificate, nothing to set up.
+  // The server names the branch actually being edited (the branch switcher only re-points API calls).
+  const bookUrl = (slug: string) => `https://book-${slug}.trace-os.uz`;
+  const branch = s.link?.branch ?? getSubdomain();
+  const mainLink = bookUrl(branch);
+  // In a chain the main link may show the branch picker — this one opens this branch directly.
+  const directLink = s.link?.in_chain ? `${mainLink}/${branch}` : null;
 
   const setDay = (day: BookingWeekday, v: { open: string; close: string } | null) =>
     set({ working_hours: { ...s.working_hours, [day]: v } });
@@ -47,7 +45,7 @@ export function BookingSettingsPanel({ lang, onShowToast }: { lang: Language; on
   const save = async () => {
     setSaving(true);
     try {
-      const { tenant_id: _t, pos_type: _p, ...patch } = s;
+      const { tenant_id: _t, pos_type: _p, link: _l, ...patch } = s;
       setS(await bookingApi.settings.save(patch));
       setDirty(false);
       onShowToast(tr(lang, 'Настройки сохранены', 'Settings saved', 'Sozlamalar saqlandi'), 'success');
@@ -82,12 +80,12 @@ export function BookingSettingsPanel({ lang, onShowToast }: { lang: Language; on
           </span>
           <input type="checkbox" checked={s.enabled} onChange={e => set({ enabled: e.target.checked })} className="w-5 h-5 accent-primary" />
         </label>
-        <div className="flex gap-2">
-          <input readOnly value={link} onFocus={e => e.currentTarget.select()} className={`${inputCls} flex-1 min-w-0`} />
-          <button onClick={async () => { try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* ignore */ } }}
-            className="px-3 rounded-lg border border-border text-[12px] flex items-center gap-1 text-text">{copied ? <Check size={13} /> : <Copy size={13} />}</button>
-          <a href={link} target="_blank" rel="noopener noreferrer" className="px-3 rounded-lg border border-border text-[12px] flex items-center text-text"><ExternalLink size={13} /></a>
-        </div>
+        <LinkRow link={mainLink} label={directLink
+          ? tr(lang, 'Ссылка для гостей — если бронь включена в нескольких филиалах, гость сам выберет филиал', 'Link for guests — if several branches take bookings, the guest picks one', 'Mehmonlar uchun havola — bir nechta filialda bron yoqilgan bo‘lsa, mehmon filialni o‘zi tanlaydi')
+          : tr(lang, 'Ссылка для гостей', 'Link for guests', 'Mehmonlar uchun havola')} />
+        {directLink && (
+          <LinkRow link={directLink} label={tr(lang, 'Прямая ссылка на этот филиал', 'Direct link to this branch', 'Shu filialga to‘g‘ridan-to‘g‘ri havola')} />
+        )}
         {!s.enabled && <p className="text-[12px] text-amber-500">{tr(lang, 'Пока выключено — по ссылке гости увидят «бронирование выключено».', 'Off for now — guests opening the link will see "booking is off".', "Hozircha o'chirilgan — havolani ochgan mehmonlar «band qilish o'chirilgan» ni ko'radi.")}</p>}
       </div>
 
@@ -159,7 +157,23 @@ export function BookingSettingsPanel({ lang, onShowToast }: { lang: Language; on
         {tr(lang, 'Сохранить', 'Save', 'Saqlash')}
       </button>
 
-      <HostessLoginCard lang={lang} onShowToast={onShowToast} subdomain={subdomain} />
+      <HostessLoginCard lang={lang} onShowToast={onShowToast} subdomain={branch} />
+    </div>
+  );
+}
+
+// One guest link with copy / open buttons.
+function LinkRow({ label, link }: { label: string; link: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div>
+      <p className="text-[12px] text-muted mb-1">{label}</p>
+      <div className="flex gap-2">
+        <input readOnly value={link} onFocus={e => e.currentTarget.select()} className={`${inputCls} flex-1 min-w-0`} />
+        <button onClick={async () => { try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* ignore */ } }}
+          className="px-3 rounded-lg border border-border text-[12px] flex items-center gap-1 text-text">{copied ? <Check size={13} /> : <Copy size={13} />}</button>
+        <a href={link} target="_blank" rel="noopener noreferrer" className="px-3 rounded-lg border border-border text-[12px] flex items-center text-text"><ExternalLink size={13} /></a>
+      </div>
     </div>
   );
 }

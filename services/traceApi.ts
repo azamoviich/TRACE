@@ -3458,6 +3458,8 @@ export interface BookingSettings {
   max_active_per_phone: number;
   pos_sync: boolean;                      // link with the POS (iiko for now)
   pos_type?: 'iiko' | 'poster';           // read-only, from the tenant
+  // read-only: guest address book-{branch}.trace-os.uz; in_chain = has sibling branches (that address may show a branch picker)
+  link?: { branch: string; in_chain: boolean };
 }
 
 // ── Public guest booking (book.trace-os.uz) ────────────────────────────────
@@ -3550,7 +3552,8 @@ async function publicFetch<T>(path: string, init: RequestInit = {}): Promise<T> 
 const enc = encodeURIComponent;
 
 export const publicBookingApi = {
-  resolve: (slug?: string) => publicFetch<PublicResolve>(`/resolve${slug ? `?slug=${enc(slug)}` : ''}`),
+  // branch: the guest already picked this branch — don't show the chain's picker again.
+  resolve: (slug?: string, branch = false) => publicFetch<PublicResolve>(`/resolve?${new URLSearchParams({ ...(slug ? { slug } : {}), ...(branch ? { branch: '1' } : {}) })}`),
   map: (slug: string, at?: string, party?: number) => {
     const qs = new URLSearchParams();
     if (at) qs.set('at', at);
@@ -3569,20 +3572,26 @@ export const publicBookingApi = {
 // The guest booking page lives on book.trace-os.uz/{slug} (works with the
 // wildcard certificate) or book.{slug}.trace-os.uz (needs a Railway custom
 // domain per restaurant). *.localtest.me mirrors both for local dev.
+// book-{slug}.trace-os.uz is the main address — one label, so the existing
+// *.trace-os.uz certificate covers it with no per-restaurant setup.
 export function isBookingHost(): boolean {
   const parts = window.location.hostname.split('.');
-  return parts[0] === 'book' && parts.length >= 3;
+  return parts.length >= 3 && (parts[0] === 'book' || /^book-[a-z0-9-]+$/i.test(parts[0]));
 }
 
 // What the guest page should show: a restaurant/chain slug, or one of the
 // guest's own reservations (/reservation/{token}). A slug in the path wins
 // over the one in the host, so a chain page can link to its branches.
-export function parseBookingLocation(): { slug: string | null; reservationToken: string | null } {
+// picked: the slug is a branch from the path (chosen in the picker, or a direct
+// link) rather than the address itself — the address may show a chain's picker.
+export function parseBookingLocation(): { slug: string | null; reservationToken: string | null; picked: boolean } {
   const segs = window.location.pathname.split('/').filter(Boolean);
-  if (segs[0] === 'reservation' && segs[1]) return { slug: null, reservationToken: segs[1] };
-  if (segs[0] && /^[a-z0-9-]+$/i.test(segs[0])) return { slug: segs[0].toLowerCase(), reservationToken: null };
+  if (segs[0] === 'reservation' && segs[1]) return { slug: null, reservationToken: segs[1], picked: false };
+  if (segs[0] && /^[a-z0-9-]+$/i.test(segs[0])) return { slug: segs[0].toLowerCase(), reservationToken: null, picked: true };
   const parts = window.location.hostname.split('.');
+  // book-{slug}.trace-os.uz
+  if (/^book-[a-z0-9-]+$/i.test(parts[0])) return { slug: parts[0].slice(5).toLowerCase(), reservationToken: null, picked: false };
   // book.{slug}.trace-os.uz — 4+ labels; plain book.trace-os.uz has no slug.
-  if (parts.length >= 4) return { slug: parts[1].toLowerCase(), reservationToken: null };
-  return { slug: null, reservationToken: null };
+  if (parts.length >= 4) return { slug: parts[1].toLowerCase(), reservationToken: null, picked: false };
+  return { slug: null, reservationToken: null, picked: false };
 }

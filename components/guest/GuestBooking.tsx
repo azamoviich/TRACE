@@ -86,7 +86,7 @@ export function GuestBooking() {
         {loc.reservationToken
           ? <ReservationView key={loc.reservationToken} token={loc.reservationToken} lang={lang} t={t} go={go} />
           : loc.slug
-            ? <RestaurantPage key={loc.slug} slug={loc.slug} lang={lang} t={t} go={go} />
+            ? <RestaurantPage key={`${loc.slug}:${loc.picked}`} slug={loc.slug} picked={loc.picked} lang={lang} t={t} go={go} />
             : <Message text={t.not_found} />}
 
         <p className="text-center text-[11px] text-muted mt-10">{t.powered}</p>
@@ -105,11 +105,11 @@ function Spinner() {
 
 // ── restaurant / chain ───────────────────────────────────────────────────────
 
-function RestaurantPage({ slug, lang, t, go }: { slug: string; lang: GuestLang; t: T; go: (p: string) => void }) {
+function RestaurantPage({ slug, picked, lang, t, go }: { slug: string; picked: boolean; lang: GuestLang; t: T; go: (p: string) => void }) {
   const [target, setTarget] = useState<PublicResolve | null | 'error'>(null);
   useEffect(() => {
-    publicBookingApi.resolve(slug).then(setTarget).catch(() => setTarget('error'));
-  }, [slug]);
+    publicBookingApi.resolve(slug, picked).then(setTarget).catch(() => setTarget('error'));
+  }, [slug, picked]);
 
   if (target === null) return <Spinner />;
   if (target === 'error') return <Message text={t.not_found} />;

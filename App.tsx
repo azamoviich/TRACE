@@ -16,9 +16,10 @@ import { Admin } from './components/views/Admin';
 import { Compare } from './components/views/Compare';
 import { Checklists } from './components/views/Checklists';
 import { Booking } from './components/views/Booking';
+import { GuestBooking } from './components/guest/GuestBooking';
 import { Globe, Sun, Moon } from 'lucide-react';
 import { TRANSLATIONS, nextLang, tr } from './constants';
-import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, desktopCrossTenantLogin, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos, createQrSession, pollQrSession, QrSession, isTauriApp, consumeBootstrapToken, getTenantRole } from './services/traceApi';
+import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, desktopCrossTenantLogin, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos, createQrSession, pollQrSession, QrSession, isTauriApp, consumeBootstrapToken, getTenantRole, isBookingHost } from './services/traceApi';
 import { ManagerPortal } from './components/ManagerPortal';
 import { ChecklistManagerPortal } from './components/ChecklistManagerPortal';
 import { EmployeeChecklistPortal } from './components/EmployeeChecklistPortal';
@@ -322,6 +323,8 @@ const ThemePicker: React.FC<{ lang: Language; onChoose: (t: 'light' | 'dark') =>
 };
 
 export default function App() {
+  // Public guest booking page (book.trace-os.uz/{slug}, book.{slug}.trace-os.uz).
+  if (isBookingHost()) return <GuestBooking />;
   if (isAdminSubdomain()) return <Admin />;
   if (isManagerPortal()) return <ManagerPortal />;
   if (isChecklistManagerHost()) return <ChecklistManagerPortal />;

@@ -3272,4 +3272,150 @@ export const bookingApi = {
       }),
   },
   importHallPlans: () => bookingFetch<{ ok: true; halls: number; tables: number }>('/import-hall-plans', { method: 'POST' }),
+  settings: {
+    get: () => bookingFetch<BookingSettings>('/settings'),
+    save: (patch: Partial<Omit<BookingSettings, 'tenant_id'>>) =>
+      bookingFetch<BookingSettings>('/settings', { method: 'PUT', body: JSON.stringify(patch) }),
+  },
 };
+
+export type BookingWeekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+
+export interface BookingSettings {
+  tenant_id: string;
+  enabled: boolean;
+  timezone: string;
+  working_hours: Partial<Record<BookingWeekday, { open: string; close: string } | null>>;
+  default_duration_min: number;
+  buffer_min: number;
+  slot_step_min: 15 | 30;
+  min_lead_min: number;
+  max_days_ahead: number;
+  auto_confirm: boolean;
+  max_active_per_phone: number;
+}
+
+// ── Public guest booking (book.trace-os.uz) ────────────────────────────────
+// No login. The page is served from the same backend, so BASE works as-is.
+
+export type PublicTableState = 'free' | 'soon' | 'booked' | 'occupied' | 'unavailable';
+
+export interface PublicTable {
+  id: string;
+  hall_id: string;
+  name: string;
+  seats: number;
+  min_guests: number;
+  shape: BookingTableShape;
+  x: number; y: number; w: number; h: number;
+  rotation: number;
+  photos: string[];
+  tags: BookingTableTag[];
+  is_bookable: boolean;
+}
+
+export interface PublicTableStatus {
+  table_id: string;
+  state: PublicTableState;
+  free_until: string | null;
+  next_start: string | null;
+  until: string | null;
+  unavailable_reason?: 'not_bookable' | 'blocked';
+}
+
+export interface PublicMap {
+  restaurant: { subdomain: string; name: string };
+  at: string;
+  settings: {
+    timezone: string;
+    working_hours: BookingSettings['working_hours'];
+    default_duration_min: number;
+    slot_step_min: number;
+    min_lead_min: number;
+    max_days_ahead: number;
+    phone_verification: boolean;
+  };
+  halls: Array<{ id: string; name: string; sort_order: number; background_image: string | null; width: number; height: number; tables: PublicTable[] }>;
+  statuses: PublicTableStatus[];
+  slot: { start_at: string; end_at: string; party: number; table_ids: string[] } | null;
+}
+
+export interface PublicDaySlots {
+  date: string;
+  closed: boolean;
+  open: string | null;
+  close: string | null;
+  duration_min: number;
+  tables_fit: number;
+  slots: Array<{ start_at: string; table_ids: string[] }>;
+}
+
+export type PublicResolve =
+  | { kind: 'tenant'; tenant: { subdomain: string; name: string } }
+  | { kind: 'chain'; org: { name: string; slug: string }; branches: Array<{ subdomain: string; name: string }> };
+
+export interface GuestReservation {
+  guest_name: string;
+  party_size: number;
+  start_at: string;
+  end_at: string;
+  status: 'pending' | 'confirmed' | 'seated' | 'completed' | 'cancelled' | 'no_show';
+  comment: string;
+  table_name: string;
+  hall_name: string;
+  restaurant_name: string;
+  subdomain: string;
+  timezone: string;
+  can_cancel: boolean;
+  cancel_token?: string;
+}
+
+async function publicFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const r = await fetch(`${BASE}/public/booking${path}`, {
+    ...init,
+    headers: { ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...(init.headers ?? {}) },
+  });
+  const body = await r.json().catch(() => null);
+  if (!r.ok) throw new BookingApiError(r.status, body?.code, body?.error ?? `HTTP ${r.status}`, body);
+  return body as T;
+}
+
+const enc = encodeURIComponent;
+
+export const publicBookingApi = {
+  resolve: (slug?: string) => publicFetch<PublicResolve>(`/resolve${slug ? `?slug=${enc(slug)}` : ''}`),
+  map: (slug: string, at?: string, party?: number) => {
+    const qs = new URLSearchParams();
+    if (at) qs.set('at', at);
+    if (party) qs.set('party', String(party));
+    return publicFetch<PublicMap>(`/${enc(slug)}/map${qs.toString() ? `?${qs}` : ''}`);
+  },
+  slots: (slug: string, date: string, party: number) =>
+    publicFetch<PublicDaySlots>(`/${enc(slug)}/slots?date=${date}&party=${party}`),
+  create: (slug: string, data: { table_id: string; start_at: string; party_size: number; guest_name: string; guest_phone: string; comment?: string }) =>
+    publicFetch<GuestReservation>(`/${enc(slug)}/reservations`, { method: 'POST', body: JSON.stringify(data) }),
+  reservation: (token: string) => publicFetch<GuestReservation>(`/reservation/${enc(token)}`),
+  cancel: (token: string) => publicFetch<GuestReservation>(`/reservation/${enc(token)}/cancel`, { method: 'POST' }),
+  eventsUrl: (slug: string) => `${BASE}/public/booking/${enc(slug)}/events`,
+};
+
+// The guest booking page lives on book.trace-os.uz/{slug} (works with the
+// wildcard certificate) or book.{slug}.trace-os.uz (needs a Railway custom
+// domain per restaurant). *.localtest.me mirrors both for local dev.
+export function isBookingHost(): boolean {
+  const parts = window.location.hostname.split('.');
+  return parts[0] === 'book' && parts.length >= 3;
+}
+
+// What the guest page should show: a restaurant/chain slug, or one of the
+// guest's own reservations (/reservation/{token}). A slug in the path wins
+// over the one in the host, so a chain page can link to its branches.
+export function parseBookingLocation(): { slug: string | null; reservationToken: string | null } {
+  const segs = window.location.pathname.split('/').filter(Boolean);
+  if (segs[0] === 'reservation' && segs[1]) return { slug: null, reservationToken: segs[1] };
+  if (segs[0] && /^[a-z0-9-]+$/i.test(segs[0])) return { slug: segs[0].toLowerCase(), reservationToken: null };
+  const parts = window.location.hostname.split('.');
+  // book.{slug}.trace-os.uz — 4+ labels; plain book.trace-os.uz has no slug.
+  if (parts.length >= 4) return { slug: parts[1].toLowerCase(), reservationToken: null };
+  return { slug: null, reservationToken: null };
+}

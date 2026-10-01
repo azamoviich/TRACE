@@ -3271,7 +3271,11 @@ export const bookingApi = {
         method: 'PUT', body: JSON.stringify({ tables, deleted_ids: deletedIds }),
       }),
   },
-  importHallPlans: () => bookingFetch<{ ok: true; halls: number; tables: number }>('/import-hall-plans', { method: 'POST' }),
+  // Old analytics floor plans: list (with a skip-suggestion for takeaway/delivery halls), then import the chosen ones.
+  importHallPlans: {
+    list: () => bookingFetch<Array<{ id: string; name: string; tables: number; virtual: boolean; imported: boolean }>>('/import-hall-plans'),
+    run: (plans: string[]) => bookingFetch<{ ok: true; halls: number; tables: number; linked: number; skipped: string[] }>('/import-hall-plans', { method: 'POST', body: JSON.stringify({ plans }) }),
+  },
   settings: {
     get: () => bookingFetch<BookingSettings>('/settings'),
     save: (patch: Partial<Omit<BookingSettings, 'tenant_id'>>) =>
@@ -3307,6 +3311,11 @@ export const bookingApi = {
   guests: {
     search: (q: string) => bookingFetch<GuestSummary[]>(`/guests?q=${encodeURIComponent(q)}`),
     history: (phone: string) => bookingFetch<StaffReservation[]>(`/guests/history?phone=${encodeURIComponent(phone)}`),
+  },
+  // The POS dining tables of this branch, for linking (owner/manager; iiko for now).
+  posTables: {
+    list: () => bookingFetch<PosTable[]>('/pos-tables'),
+    autoMap: () => bookingFetch<{ linked: number; unmatched: string[]; already: number }>('/pos-tables/auto-map', { method: 'POST' }),
   },
   hostessLogin: {
     get: () => bookingFetch<{ hostess_login: string | null }>('/hostess-login'),
@@ -3344,6 +3353,15 @@ export interface StaffTableStatus {
   unavailable_reason?: 'not_bookable' | 'blocked';
   reservation?: Pick<StaffReservation, 'id' | 'guest_name' | 'guest_phone' | 'party_size' | 'start_at' | 'end_at' | 'status' | 'source' | 'comment'>;
   block_reason?: string;
+  // Occupied because the POS has an open check on the table (no reservation).
+  pos_since?: string;
+}
+
+export interface PosTable {
+  id: string;        // POS table id (iiko table GUID) → booking_tables.pos_table_id
+  number: string;
+  title: string;
+  hall: string;
 }
 
 export interface TableBlock {
@@ -3438,6 +3456,8 @@ export interface BookingSettings {
   max_days_ahead: number;
   auto_confirm: boolean;
   max_active_per_phone: number;
+  pos_sync: boolean;                      // link with the POS (iiko for now)
+  pos_type?: 'iiko' | 'poster';           // read-only, from the tenant
 }
 
 // ── Public guest booking (book.trace-os.uz) ────────────────────────────────

@@ -47,7 +47,7 @@ export function BookingSettingsPanel({ lang, onShowToast }: { lang: Language; on
   const save = async () => {
     setSaving(true);
     try {
-      const { tenant_id: _t, ...patch } = s;
+      const { tenant_id: _t, pos_type: _p, ...patch } = s;
       setS(await bookingApi.settings.save(patch));
       setDirty(false);
       onShowToast(tr(lang, 'Настройки сохранены', 'Settings saved', 'Sozlamalar saqlandi'), 'success');
@@ -149,6 +149,10 @@ export function BookingSettingsPanel({ lang, onShowToast }: { lang: Language; on
         </label>
       </div>
 
+      {s.pos_type === 'iiko' && (
+        <PosSyncCard lang={lang} onShowToast={onShowToast} enabled={s.pos_sync} onToggle={v => set({ pos_sync: v })} />
+      )}
+
       <button onClick={save} disabled={!dirty || saving}
         className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-primary text-white text-[13px] font-semibold disabled:opacity-40">
         {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
@@ -156,6 +160,61 @@ export function BookingSettingsPanel({ lang, onShowToast }: { lang: Language; on
       </button>
 
       <HostessLoginCard lang={lang} onShowToast={onShowToast} subdomain={subdomain} />
+    </div>
+  );
+}
+
+// Link with the POS (iiko, via the TRACE plugin): an open check on a linked table marks it occupied,
+// seats the reservation due on it and frees it when the check closes. The
+// switch saves with the settings; linking tables by number happens at once.
+function PosSyncCard({ lang, onShowToast, enabled, onToggle }: {
+  lang: Language; onShowToast: Toast; enabled: boolean; onToggle: (v: boolean) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ linked: number; unmatched: string[]; already: number } | null>(null);
+
+  const autoMap = async () => {
+    setBusy(true);
+    try {
+      setResult(await bookingApi.posTables.autoMap());
+    } catch (e) {
+      onShowToast((e as Error).message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+      <label className="flex items-center justify-between gap-3 cursor-pointer">
+        <span>
+          <span className="block text-[14px] font-semibold text-text">{tr(lang, 'Связь с кассой iiko', 'Link with iiko POS', 'iiko kassasi bilan bog‘lash')}</span>
+          <span className="block text-[12px] text-muted">{tr(lang,
+            'Официант открыл чек на стол — стол «занят», бронь на это время отмечается «гости за столом». Чек закрыт — стол освобождается. Новые брони не создаются.',
+            'A waiter opens a check on a table — it shows occupied and a booking due then is marked seated. Check closed — the table is freed. No bookings are created.',
+            "Ofitsiant stolga chek ochdi — stol «band», shu vaqtdagi bron «mehmonlar stolda» bo‘ladi. Chek yopildi — stol bo‘shaydi. Yangi bronlar yaratilmaydi.")}</span>
+        </span>
+        <input type="checkbox" checked={enabled} onChange={e => onToggle(e.target.checked)} className="w-5 h-5 accent-primary" />
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={autoMap} disabled={busy}
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-border text-[13px] font-semibold text-text disabled:opacity-40">
+          {busy && <Loader2 size={14} className="animate-spin" />}
+          {tr(lang, 'Связать столы по названиям', 'Link tables by name', 'Stollarni nomi bo‘yicha bog‘lash')}
+        </button>
+        <span className="text-[12px] text-muted">{tr(lang,
+          'Отдельный стол можно связать вручную в «Схеме зала».',
+          'A single table can be linked by hand in "Floor plan".',
+          'Alohida stolni «Zal sxemasi»da qo‘lda bog‘lash mumkin.')}</span>
+      </div>
+      {result && (
+        <p className="text-[12px] text-text">
+          {tr(lang, `Связано сейчас: ${result.linked}. Уже было связано: ${result.already}.`, `Linked now: ${result.linked}. Already linked: ${result.already}.`, `Hozir bog‘landi: ${result.linked}. Avval bog‘langan: ${result.already}.`)}
+          {result.unmatched.length > 0 && (
+            <span className="text-amber-500"> {tr(lang, 'Не нашлись в iiko: ', 'Not found in iiko: ', 'iiko’da topilmadi: ')}{result.unmatched.join(', ')}</span>
+          )}
+        </p>
+      )}
     </div>
   );
 }

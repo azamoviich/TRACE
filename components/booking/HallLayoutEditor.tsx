@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { Language } from '../../types';
 import {
-  bookingApi, BookingApiError, BookingHall, BookingTable, BookingTableDraft, BookingTableTag, BOOKING_TABLE_TAGS,
+  bookingApi, BookingApiError, BookingHall, BookingTable, BookingTableDraft, BookingTableTag, BOOKING_TABLE_TAGS, PosTable,
   uploadPhoto, getSubdomain,
 } from '../../services/traceApi';
 import { FloorMap, FloorTable } from './FloorMap';
@@ -76,6 +76,13 @@ export function HallLayoutEditor({ lang, onShowToast, readOnly = false }: Props)
   const [snapOn, setSnapOn] = useState(true);
   const [zoom, setZoom] = useState(1);
   const [hallSettingsOpen, setHallSettingsOpen] = useState(false);
+  // The POS's dining tables for linking (iiko); stays null when the API refuses (other POS) or has no hall list yet.
+  const [posTables, setPosTables] = useState<PosTable[] | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  useEffect(() => {
+    if (readOnly) return;
+    bookingApi.posTables.list().then(setPosTables).catch(() => setPosTables(null));
+  }, [readOnly]);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<null | {
@@ -370,19 +377,11 @@ export function HallLayoutEditor({ lang, onShowToast, readOnly = false }: Props)
     }
   };
 
-  const importPlans = async () => {
-    try {
-      const r = await bookingApi.importHallPlans();
-      if (r.halls === 0) {
-        onShowToast(tr(lang, 'Старой схемы зала не найдено — создайте зал вручную', 'No existing floor plan found — create a hall manually', 'Eski sxema topilmadi — zalni qo‘lda yarating'), 'info');
-        return;
-      }
-      onShowToast(tr(lang, `Импортировано: залов ${r.halls}, столов ${r.tables}`, `Imported ${r.halls} halls, ${r.tables} tables`, `Import qilindi: ${r.halls} zal, ${r.tables} stol`), 'success');
-      await load();
-    } catch (e) {
-      onShowToast((e as Error).message, 'error');
-    }
-  };
+  const importPlans = () => { if (confirmDiscard()) setImportOpen(true); };
+  const importDialog = importOpen && (
+    <ImportPlansDialog lang={lang} onShowToast={onShowToast} onClose={() => setImportOpen(false)}
+      onDone={() => { setImportOpen(false); load(activeHallId); }} />
+  );
 
   // ── render ────────────────────────────────────────────────────────────────
 
@@ -416,6 +415,7 @@ export function HallLayoutEditor({ lang, onShowToast, readOnly = false }: Props)
             </div>
           </>
         )}
+        {importDialog}
       </div>
     );
   }
@@ -438,7 +438,14 @@ export function HallLayoutEditor({ lang, onShowToast, readOnly = false }: Props)
             <Plus size={14} /> {tr(lang, 'Зал', 'Hall', 'Zal')}
           </button>
         )}
+        {!readOnly && (
+          <button onClick={importPlans} title={tr(lang, 'Импорт залов из схемы iiko', 'Import halls from the iiko plan', 'iiko sxemasidan zallarni import')}
+            className="px-3 py-2 rounded-xl text-[13px] font-semibold bg-card text-muted hover:text-text flex items-center gap-1">
+            <Download size={14} /> {tr(lang, 'Импорт', 'Import', 'Import')}
+          </button>
+        )}
       </div>
+      {importDialog}
 
       {/* Toolbar */}
       {!readOnly && activeHall && (
@@ -489,6 +496,7 @@ export function HallLayoutEditor({ lang, onShowToast, readOnly = false }: Props)
               lang={lang}
               table={selected}
               readOnly={readOnly}
+              posTables={posTables}
               onChange={patch => updateDraft(selected.key, patch)}
               onDelete={deleteSelected}
               onDuplicate={duplicateSelected}
@@ -512,6 +520,77 @@ export function HallLayoutEditor({ lang, onShowToast, readOnly = false }: Props)
 }
 
 // ── pieces ──────────────────────────────────────────────────────────────────
+
+// Pick which of the old analytics floor plans become booking halls. iiko also
+// keeps takeaway / delivery / staff "halls" — those start unchecked.
+function ImportPlansDialog({ lang, onShowToast, onClose, onDone }: {
+  lang: Language; onShowToast: Toast; onClose: () => void; onDone: () => void;
+}) {
+  const [plans, setPlans] = useState<Array<{ id: string; name: string; tables: number; virtual: boolean; imported: boolean }> | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    bookingApi.importHallPlans.list()
+      .then(list => { setPlans(list); setPicked(new Set(list.filter(p => !p.virtual && !p.imported && p.tables > 0).map(p => p.id))); })
+      .catch(e => { onShowToast((e as Error).message, 'error'); onClose(); });
+  }, []);
+
+  const run = async () => {
+    setBusy(true);
+    try {
+      const r = await bookingApi.importHallPlans.run([...picked]);
+      onShowToast(tr(lang,
+        `Импортировано: залов ${r.halls}, столов ${r.tables} (связано с iiko: ${r.linked})`,
+        `Imported ${r.halls} halls, ${r.tables} tables (linked to iiko: ${r.linked})`,
+        `Import qilindi: ${r.halls} zal, ${r.tables} stol (iiko bilan bog‘landi: ${r.linked})`), 'success');
+      onDone();
+    } catch (e) {
+      onShowToast((e as Error).message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggle = (id: string) => setPicked(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4" onPointerDown={onClose}>
+      <div onPointerDown={e => e.stopPropagation()} className="w-full sm:max-w-[460px] max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-border bg-card p-4 space-y-3 text-left">
+        <div className="flex items-center justify-between">
+          <span className="text-[15px] font-semibold text-text">{tr(lang, 'Какие залы перенести в бронирование?', 'Which halls go to booking?', 'Qaysi zallarni bronga o‘tkazamiz?')}</span>
+          <button onClick={onClose} className="p-1 text-muted hover:text-text"><X size={16} /></button>
+        </div>
+        <p className="text-[12px] text-muted">{tr(lang,
+          'Вынос, доставку, агрегаторы и стафф-стол переносить не нужно — гости их не бронируют.',
+          'Takeaway, delivery, aggregators and staff tables are not needed — guests don’t book them.',
+          'Olib ketish, yetkazib berish, agregatorlar va xodimlar stoli kerak emas — mehmonlar ularni band qilmaydi.')}</p>
+        {!plans ? <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin text-muted" /></div>
+          : plans.length === 0 ? <p className="text-[13px] text-muted py-3">{tr(lang, 'Старых схем зала не найдено — создайте зал вручную.', 'No existing floor plans — create a hall manually.', 'Eski sxemalar topilmadi — zalni qo‘lda yarating.')}</p>
+          : (
+            <div className="space-y-1">
+              {plans.map(p => (
+                <label key={p.id} className={`flex items-center gap-3 rounded-xl px-3 py-2 ${p.imported ? 'opacity-50' : 'cursor-pointer hover:bg-background'}`}>
+                  <input type="checkbox" className="w-4 h-4 accent-primary" disabled={p.imported} checked={picked.has(p.id)} onChange={() => toggle(p.id)} />
+                  <span className="flex-1 text-[13px] text-text">{p.name}</span>
+                  <span className="text-[12px] text-muted">
+                    {p.imported ? tr(lang, 'уже есть', 'already added', 'allaqachon bor')
+                      : p.virtual ? tr(lang, 'вынос/доставка', 'takeaway/delivery', 'olib ketish/yetkazish')
+                      : `${p.tables} ${tr(lang, 'стол.', 'tables', 'stol')}`}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+        <button onClick={run} disabled={busy || picked.size === 0}
+          className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-primary text-white text-[13px] font-semibold disabled:opacity-40">
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+          {tr(lang, `Перенести (${picked.size})`, `Import (${picked.size})`, `O‘tkazish (${picked.size})`)}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function ToolButton({ onClick, icon, label, active }: { onClick: () => void; icon: React.ReactNode; label?: string; active?: boolean }) {
   return (
@@ -560,10 +639,11 @@ function NumberField({ label, value, min, max, onChange, disabled }: { label: st
   );
 }
 
-function TablePanel({ lang, table, readOnly, onChange, onDelete, onDuplicate, onClose, onShowToast }: {
+function TablePanel({ lang, table, readOnly, posTables, onChange, onDelete, onDuplicate, onClose, onShowToast }: {
   lang: Language;
   table: Draft;
   readOnly: boolean;
+  posTables: PosTable[] | null;   // iiko tenants; null = no POS table list
   onChange: (patch: Partial<Draft>) => void;
   onDelete: () => void;
   onDuplicate: () => void;
@@ -611,6 +691,27 @@ function TablePanel({ lang, table, readOnly, onChange, onDelete, onDuplicate, on
         <NumberField label={tr(lang, 'Мин. гостей', 'Min guests', 'Min. mehmon')} value={table.min_guests} min={1} max={table.seats} disabled={readOnly}
           onChange={n => onChange({ min_guests: n })} />
       </div>
+
+      {!readOnly && posTables && (
+        <div>
+          <label className={labelCls}>{tr(lang, 'Стол в iiko', 'iiko table', 'iiko’dagi stol')}</label>
+          <select value={table.pos_table_id ?? ''} onChange={e => onChange({ pos_table_id: e.target.value || null })} className={inputCls}>
+            <option value="">{tr(lang, '— не связан —', '— not linked —', '— bog‘lanmagan —')}</option>
+            {[...new Set(posTables.map(p => p.hall))].map(hall => (
+              <optgroup key={hall} label={hall}>
+                {posTables.filter(p => p.hall === hall).map(p => (
+                  <option key={p.id} value={p.id}>
+                    №{p.number}{p.title && p.title !== p.number ? ` · ${p.title}` : ''}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+            {table.pos_table_id && !posTables.some(p => p.id === table.pos_table_id) && (
+              <option value={table.pos_table_id}>{tr(lang, 'нет в iiko', 'missing in iiko', 'iiko’da yo‘q')} (id {table.pos_table_id})</option>
+            )}
+          </select>
+        </div>
+      )}
 
       {!readOnly && (
         <>
@@ -670,7 +771,8 @@ function TablePanel({ lang, table, readOnly, onChange, onDelete, onDuplicate, on
         <input type="checkbox" checked={table.is_bookable} disabled={readOnly} onChange={e => onChange({ is_bookable: e.target.checked })} className="w-4 h-4 accent-primary" />
       </label>
 
-      {!readOnly && (
+      {/* Free-text fallback when the POS table list is unavailable. */}
+      {!readOnly && !posTables && (
         <div>
           <label className={labelCls}>{tr(lang, 'Номер стола в кассе', 'POS table number', 'Kassadagi stol raqami')}</label>
           <input value={table.pos_table_id ?? ''} maxLength={100} placeholder={tr(lang, 'необязательно', 'optional', 'ixtiyoriy')}

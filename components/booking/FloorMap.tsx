@@ -190,7 +190,9 @@ export function FloorMap({
               {selected && renderSelection?.(t)}
             </g>
             {/* Label stays upright whatever the table's rotation. */}
-            <text x={cx} y={badge ? cy - fontSize * 0.15 : cy + fontSize * 0.35} textAnchor="middle" fontSize={fontSize}
+            <text x={cx} y={badge ? cy - fontSize * 0.15 : cy + fontSize * 0.35} textAnchor="middle"
+              // Long names ("Терраса 9") shrink to stay inside the table.
+              fontSize={Math.max(8, Math.min(fontSize, (t.w * 0.9) / (Math.max(1, t.name.length) * 0.62)))}
               fontWeight={700} fill={c.text} style={{ pointerEvents: 'none', fontFamily: 'Onest, sans-serif' }}>
               {t.name}
             </text>

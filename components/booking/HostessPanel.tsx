@@ -208,7 +208,8 @@ export function HostessPanel({ lang, onShowToast }: { lang: Language; onShowToas
     if (!s) continue;
     states[t.id] = s.state;
     const r = s.reservation;
-    if (s.state === 'occupied' && r) badges[t.id] = `${short(r.guest_name)} ·${fmtTime(s.until!, tz)}`;
+    if (s.state === 'occupied' && s.pos_since) badges[t.id] = `${tr(lang, 'касса', 'POS', 'kassa')} ${fmtTime(s.pos_since, tz)}`;
+    else if (s.state === 'occupied' && r && s.until) badges[t.id] = `${short(r.guest_name)} ·${fmtTime(s.until, tz)}`;
     else if (s.state === 'booked' && r) badges[t.id] = `${short(r.guest_name)} ${fmtTime(r.start_at, tz)}`;
     else if (s.state === 'soon' && s.next_start) badges[t.id] = `${fmtTime(s.next_start, tz)} ${r ? short(r.guest_name, 8) : ''}`;
     else if (s.state === 'free' && s.free_until) badges[t.id] = `${tr(lang, 'до', 'till', 'gacha')} ${fmtTime(s.free_until, tz)}`;
@@ -416,7 +417,15 @@ function TableCard({ lang, tz, table, status, reservations, blocks, onOpen, onWa
       case 'free': return status.free_until ? tr(lang, `Свободен до ${fmtTime(status.free_until, tz)}`, `Free until ${fmtTime(status.free_until, tz)}`, `${fmtTime(status.free_until, tz)} gacha bo'sh`) : tr(lang, 'Свободен', 'Free', "Bo'sh");
       case 'soon': return tr(lang, `Бронь в ${fmtTime(status.next_start!, tz)}`, `Booking at ${fmtTime(status.next_start!, tz)}`, `${fmtTime(status.next_start!, tz)} da bron`);
       case 'booked': return tr(lang, 'Забронирован — гости ещё не пришли', 'Booked — guests not here yet', 'Band — mehmonlar hali kelmagan');
-      case 'occupied': return tr(lang, `Занят, примерно до ${fmtTime(status.until!, tz)}`, `Occupied, until about ${fmtTime(status.until!, tz)}`, `Band, taxminan ${fmtTime(status.until!, tz)} gacha`);
+      case 'occupied':
+        if (status.pos_since) {
+          // Open check in the POS, nobody seated through TRACE — ends when the check closes.
+          const t = fmtTime(status.pos_since, tz);
+          return tr(lang, `Занят по кассе с ${t} — освободится, когда закроют чек`, `Occupied per POS since ${t} — frees when the check closes`, `Kassa bo‘yicha ${t} dan band — chek yopilganda bo‘shaydi`);
+        }
+        return status.until
+          ? tr(lang, `Занят, примерно до ${fmtTime(status.until, tz)}`, `Occupied, until about ${fmtTime(status.until, tz)}`, `Band, taxminan ${fmtTime(status.until, tz)} gacha`)
+          : tr(lang, 'Занят', 'Occupied', 'Band');
       case 'unavailable': return status.unavailable_reason === 'blocked'
         ? tr(lang, `Заблокирован до ${fmtTime(status.until!, tz)}`, `Blocked until ${fmtTime(status.until!, tz)}`, `${fmtTime(status.until!, tz)} gacha bloklangan`) + (status.block_reason ? ` · ${status.block_reason}` : '')
         : tr(lang, 'Не для онлайн-брони', 'Not bookable online', 'Onlayn band qilinmaydi');

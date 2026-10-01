@@ -42,6 +42,9 @@ interface FloorMapProps {
   onPointerUp?: (e: React.PointerEvent<SVGSVGElement>) => void;
   // Drawn inside the selected table's rotated frame (editor handles).
   renderSelection?: (table: FloorTable) => React.ReactNode;
+  // Crop the view to the tables (read-only maps) — a hall canvas is often far
+  // bigger than the area actually used. Ignored when there's a plan image.
+  fit?: boolean;
 }
 
 export function useIsDark(): boolean {
@@ -110,7 +113,7 @@ function chairPositions(t: FloorTable): Array<{ x: number; y: number }> {
 
 export function FloorMap({
   hall, tables, states, selectedKey, dimmedKeys, badges, grid = false, svgRef, className, style,
-  onTablePointerDown, onTableClick, onBackgroundPointerDown, onPointerMove, onPointerUp, renderSelection,
+  onTablePointerDown, onTableClick, onBackgroundPointerDown, onPointerMove, onPointerUp, renderSelection, fit = false,
 }: FloorMapProps) {
   const isDark = useIsDark();
   const bg = isDark ? '#0e0e12' : '#f7f5f2';
@@ -118,10 +121,27 @@ export function FloorMap({
   const border = isDark ? '#2a2a30' : '#d4cfc8';
   const patternId = React.useId().replace(/:/g, '');
 
+  let viewBox = `0 0 ${hall.width} ${hall.height}`;
+  const cropped = fit && !hall.background_image && tables.length > 0;
+  if (cropped) {
+    // Bounding box of every table incl. rotation and chairs, plus a margin.
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const t of tables) {
+      const r = Math.hypot(t.w, t.h) / 2 + 14;
+      const cx = t.x + t.w / 2, cy = t.y + t.h / 2;
+      minX = Math.min(minX, cx - r); maxX = Math.max(maxX, cx + r);
+      minY = Math.min(minY, cy - r); maxY = Math.max(maxY, cy + r);
+    }
+    const pad = 20;
+    const w = Math.max(maxX - minX + pad * 2, 260), h = Math.max(maxY - minY + pad * 2, 180);
+    viewBox = `${minX - pad - (w - (maxX - minX + pad * 2)) / 2} ${minY - pad - (h - (maxY - minY + pad * 2)) / 2} ${w} ${h}`;
+  }
+  const [vx, vy, vw, vh] = viewBox.split(' ').map(Number);
+
   return (
     <svg
       ref={svgRef}
-      viewBox={`0 0 ${hall.width} ${hall.height}`}
+      viewBox={viewBox}
       className={className}
       style={{ touchAction: onPointerMove ? 'none' : undefined, userSelect: 'none', display: 'block', width: '100%', height: 'auto', ...style }}
       onPointerDown={onBackgroundPointerDown}
@@ -136,13 +156,13 @@ export function FloorMap({
           </pattern>
         </defs>
       ) : null}
-      <rect x={0} y={0} width={hall.width} height={hall.height} fill={bg} />
+      <rect x={vx} y={vy} width={vw} height={vh} fill={bg} />
       {hall.background_image && (
         <image href={hall.background_image} x={0} y={0} width={hall.width} height={hall.height}
           preserveAspectRatio="xMidYMid meet" opacity={isDark ? 0.55 : 0.8} style={{ pointerEvents: 'none' }} />
       )}
       {grid ? <rect x={0} y={0} width={hall.width} height={hall.height} fill={`url(#g${patternId})`} style={{ pointerEvents: 'none' }} /> : null}
-      <rect x={1} y={1} width={hall.width - 2} height={hall.height - 2} fill="none" stroke={border} strokeWidth={2} rx={4} style={{ pointerEvents: 'none' }} />
+      {!cropped && <rect x={1} y={1} width={hall.width - 2} height={hall.height - 2} fill="none" stroke={border} strokeWidth={2} rx={4} style={{ pointerEvents: 'none' }} />}
 
       {tables.map(t => {
         const c = palette(states?.[t.key], isDark);

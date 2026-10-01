@@ -2,14 +2,15 @@ import React, { useState } from 'react';
 import { Language } from '../../types';
 import { isDemoTenant, getTenantRole } from '../../services/traceApi';
 import { HallLayoutEditor } from '../booking/HallLayoutEditor';
+import { BookingSettingsPanel } from '../booking/BookingSettingsPanel';
 
 function tr(lang: Language, ru: string, en: string, uz: string) {
   return lang === 'ru' ? ru : lang === 'uz' ? uz : en;
 }
 
-// "Бронирование" section. Phase 2 ships the floor-plan editor; the hostess
-// live map, timeline and booking settings join these tabs in later phases.
-type Tab = 'layout';
+// "Бронирование" section: floor-plan editor + booking settings. The hostess
+// live map and timeline join these tabs in Phase 4.
+type Tab = 'layout' | 'settings';
 
 interface Props {
   lang: Language;
@@ -30,6 +31,8 @@ export function Booking({ lang, onShowToast }: Props) {
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'layout', label: tr(lang, 'Схема зала', 'Floor plan', 'Zal sxemasi') },
+    // Settings are owner/manager-only (the API refuses hostess writes anyway).
+    ...(isHostess ? [] : [{ id: 'settings' as Tab, label: tr(lang, 'Настройки', 'Settings', 'Sozlamalar') }]),
   ];
 
   return (
@@ -47,6 +50,7 @@ export function Booking({ lang, onShowToast }: Props) {
       </div>
 
       {tab === 'layout' && <HallLayoutEditor lang={lang} onShowToast={onShowToast} readOnly={isHostess} />}
+      {tab === 'settings' && !isHostess && <BookingSettingsPanel lang={lang} onShowToast={onShowToast} />}
     </div>
   );
 }

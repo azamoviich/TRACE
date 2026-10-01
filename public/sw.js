@@ -15,6 +15,8 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  // Live streams (booking SSE) never end — caching one would never finish.
+  if ((e.request.headers.get('accept') || '').includes('text/event-stream')) return;
   e.respondWith(
     fetch(e.request)
       .then((res) => {

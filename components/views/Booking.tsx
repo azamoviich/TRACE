@@ -4,6 +4,7 @@ import { isDemoTenant, getTenantRole } from '../../services/traceApi';
 import { HallLayoutEditor } from '../booking/HallLayoutEditor';
 import { BookingSettingsPanel } from '../booking/BookingSettingsPanel';
 import { HostessPanel } from '../booking/HostessPanel';
+import { StaffTelegramCard } from '../booking/StaffTelegramCard';
 
 function tr(lang: Language, ru: string, en: string, uz: string) {
   return lang === 'ru' ? ru : lang === 'uz' ? uz : en;
@@ -11,7 +12,7 @@ function tr(lang: Language, ru: string, en: string, uz: string) {
 
 // "Бронирование" section: the hostess panel (live map, timeline, guests),
 // the floor-plan editor and booking settings.
-type Tab = 'live' | 'layout' | 'settings';
+type Tab = 'live' | 'layout' | 'settings' | 'telegram';
 
 interface Props {
   lang: Language;
@@ -33,7 +34,8 @@ export function Booking({ lang, onShowToast }: Props) {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'live', label: tr(lang, 'Хостес', 'Hostess', 'Xostes') },
     // Floor editor and settings are owner/manager-only (the API refuses hostess writes anyway).
-    ...(isHostess ? [] : [
+    // The hostess has no settings tab — she connects her Telegram here.
+    ...(isHostess ? [{ id: 'telegram' as Tab, label: 'Telegram' }] : [
       { id: 'layout' as Tab, label: tr(lang, 'Схема зала', 'Floor plan', 'Zal sxemasi') },
       { id: 'settings' as Tab, label: tr(lang, 'Настройки', 'Settings', 'Sozlamalar') },
     ]),
@@ -56,6 +58,7 @@ export function Booking({ lang, onShowToast }: Props) {
       {tab === 'live' && <HostessPanel lang={lang} onShowToast={onShowToast} />}
       {tab === 'layout' && !isHostess && <HallLayoutEditor lang={lang} onShowToast={onShowToast} />}
       {tab === 'settings' && !isHostess && <BookingSettingsPanel lang={lang} onShowToast={onShowToast} />}
+      {tab === 'telegram' && isHostess && <StaffTelegramCard lang={lang} onShowToast={onShowToast} canManage={false} />}
     </div>
   );
 }

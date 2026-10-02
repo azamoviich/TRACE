@@ -3317,6 +3317,13 @@ export const bookingApi = {
     list: () => bookingFetch<PosTable[]>('/pos-tables'),
     autoMap: () => bookingFetch<{ linked: number; unmatched: string[]; already: number }>('/pos-tables/auto-map', { method: 'POST' }),
   },
+  // Chats that get this branch's booking notices from the staff Telegram bot.
+  staffTelegram: {
+    get: () => bookingFetch<{ configured: boolean; chats: StaffTelegramChat[] }>('/staff-telegram'),
+    // One-time links (valid 1 hour): private chat and "add to group".
+    link: () => bookingFetch<{ private: string; group: string; expires_at: string }>('/staff-telegram/link', { method: 'POST' }),
+    remove: (chatId: string) => bookingFetch<{ ok: boolean }>(`/staff-telegram/chats/${encodeURIComponent(chatId)}`, { method: 'DELETE' }),
+  },
   hostessLogin: {
     get: () => bookingFetch<{ hostess_login: string | null }>('/hostess-login'),
     // Empty login removes the hostess access.
@@ -3324,6 +3331,8 @@ export const bookingApi = {
       bookingFetch<{ ok: true; hostess_login: string | null }>('/hostess-login', { method: 'PUT', body: JSON.stringify({ login, password }) }),
   },
 };
+
+export interface StaffTelegramChat { chat_id: string; kind: 'private' | 'group'; title: string; created_at: string }
 
 export type ReservationStatus = 'pending' | 'confirmed' | 'seated' | 'completed' | 'cancelled' | 'no_show';
 

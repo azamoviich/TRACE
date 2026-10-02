@@ -87,6 +87,14 @@ export function BookingSettingsPanel({ lang, onShowToast }: { lang: Language; on
         {directLink && (
           <LinkRow link={directLink} label={tr(lang, 'Прямая ссылка на этот филиал', 'Direct link to this branch', 'Shu filialga to‘g‘ridan-to‘g‘ri havola')} />
         )}
+        <label className="block">
+          <span className="block text-[12px] text-muted mb-1">{tr(lang,
+            'Телефон хостес — на странице брони появится кнопка «Позвонить» для тех, кому удобнее по телефону',
+            'Hostess phone — the booking page shows a "Call" button for guests who prefer the phone',
+            'Xostes telefoni — bron sahifasida telefonda qulayroq bo‘lganlar uchun «Qo‘ng‘iroq qilish» tugmasi chiqadi')}</span>
+          <input type="tel" value={s.phone ?? ''} onChange={e => set({ phone: e.target.value })} maxLength={32}
+            placeholder="+998 90 123 45 67" className={`${inputCls} w-full sm:w-64`} />
+        </label>
         {!s.enabled && <p className="text-[12px] text-amber-500">{tr(lang, 'Пока выключено — по ссылке гости увидят «бронирование выключено».', 'Off for now — guests opening the link will see "booking is off".', "Hozircha o'chirilgan — havolani ochgan mehmonlar «band qilish o'chirilgan» ni ko'radi.")}</p>}
       </div>
 

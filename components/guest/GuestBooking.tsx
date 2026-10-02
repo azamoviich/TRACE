@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Minus, Plus, Users, Clock, MapPin, ChevronLeft, Check, Copy, Loader2, X, CalendarDays, Radio, Send } from 'lucide-react';
+import { Minus, Plus, Users, Clock, MapPin, ChevronLeft, Check, Copy, Loader2, X, CalendarDays, Radio, Send, Phone } from 'lucide-react';
 import {
   publicBookingApi, parseBookingLocation, BookingApiError, PublicMap, PublicDaySlots, PublicResolve,
   GuestReservation, PublicTable,
@@ -212,7 +212,7 @@ function BookingFlow({ slug, name, lang, t, go }: { slug: string; name: string; 
   if (error && !map) return <Message text={t.not_found} />;
   if (!map || !date) return <Spinner />;
   if (map.halls.length === 0 || tables.length === 0) {
-    return <><h1 className="text-[24px] font-bold mb-2">{name}</h1><Message text={t.no_halls} /></>;
+    return <><h1 className="text-[24px] font-bold mb-2">{name}</h1><Message text={t.no_halls} /><CallButton phone={map.settings.phone} t={t} /></>;
   }
 
   const hall = map.halls.find(h => h.id === hallId) ?? map.halls[0];
@@ -257,6 +257,7 @@ function BookingFlow({ slug, name, lang, t, go }: { slug: string; name: string; 
         <h1 className="text-[24px] font-bold leading-tight">{name}</h1>
         {live && <span className="flex items-center gap-1 text-[11px] text-green-500 whitespace-nowrap mt-2"><Radio size={12} />{t.live}</span>}
       </div>
+      <CallButton phone={map.settings.phone} t={t} />
 
       {/* Date */}
       <section>
@@ -347,6 +348,21 @@ function BookingFlow({ slug, name, lang, t, go }: { slug: string; name: string; 
           onBook={() => setStage('form')}
         />
       )}
+    </div>
+  );
+}
+
+// "Call the hostess" — for guests who'd rather book by phone. The number is
+// shown too: tel: does nothing on most desktops.
+function CallButton({ phone, t }: { phone?: string; t: T }) {
+  if (!phone) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-border bg-card px-4 py-3">
+      <span className="text-[13px] text-muted flex-1 min-w-[180px]">{t.call_hint}</span>
+      <a href={`tel:${phone.replace(/[^\d+]/g, '')}`}
+        className="flex items-center gap-2 px-4 py-2 rounded-xl border border-primary text-primary text-[14px] font-semibold whitespace-nowrap hover:bg-primary/10">
+        <Phone size={15} />{t.call} · {phone}
+      </a>
     </div>
   );
 }

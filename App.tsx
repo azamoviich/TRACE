@@ -22,7 +22,7 @@ import { Booking } from './components/views/Booking';
 import { GuestBooking } from './components/guest/GuestBooking';
 import { Globe, Sun, Moon } from 'lucide-react';
 import { TRANSLATIONS, nextLang, tr } from './constants';
-import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, desktopCrossTenantLogin, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos, createQrSession, pollQrSession, QrSession, isTauriApp, consumeBootstrapToken, getTenantRole, isBookingHost } from './services/traceApi';
+import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, desktopCrossTenantLogin, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos, createQrSession, pollQrSession, QrSession, isTauriApp, consumeBootstrapToken, getTenantRole, isBookingHost, bookingApi, BookingApiError } from './services/traceApi';
 import { ManagerPortal } from './components/ManagerPortal';
 import { ChecklistManagerPortal } from './components/ChecklistManagerPortal';
 import { EmployeeChecklistPortal } from './components/EmployeeChecklistPortal';
@@ -405,11 +405,15 @@ export default function App() {
   // Employee App is a per-tenant add-on switched on in the admin panel
   // (GET /settings/feature-flags). Off or still unknown → its pages don't exist.
   const [employeeAppEnabled, setEmployeeAppEnabled] = useState<boolean | null>(null);
+  // Бронирование is rolled out restaurant by restaurant (backend BOOKING_SUBDOMAINS);
+  // hidden until the API confirms it's open here.
+  const [bookingAvailable, setBookingAvailable] = useState<boolean | null>(null);
   // Pages this tenant doesn't have at all — unlike hiddenPagesState these are
   // never the user's choice, so they're kept out of Settings and localStorage.
   const unavailablePages: ViewState[] = [
     ...(planAvailable ? [] : ['plan' as ViewState]),
     ...(employeeAppEnabled ? [] : EMPLOYEE_APP_PAGE_IDS),
+    ...(bookingAvailable ? [] : ['booking' as ViewState]),
   ];
   const hiddenPages: ViewState[] = isMarketing
     ? NAV_ITEMS.map(n => n.id).filter(id => id !== 'reviews' && id !== 'loyalty')
@@ -422,6 +426,7 @@ export default function App() {
   useEffect(() => {
     if (currentView === 'plan' && planAvailable === null) return; // still checking — don't bounce a ?view=plan deep link
     if (EMPLOYEE_APP_PAGE_IDS.includes(currentView) && employeeAppEnabled === null && !hiddenPagesState.includes(currentView)) return; // same for ?view=employees etc.
+    if (currentView === 'booking' && bookingAvailable === null) return;
     if (hiddenPages.includes(currentView)) setCurrentView('dashboard');
   }, [hiddenPages]);
 
@@ -486,6 +491,14 @@ export default function App() {
 
   // Reset AI context when switching views so stale data doesn't bleed across sections
   useEffect(() => { setAiContext(''); }, [currentView]);
+
+  // Only "booking_off" hides it — other errors (e.g. "All branches" selected) keep the section.
+  useEffect(() => {
+    if (!isLoggedIn || isMarketing) return;
+    bookingApi.settings.get()
+      .then(() => setBookingAvailable(true))
+      .catch(e => setBookingAvailable(!(e instanceof BookingApiError && e.code === 'booking_off')));
+  }, [isLoggedIn, isMarketing]);
 
   // "All branches" keeps the page visible — it explains plans are per-branch.
   useEffect(() => {

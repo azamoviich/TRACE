@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Loader2, Save, Copy, Check, ExternalLink } from 'lucide-react';
 import { Language } from '../../types';
 import { bookingApi, BookingSettings, BookingWeekday, getSubdomain } from '../../services/traceApi';
+import { StaffTelegramCard } from './StaffTelegramCard';
 
 function tr(lang: Language, ru: string, en: string, uz: string) {
   return lang === 'ru' ? ru : lang === 'uz' ? uz : en;
@@ -158,6 +159,8 @@ export function BookingSettingsPanel({ lang, onShowToast }: { lang: Language; on
       </button>
 
       <HostessLoginCard lang={lang} onShowToast={onShowToast} subdomain={branch} />
+
+      <StaffTelegramCard lang={lang} onShowToast={onShowToast} canManage />
     </div>
   );
 }

@@ -23,14 +23,6 @@ export function Booking({ lang, onShowToast }: Props) {
   const [tab, setTab] = useState<Tab>('live');
   const isHostess = getTenantRole() === 'hostess';
 
-  if (isDemoTenant()) {
-    return (
-      <div className="rounded-2xl border border-border bg-card p-8 text-center text-[13px] text-muted max-w-[520px] mx-auto">
-        {tr(lang, 'Бронирование недоступно в демо-режиме.', 'Booking is not available in demo mode.', 'Demo rejimda band qilish mavjud emas.')}
-      </div>
-    );
-  }
-
   const tabs: { id: Tab; label: string }[] = [
     { id: 'live', label: tr(lang, 'Хостес', 'Hostess', 'Xostes') },
     // Floor editor and settings are owner/manager-only (the API refuses hostess writes anyway).
@@ -54,6 +46,13 @@ export function Booking({ lang, onShowToast }: Props) {
           </button>
         ))}
       </div>}
+
+      {isDemoTenant() && (
+        <p className="text-[12px] text-muted">{tr(lang,
+          'Демо работает по-настоящему: забронируйте стол на book-demo.trace-os.uz — бронь появится здесь и в Telegram. Данные общие для всех и обновляются каждую ночь.',
+          'The demo is live: book a table at book-demo.trace-os.uz — it shows up here and in Telegram. Data is shared and reset every night.',
+          'Demo haqiqiy ishlaydi: book-demo.trace-os.uz da stol band qiling — bron shu yerda va Telegram’da paydo bo‘ladi. Ma’lumotlar umumiy va har kecha yangilanadi.')}</p>
+      )}
 
       {tab === 'live' && <HostessPanel lang={lang} onShowToast={onShowToast} />}
       {tab === 'layout' && !isHostess && <HallLayoutEditor lang={lang} onShowToast={onShowToast} />}

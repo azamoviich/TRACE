@@ -19,7 +19,7 @@ import { Booking } from './components/views/Booking';
 import { GuestBooking } from './components/guest/GuestBooking';
 import { Globe, Sun, Moon } from 'lucide-react';
 import { TRANSLATIONS, nextLang, tr } from './constants';
-import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, desktopCrossTenantLogin, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos, createQrSession, pollQrSession, QrSession, isTauriApp, consumeBootstrapToken, getTenantRole, isBookingHost } from './services/traceApi';
+import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, desktopCrossTenantLogin, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos, createQrSession, pollQrSession, QrSession, isTauriApp, consumeBootstrapToken, getTenantRole, isBookingHost, bookingApi, BookingApiError } from './services/traceApi';
 import { ManagerPortal } from './components/ManagerPortal';
 import { ChecklistManagerPortal } from './components/ChecklistManagerPortal';
 import { EmployeeChecklistPortal } from './components/EmployeeChecklistPortal';
@@ -399,16 +399,20 @@ export default function App() {
   // План и факт exists only for iiko restaurants (GET /plan/meta); hidden
   // from the nav until that's confirmed so other venues never see it flash.
   const [planAvailable, setPlanAvailable] = useState<boolean | null>(null);
+  // Бронирование is rolled out restaurant by restaurant (backend BOOKING_SUBDOMAINS);
+  // hidden until the API confirms it's open here.
+  const [bookingAvailable, setBookingAvailable] = useState<boolean | null>(null);
   const hiddenPages: ViewState[] = isMarketing
     ? NAV_ITEMS.map(n => n.id).filter(id => id !== 'reviews' && id !== 'loyalty')
     : isHostess
     ? NAV_ITEMS.map(n => n.id).filter(id => id !== 'booking')
-    : planAvailable ? hiddenPagesState : [...hiddenPagesState, 'plan'];
+    : [...(planAvailable ? hiddenPagesState : [...hiddenPagesState, 'plan' as ViewState]), ...(bookingAvailable ? [] : ['booking' as ViewState])];
   const setHiddenPages = (pages: ViewState[]) => { setHiddenPagesState(pages); localStorage.setItem(HIDDEN_PAGES_KEY, JSON.stringify(pages)); };
 
   // A page hidden while it was the active tab needs somewhere safe to land.
   useEffect(() => {
     if (currentView === 'plan' && planAvailable === null) return; // still checking — don't bounce a ?view=plan deep link
+    if (currentView === 'booking' && bookingAvailable === null) return;
     if (hiddenPages.includes(currentView)) setCurrentView('dashboard');
   }, [hiddenPages]);
 
@@ -473,6 +477,14 @@ export default function App() {
 
   // Reset AI context when switching views so stale data doesn't bleed across sections
   useEffect(() => { setAiContext(''); }, [currentView]);
+
+  // Only "booking_off" hides it — other errors (e.g. "All branches" selected) keep the section.
+  useEffect(() => {
+    if (!isLoggedIn || isMarketing) return;
+    bookingApi.settings.get()
+      .then(() => setBookingAvailable(true))
+      .catch(e => setBookingAvailable(!(e instanceof BookingApiError && e.code === 'booking_off')));
+  }, [isLoggedIn, isMarketing]);
 
   // "All branches" keeps the page visible — it explains plans are per-branch.
   useEffect(() => {

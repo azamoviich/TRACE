@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Save, Copy, Check, ExternalLink } from 'lucide-react';
 import { Language } from '../../types';
-import { bookingApi, BookingSettings, BookingWeekday, getSubdomain } from '../../services/traceApi';
+import { bookingApi, BookingSettings, BookingWeekday, getSubdomain, isDemoTenant } from '../../services/traceApi';
 import { StaffTelegramCard } from './StaffTelegramCard';
 
 function tr(lang: Language, ru: string, en: string, uz: string) {
@@ -148,7 +148,7 @@ export function BookingSettingsPanel({ lang, onShowToast }: { lang: Language; on
         </label>
       </div>
 
-      {s.pos_type === 'iiko' && (
+      {s.pos_type === 'iiko' && !isDemoTenant() && (
         <PosSyncCard lang={lang} onShowToast={onShowToast} enabled={s.pos_sync} onToggle={v => set({ pos_sync: v })} />
       )}
 
@@ -158,9 +158,10 @@ export function BookingSettingsPanel({ lang, onShowToast }: { lang: Language; on
         {tr(lang, 'Сохранить', 'Save', 'Saqlash')}
       </button>
 
-      <HostessLoginCard lang={lang} onShowToast={onShowToast} subdomain={branch} />
+      {/* Demo: no hostess login, and a shared demo can't remove someone's chat. */}
+      {!isDemoTenant() && <HostessLoginCard lang={lang} onShowToast={onShowToast} subdomain={branch} />}
 
-      <StaffTelegramCard lang={lang} onShowToast={onShowToast} canManage />
+      <StaffTelegramCard lang={lang} onShowToast={onShowToast} canManage={!isDemoTenant()} />
     </div>
   );
 }

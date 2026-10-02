@@ -3466,6 +3466,7 @@ export interface BookingSettings {
   auto_confirm: boolean;
   max_active_per_phone: number;
   pos_sync: boolean;                      // link with the POS (iiko for now)
+  phone: string;                          // hostess number — "Call" button on the guest page ('' = none)
   pos_type?: 'iiko' | 'poster';           // read-only, from the tenant
   // read-only: guest address book-{branch}.trace-os.uz; in_chain = has sibling branches (that address may show a branch picker)
   link?: { branch: string; in_chain: boolean };
@@ -3510,6 +3511,7 @@ export interface PublicMap {
     min_lead_min: number;
     max_days_ahead: number;
     phone_verification: boolean;
+    phone?: string;                       // "Call" button; empty/missing = none
   };
   halls: Array<{ id: string; name: string; sort_order: number; background_image: string | null; width: number; height: number; tables: PublicTable[] }>;
   statuses: PublicTableStatus[];

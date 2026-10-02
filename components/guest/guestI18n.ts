@@ -77,6 +77,8 @@ const ru = {
   status_no_show: 'Гости не пришли',
   reservation_not_found: 'Бронь не найдена',
   live: 'Обновляется в реальном времени',
+  call: 'Позвонить',
+  call_hint: 'Удобнее по телефону? Хостес забронирует за вас.',
   powered: 'Бронирование через TRACE',
 };
 
@@ -162,6 +164,8 @@ const uz: Dict = {
   status_no_show: 'Mehmonlar kelmadi',
   reservation_not_found: 'Bron topilmadi',
   live: 'Real vaqtda yangilanadi',
+  call: 'Qo‘ng‘iroq qilish',
+  call_hint: 'Telefonda qulayroqmi? Xostes siz uchun band qiladi.',
   powered: 'TRACE orqali band qilish',
 };
 
@@ -238,6 +242,8 @@ const en: Dict = {
   status_no_show: 'No-show',
   reservation_not_found: 'Booking not found',
   live: 'Updates in real time',
+  call: 'Call',
+  call_hint: 'Prefer the phone? The hostess will book for you.',
   powered: 'Booking by TRACE',
 };
 

@@ -10,7 +10,7 @@ import { Wallet } from 'lucide-react';
 import { Language, ChecklistRole, ChecklistEmployee } from '../../types';
 import { Lock, ShieldQuestion } from 'lucide-react';
 import {
-  traceApi, WorkforceGeofenceSettings, checklistApi, RosterShift, SwapRequest, PayProfile, PayrollPeriod, Payslip, PayrollRule,
+  traceApi, WorkforceGeofenceSettings, checklistApi, RosterShift, SwapRequest, PayProfile, PayrollPeriod, Payslip, PayrollRule, EmployeeSchedule,
   RosterCoverageRow, ShiftSignal,
   FeedPost, KnowledgeCategory, ChatChannel, ChatMessage, AuditLogEntry,
 } from '../../services/traceApi';
@@ -190,17 +190,6 @@ function PayrollTab({ lang, onShowToast }: { lang: Language; onShowToast: Props[
     if (selectedPeriodId) checklistApi.payroll.payslips(selectedPeriodId).then(setPayslips).catch(() => {});
   }, [selectedPeriodId]);
 
-  const toggleRule = async (type: 'late_penalty' | 'missed_checklist_penalty', amount: number) => {
-    const existing = rules.find(r => r.type === type);
-    if (existing) {
-      const updated = await checklistApi.payroll.updateRule(existing.id, { active: !existing.active });
-      setRules(prev => prev.map(r => r.id === updated.id ? updated : r));
-    } else {
-      const created = await checklistApi.payroll.createRule({ type, amount });
-      setRules(prev => [...prev, created]);
-    }
-  };
-
   const lockPeriod = async () => {
     if (!selectedPeriodId) return;
     if (!confirm(tr(lang, 'Заблокировать период? Это заморозит все расчёты.', 'Lock this period? This freezes every payslip in it.', 'Bu davrni bloklaysizmi? Bu barcha hisob-kitoblarni muzlatadi.'))) return;
@@ -229,36 +218,9 @@ function PayrollTab({ lang, onShowToast }: { lang: Language; onShowToast: Props[
     );
   }
 
-  const lateRule = rules.find(r => r.type === 'late_penalty');
-  const missedRule = rules.find(r => r.type === 'missed_checklist_penalty');
-
   return (
     <div className="space-y-5">
-      <Card>
-        <h3 className="text-[15px] font-semibold text-text tracking-tight mb-3 flex items-center gap-2">
-          <ShieldQuestion size={16} /> {tr(lang, 'Автоматические штрафы', 'Automatic penalties', 'Avtomatik jarimalar')}
-        </h3>
-        <div className="space-y-2">
-          <button onClick={() => toggleRule('late_penalty', 10000)} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg bg-background border border-border text-left">
-            <div>
-              <p className="text-[13px] font-medium text-text">{tr(lang, 'Опоздание', 'Lateness', 'Kechikish')}</p>
-              <p className="text-[11px] text-muted mt-0.5">{tr(lang, 'Штраф за опоздание относительно расписания', 'Penalty for clocking in late against the roster', "Jadvalga nisbatan kechikish uchun jarima")}</p>
-            </div>
-            <span className={`shrink-0 w-11 h-6 rounded-full transition-colors relative ${lateRule?.active ? 'bg-primary' : 'bg-card-hover'}`}>
-              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${lateRule?.active ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
-            </span>
-          </button>
-          <button onClick={() => toggleRule('missed_checklist_penalty', 25000)} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg bg-background border border-border text-left">
-            <div>
-              <p className="text-[13px] font-medium text-text">{tr(lang, 'Незавершённый чек-лист', 'Missed checklist', "Bajarilmagan cheklist")}</p>
-              <p className="text-[11px] text-muted mt-0.5">{tr(lang, 'Если менеджер закрыл смену вручную с невыполненным чек-листом', "If a manager closes a shift with a required checklist incomplete", "Agar menejer talab qilingan cheklist bajarilmagan holda smenani yopsa")}</p>
-            </div>
-            <span className={`shrink-0 w-11 h-6 rounded-full transition-colors relative ${missedRule?.active ? 'bg-primary' : 'bg-card-hover'}`}>
-              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${missedRule?.active ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
-            </span>
-          </button>
-        </div>
-      </Card>
+      <AttendanceRulesCard lang={lang} rules={rules} onRulesChange={setRules} onShowToast={onShowToast} />
 
       <Card>
         <h3 className="text-[15px] font-semibold text-text tracking-tight mb-3 flex items-center gap-2">
@@ -329,6 +291,84 @@ function PayrollTab({ lang, onShowToast }: { lang: Language; onShowToast: Props[
   );
 }
 
+// Lateness rules the payroll engine applies (TRACEBACKEND services/payroll/
+// compute.ts): past the grace minutes, every missed minute is deducted
+// pro-rata from fixed pay AND the fixed late penalty below is added on top.
+function AttendanceRulesCard({ lang, rules, onRulesChange, onShowToast }: {
+  lang: Language; rules: PayrollRule[];
+  onRulesChange: (rules: PayrollRule[]) => void;
+  onShowToast: Props['onShowToast'];
+}) {
+  const [graceMin, setGraceMin] = useState<number | null>(null);
+  const [earlyMin, setEarlyMin] = useState<number | null>(null);
+  const [lateAmount, setLateAmount] = useState(0);
+  const [missedAmount, setMissedAmount] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const lateRule = rules.find(r => r.type === 'late_penalty');
+  const missedRule = rules.find(r => r.type === 'missed_checklist_penalty');
+
+  useEffect(() => {
+    traceApi.settings.geofence().then(st => { setGraceMin(st.attendanceGraceMin); setEarlyMin(st.attendanceEarlyMin ?? 30); }).catch(() => {});
+  }, []);
+  useEffect(() => { setLateAmount(lateRule ? Number(lateRule.amount) : 0); }, [lateRule?.id, lateRule?.amount]);
+  useEffect(() => { setMissedAmount(missedRule ? Number(missedRule.amount) : 0); }, [missedRule?.id, missedRule?.amount]);
+
+  // amount 0 = rule off; any positive amount = rule on with that amount.
+  const saveRule = async (type: PayrollRule['type'], amount: number, existing?: PayrollRule): Promise<PayrollRule | null> => {
+    if (existing) return checklistApi.payroll.updateRule(existing.id, amount > 0 ? { amount, active: true } : { active: false });
+    if (amount > 0) return checklistApi.payroll.createRule({ type, amount });
+    return null;
+  };
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await traceApi.settings.saveGeofence({ attendanceGraceMin: graceMin ?? 0, attendanceEarlyMin: earlyMin ?? 30 });
+      const [late, missed] = await Promise.all([
+        saveRule('late_penalty', lateAmount, lateRule),
+        saveRule('missed_checklist_penalty', missedAmount, missedRule),
+      ]);
+      const next = rules.filter(r => r.id !== late?.id && r.id !== missed?.id);
+      onRulesChange([...next, ...(late ? [late] : []), ...(missed ? [missed] : [])]);
+      onShowToast(tr(lang, 'Правила сохранены', 'Rules saved', 'Qoidalar saqlandi'), 'success');
+    } catch { onShowToast(tr(lang, 'Не удалось сохранить', 'Failed to save', "Saqlab bo'lmadi"), 'error'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Card>
+      <h3 className="text-[15px] font-semibold text-text tracking-tight mb-1 flex items-center gap-2">
+        <ShieldQuestion size={16} /> {tr(lang, 'Опоздания и штрафы', 'Lateness & penalties', 'Kechikish va jarimalar')}
+      </h3>
+      <p className="text-[12px] text-muted mb-4">
+        {tr(lang,
+          'После льготных минут каждая пропущенная минута вычитается из фиксированной оплаты, плюс штраф. Пример: смена 10:00, льгота 0 — пришёл в 10:01 = −1 минута и штраф.',
+          'Past the grace minutes every missed minute is deducted from fixed pay, plus the penalty. Example: shift at 10:00, grace 0 — arriving 10:01 = −1 minute and the penalty.',
+          "Imtiyozli daqiqalardan keyin har bir o'tkazib yuborilgan daqiqa fiks to'lovdan ayiriladi, ustiga jarima. Misol: smena 10:00, imtiyoz 0 — 10:01 da kelsa = −1 daqiqa va jarima.")}
+      </p>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label={tr(lang, 'Льготные минуты опоздания', 'Grace minutes for lateness', 'Kechikish uchun imtiyoz, daq')} value={graceMin ?? 0} onChange={setGraceMin} />
+        <Field label={tr(lang, 'Можно открыть смену раньше, мин', 'Can clock in early by, min', 'Smenani oldinroq ochish, daq')} value={earlyMin ?? 30} onChange={setEarlyMin} />
+        <Field label={tr(lang, 'Штраф за опоздание (0 = выкл)', 'Late penalty (0 = off)', 'Kechikish jarimasi (0 = o\'chiq)')} value={lateAmount} onChange={setLateAmount} />
+        <Field label={tr(lang, 'Штраф за невыполненный чек-лист (0 = выкл)', 'Missed checklist penalty (0 = off)', 'Bajarilmagan cheklist jarimasi (0 = o\'chiq)')} value={missedAmount} onChange={setMissedAmount} />
+      </div>
+      <p className="text-[11px] text-muted mt-2">
+        {tr(lang, 'Раннее время до начала смены не оплачивается. Ранний уход считается так же, как опоздание.', 'Time before the shift starts is never paid. Leaving early is counted the same way as lateness.', "Smena boshlanishidan oldingi vaqt to'lanmaydi. Erta ketish kechikish kabi hisoblanadi.")}
+      </p>
+      <button onClick={save} disabled={busy || graceMin === null} className="mt-4 px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold disabled:opacity-50">
+        {busy ? tr(lang, 'Сохранение…', 'Saving…', 'Saqlanmoqda…') : tr(lang, 'Сохранить правила', 'Save rules', 'Qoidalarni saqlash')}
+      </button>
+    </Card>
+  );
+}
+
+const WEEKDAYS: { iso: number; ru: string; en: string; uz: string }[] = [
+  { iso: 1, ru: 'Пн', en: 'Mon', uz: 'Du' }, { iso: 2, ru: 'Вт', en: 'Tue', uz: 'Se' },
+  { iso: 3, ru: 'Ср', en: 'Wed', uz: 'Ch' }, { iso: 4, ru: 'Чт', en: 'Thu', uz: 'Pa' },
+  { iso: 5, ru: 'Пт', en: 'Fri', uz: 'Ju' }, { iso: 6, ru: 'Сб', en: 'Sat', uz: 'Sh' },
+  { iso: 7, ru: 'Вс', en: 'Sun', uz: 'Ya' },
+];
+
 function PayProfileEditor({ lang, employee, onShowToast, onDone }: {
   lang: Language; employee: ChecklistEmployee;
   onShowToast: Props['onShowToast']; onDone: () => void;
@@ -337,9 +377,11 @@ function PayProfileEditor({ lang, employee, onShowToast, onDone }: {
     monthlyAmount: number; dailyAmount: number; perShiftAmount: number; hourlyRate: number;
     overtimeMultiplier: number; overtimeAfterMinutes: number; unpaidBreakMinutes: number; minShiftMinutes: number;
   }>({ monthlyAmount: 0, dailyAmount: 0, perShiftAmount: 0, hourlyRate: 0, overtimeMultiplier: 1.5, overtimeAfterMinutes: 480, unpaidBreakMinutes: 0, minShiftMinutes: 0 });
+  const [salesPercent, setSalesPercent] = useState(0);
+  const [schedule, setSchedule] = useState<EmployeeSchedule>({ start: null, end: null, days: [] });
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [adjKind, setAdjKind] = useState<'bonus' | 'penalty'>('bonus');
+  const [adjKind, setAdjKind] = useState<'bonus' | 'penalty' | 'advance'>('bonus');
   const [adjAmount, setAdjAmount] = useState(0);
   const [adjReason, setAdjReason] = useState('');
   const [adjBusy, setAdjBusy] = useState(false);
@@ -353,10 +395,21 @@ function PayProfileEditor({ lang, employee, onShowToast, onDone }: {
           overtimeMultiplier: Number(p.overtime_multiplier), overtimeAfterMinutes: p.overtime_after_minutes,
           unpaidBreakMinutes: p.unpaid_break_minutes, minShiftMinutes: p.min_shift_minutes,
         });
+        setSalesPercent(Number(p.config?.percent ?? 0));
       }
       setLoaded(true);
     }).catch(() => setLoaded(true));
+    checklistApi.payroll.getSchedule(employee.id).then(sc => setSchedule({ start: sc.start, end: sc.end, days: sc.days ?? [] })).catch(() => {});
   }, [employee.id]);
+
+  const toggleDay = (iso: number) => setSchedule(sc => ({ ...sc, days: sc.days.includes(iso) ? sc.days.filter(d => d !== iso) : [...sc.days, iso].sort() }));
+  const scheduleMinutes = (() => {
+    if (!schedule.start || !schedule.end) return 0;
+    const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+    let diff = toMin(schedule.end) - toMin(schedule.start);
+    if (diff <= 0) diff += 24 * 60;
+    return diff;
+  })();
 
   const update = (key: keyof typeof profile, value: number) => setProfile(p => ({ ...p, [key]: value }));
 
@@ -366,9 +419,20 @@ function PayProfileEditor({ lang, employee, onShowToast, onDone }: {
     + profile.hourlyRate * 8 * 22;
 
   const save = async () => {
+    if ((schedule.start == null) !== (schedule.end == null)) {
+      onShowToast(tr(lang, 'Укажите и начало, и конец смены', 'Set both shift start and end', 'Smena boshlanishi va tugashini kiriting'), 'error');
+      return;
+    }
     setBusy(true);
     try {
-      await checklistApi.payroll.savePayProfile(employee.id, profile);
+      const percent = Math.max(0, Math.min(100, salesPercent));
+      const salaryType = percent > 0 ? 'percent_of_sales'
+        : profile.hourlyRate > 0 ? 'hourly'
+        : profile.perShiftAmount > 0 ? 'per_shift' : 'fixed';
+      await Promise.all([
+        checklistApi.payroll.savePayProfile(employee.id, { ...profile, salaryType, config: { percent } }),
+        checklistApi.payroll.saveSchedule(employee.id, schedule),
+      ]);
       onShowToast(tr(lang, 'Ставка сохранена', 'Pay rate saved', "Stavka saqlandi"), 'success');
       onDone();
     } catch { onShowToast(tr(lang, 'Не удалось сохранить', 'Failed to save', "Saqlab bo'lmadi"), 'error'); }
@@ -399,6 +463,31 @@ function PayProfileEditor({ lang, employee, onShowToast, onDone }: {
         <Field label={tr(lang, 'За день', 'Per day', 'Kunlik')} value={profile.dailyAmount} onChange={v => update('dailyAmount', v)} />
         <Field label={tr(lang, 'За смену', 'Per shift', 'Smena uchun')} value={profile.perShiftAmount} onChange={v => update('perShiftAmount', v)} />
         <Field label={tr(lang, 'За час', 'Per hour', 'Soatlik')} value={profile.hourlyRate} onChange={v => update('hourlyRate', v)} />
+        <Field label={tr(lang, '% от продаж', '% of sales', 'Savdodan %')} value={salesPercent} onChange={setSalesPercent} step={0.5} />
+      </div>
+      {salesPercent > 0 && !employee.iiko_employee_id && (
+        <p className="text-[11px] text-danger mt-2">
+          {tr(lang, 'Процент от продаж работает только для сотрудника, привязанного к iiko — продажи берутся по официанту в заказе.', 'Percent of sales only works for an employee linked to iiko — sales are attributed by the waiter on the order.', "Savdodan foiz faqat iiko'ga bog'langan xodim uchun ishlaydi — savdo buyurtmadagi ofitsiant bo'yicha olinadi.")}
+        </p>
+      )}
+
+      <div className="mt-5 pt-4 border-t border-border">
+        <h4 className="text-[13px] font-semibold text-text mb-1">{tr(lang, 'Рабочие часы', 'Working hours', 'Ish vaqti')}</h4>
+        <p className="text-[11px] text-muted mb-3">{tr(lang, 'По ним считаются опоздания и ранний уход, если на день нет смены в расписании.', 'Lateness and leaving early are measured against these whenever the roster has no shift that day.', "Agar jadvalda o'sha kunga smena bo'lmasa, kechikish va erta ketish shu bo'yicha hisoblanadi.")}</p>
+        <div className="flex items-center gap-2 flex-wrap mb-3">
+          <input type="time" value={schedule.start ?? ''} onChange={e => setSchedule(sc => ({ ...sc, start: e.target.value || null }))} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text tabular-nums" />
+          <span className="text-muted">—</span>
+          <input type="time" value={schedule.end ?? ''} onChange={e => setSchedule(sc => ({ ...sc, end: e.target.value || null }))} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text tabular-nums" />
+          {scheduleMinutes > 0 && <span className="text-[12px] text-muted">{Math.floor(scheduleMinutes / 60)}{tr(lang, 'ч', 'h', 'soat')}{scheduleMinutes % 60 ? ` ${scheduleMinutes % 60}${tr(lang, 'м', 'm', 'daq')}` : ''}</span>}
+        </div>
+        <div className="flex gap-1.5 flex-wrap">
+          {WEEKDAYS.map(d => (
+            <button key={d.iso} onClick={() => toggleDay(d.iso)}
+              className={`w-11 py-1.5 rounded-lg text-[12px] font-semibold border transition-colors ${schedule.days.includes(d.iso) ? 'bg-primary text-white border-primary' : 'bg-background text-muted border-border hover:text-text'}`}>
+              {tr(lang, d.ru, d.en, d.uz)}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="grid sm:grid-cols-3 gap-3 mt-3">
@@ -422,11 +511,12 @@ function PayProfileEditor({ lang, employee, onShowToast, onDone }: {
           <select value={adjKind} onChange={e => setAdjKind(e.target.value as 'bonus' | 'penalty')} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text">
             <option value="bonus">{tr(lang, 'Бонус', 'Bonus', 'Bonus')}</option>
             <option value="penalty">{tr(lang, 'Штраф', 'Penalty', 'Jarima')}</option>
+            <option value="advance">{tr(lang, 'Аванс (уже выплачен)', 'Advance (already paid)', "Avans (to'langan)")}</option>
           </select>
           <input type="number" value={adjAmount || ''} onChange={e => setAdjAmount(Number(e.target.value) || 0)} placeholder={tr(lang, 'Сумма', 'Amount', "Summa")} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text" />
         </div>
         <input value={adjReason} onChange={e => setAdjReason(e.target.value)} placeholder={tr(lang, 'Причина', 'Reason', 'Sabab')} className="w-full px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text mb-2" />
-        <button onClick={addAdjustment} disabled={adjBusy || !adjAmount} className="px-3.5 py-2 rounded-lg bg-card border border-border text-[13px] font-semibold text-text disabled:opacity-50">
+        <button onClick={addAdjustment} disabled={adjBusy || !adjAmount || (adjKind !== 'advance' && !adjReason.trim())} className="px-3.5 py-2 rounded-lg bg-card border border-border text-[13px] font-semibold text-text disabled:opacity-50">
           {adjBusy ? tr(lang, 'Добавление…', 'Adding…', "Qo'shilmoqda…") : tr(lang, 'Добавить', 'Add', "Qo'shish")}
         </button>
       </div>

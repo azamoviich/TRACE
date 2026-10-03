@@ -2196,6 +2196,7 @@ export interface WorkforceGeofenceSettings {
   geofenceRadiusM: number;
   geofenceEnabled: boolean;
   attendanceGraceMin: number;
+  attendanceEarlyMin: number;
   faceMatchThreshold: number;
   faceFailPolicy: 'allow_flagged' | 'block';
   mockLocationPolicy: 'block' | 'flag_only';
@@ -2209,7 +2210,7 @@ export interface WorkforceGeofenceSettings {
 function demoGeofenceSettings(): WorkforceGeofenceSettings {
   return {
     geofenceLat: null, geofenceLng: null, geofenceRadiusM: 150, geofenceEnabled: false,
-    attendanceGraceMin: 5, faceMatchThreshold: 80, faceFailPolicy: 'allow_flagged',
+    attendanceGraceMin: 5, attendanceEarlyMin: 30, faceMatchThreshold: 80, faceFailPolicy: 'allow_flagged',
     mockLocationPolicy: 'block', maxShiftMinutes: 960, payrollPeriodType: 'monthly',
     payrollWeekStart: 1, payrollCurrency: 'UZS', employeeAppEnabled: false,
   };
@@ -3232,7 +3233,11 @@ export const checklistApi = {
     savePayProfile: (employeeId: string, data: Partial<{
       monthlyAmount: number; dailyAmount: number; perShiftAmount: number; hourlyRate: number;
       overtimeMultiplier: number; overtimeAfterMinutes: number; unpaidBreakMinutes: number; minShiftMinutes: number;
+      salaryType: string; config: { percent?: number };
     }>) => checkedFetch<PayProfile>(`/checklist/payroll/employees/${employeeId}/pay-profile`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
+    getSchedule: (employeeId: string) => checkedFetch<EmployeeSchedule>(`/checklist/payroll/employees/${employeeId}/schedule`),
+    saveSchedule: (employeeId: string, data: EmployeeSchedule) =>
+      checkedFetch<EmployeeSchedule>(`/checklist/payroll/employees/${employeeId}/schedule`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
     recompute: (employeeId: string) => post(`/checklist/payroll/employees/${employeeId}/recompute`, {}),
     periods: () => checkedFetch<PayrollPeriod[]>('/checklist/payroll/periods'),
     payslips: (periodId: string) => checkedFetch<Payslip[]>(`/checklist/payroll/periods/${periodId}/payslips`),
@@ -3241,7 +3246,7 @@ export const checklistApi = {
     createRule: (data: { type: string; amount: number; graceMinutes?: number }) => post<PayrollRule>('/checklist/payroll/rules', data),
     updateRule: (id: string, data: Partial<{ amount: number; graceMinutes: number; active: boolean }>) =>
       checkedFetch<PayrollRule>(`/checklist/payroll/rules/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
-    addAdjustment: (employeeId: string, data: { kind: 'bonus' | 'penalty'; amount: number; reason?: string }) =>
+    addAdjustment: (employeeId: string, data: { kind: 'bonus' | 'penalty' | 'advance'; amount: number; reason?: string }) =>
       post(`/checklist/payroll/employees/${employeeId}/adjustments`, data),
   },
   feed: {
@@ -3419,6 +3424,15 @@ export interface PayProfile {
   unpaid_break_minutes: number;
   min_shift_minutes: number;
   effective_from: string;
+  salary_type?: string;
+  config?: { percent?: number };
+}
+
+// Default weekly working hours — Tashkent local 'HH:MM', ISO weekdays 1=Mon..7=Sun.
+export interface EmployeeSchedule {
+  start: string | null;
+  end: string | null;
+  days: number[];
 }
 
 export interface PayrollPeriod {

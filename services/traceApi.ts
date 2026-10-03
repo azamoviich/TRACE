@@ -3112,6 +3112,31 @@ export interface EmployeeDashboardRow {
   lastActiveAt: string | null;
   invitedAt: string | null;
   payroll: { accrued: number; pendingAdjustments: number } | null;
+  phone: string | null;
+  email: string | null;
+  birthDate: string | null;
+  language: 'ru' | 'en' | 'uz' | null;
+  posEmployeeId: string | null;
+  tempPasswordUsed: boolean;
+  appAccount: boolean;
+  schedule: { start: string; end: string; days: number[] } | null;
+}
+
+// One staff record from the connected POS, for the invite picker.
+export interface PosCandidate {
+  name: string;
+  posEmployeeId: string | null;
+  posRoleId: string | null;
+  status: 'active' | 'not_active';
+  linkedEmployeeId: string | null;
+  phone: string | null;
+  email: string | null;
+  birthDate: string | null;
+}
+
+export interface InviteInput {
+  name: string; roleId: string; phone?: string; email?: string; language?: 'ru' | 'en' | 'uz';
+  posEmployeeId?: string | null; posRoleId?: string | null; birthDate?: string | null;
 }
 export interface EmployeeDashboard {
   summary: {
@@ -3144,6 +3169,10 @@ export const checklistApi = {
       checkedFetch<ChecklistEmployee>(`/checklist/employees/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patchBody) }),
     remove: (id: string) => checkedFetch<void>(`/checklist/employees/${id}`, { method: 'DELETE' }),
     posPreview: () => checkedFetch<{ groups: { posRoleName: string; names: string[] }[] }>('/checklist/employees/pos-preview'),
+    posCandidates: () => checkedFetch<{ groups: { posRoleName: string; names: string[]; candidates: PosCandidate[] }[] }>('/checklist/employees/pos-preview'),
+    inviteFull: (data: InviteInput) => post<ChecklistEmployee>('/checklist/employees/invite', data),
+    updateDetails: (id: string, data: Partial<{ name: string; phone: string | null; email: string | null; birthDate: string | null; roleId: string; active: boolean }>) =>
+      checkedFetch<ChecklistEmployee>(`/checklist/employees/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
     import: (roleId: string, names: string[]) =>
       post<{ created: { name: string; pin: string }[] }>('/checklist/employees/import', { roleId, names }),
     invite: (name: string, roleId: string, contact: { email?: string; phone?: string }) =>

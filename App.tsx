@@ -16,6 +16,7 @@ import { Admin } from './components/views/Admin';
 import { Compare } from './components/views/Compare';
 import { Checklists } from './components/views/Checklists';
 import { Workforce } from './components/views/Workforce';
+import { Employees } from './components/views/Employees';
 import { Globe, Sun, Moon } from 'lucide-react';
 import { TRANSLATIONS, nextLang, tr } from './constants';
 import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, desktopCrossTenantLogin, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos, createQrSession, pollQrSession, QrSession, isTauriApp, consumeBootstrapToken, getTenantRole } from './services/traceApi';
@@ -361,7 +362,7 @@ export default function App() {
   const [authChecking, setAuthChecking] = useState(() => !isDemoTenant() && !bootstrapped && localStorage.getItem('trace_remember') === '1');
   const [currentView, setCurrentView] = useState<ViewState>(() => {
     const v = new URLSearchParams(window.location.search).get('view');
-    const valid: ViewState[] = ['dashboard', 'sales', 'operations', 'financial', 'plan', 'reviews', 'loyalty', 'reports', 'settings', 'compare', 'checklists', 'workforce'];
+    const valid: ViewState[] = ['dashboard', 'sales', 'operations', 'financial', 'plan', 'reviews', 'loyalty', 'reports', 'settings', 'compare', 'checklists', 'employees', 'workforce'];
     return valid.includes(v as ViewState) ? (v as ViewState) : loadDefaultPage();
   });
   const [lang, setLangState] = useState<Language>(() => {
@@ -544,6 +545,7 @@ export default function App() {
       case 'reviews':     return <Reviews key={branchKey} lang={lang} onContextReady={setAiContext} />;
       case 'loyalty':     return <Loyalty key={branchKey} lang={lang} />;
       case 'checklists':  return <Checklists key={branchKey} lang={lang} onShowToast={showToast} />;
+      case 'employees':   return <Employees key={branchKey} lang={lang} onShowToast={showToast} />;
       case 'workforce':   return <Workforce key={branchKey} lang={lang} onShowToast={showToast} />;
       case 'reports':     return <Reports lang={lang} onShowToast={showToast} onNavigate={setCurrentView} />;
       case 'settings':    return (

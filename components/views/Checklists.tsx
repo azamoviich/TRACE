@@ -52,7 +52,9 @@ export function Checklists({ lang, onShowToast }: Props) {
     { id: 'dashboard', label: tr(lang, 'Дашборд', 'Dashboard', 'Boshqaruv') },
     { id: 'checklists', label: tr(lang, 'Чек-листы', 'Checklists', "Cheklistlar") },
     { id: 'roles', label: tr(lang, 'Должности', 'Roles', 'Lavozimlar') },
-    { id: 'employees', label: tr(lang, 'Сотрудники', 'Employees', 'Xodimlar') },
+    // App staff live on the Employees page now; this tab is only the
+    // legacy name+PIN access for the web checklist page.
+    { id: 'employees', label: tr(lang, 'Доступ по PIN', 'PIN access', 'PIN orqali kirish') },
     { id: 'managers', label: tr(lang, 'Менеджеры', 'Managers', 'Menejerlar') },
     { id: 'menu', label: tr(lang, 'Меню', 'Menu', 'Menyu') },
     { id: 'history', label: tr(lang, 'История', 'History', 'Tarix') },
@@ -542,7 +544,7 @@ function PosImportPanel({ lang, roles, onShowToast, onImported, api }: {
 
 // Employee Hub Phase 1 — status badge styling + copy per derived state
 // (plan §2.5: three distinct states, not one boolean).
-function statusBadge(lang: Language, status: EmployeeStatus): { label: string; className: string } {
+export function statusBadge(lang: Language, status: EmployeeStatus): { label: string; className: string } {
   switch (status) {
     case 'terminated': return { label: tr(lang, 'Уволен', 'Terminated', 'Ishdan bo\'shatilgan'), className: 'bg-red-500/10 text-red-600' };
     case 'suspended': return { label: tr(lang, 'Заблокирован', 'Suspended', 'Bloklangan'), className: 'bg-red-500/10 text-red-600' };
@@ -552,7 +554,7 @@ function statusBadge(lang: Language, status: EmployeeStatus): { label: string; c
   }
 }
 
-function relativeTimeShort(lang: Language, iso: string | null): string {
+export function relativeTimeShort(lang: Language, iso: string | null): string {
   if (!iso) return tr(lang, 'никогда', 'never', 'hech qachon');
   const diffMs = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diffMs / 60000);

@@ -57,6 +57,7 @@ export type ViewState =
   | 'settings'
   | 'compare'
   | 'checklists'
+  | 'employees'
   | 'workforce';
 
 export type TimeRange = 'today' | '7days' | '30days' | 'month' | 'custom';

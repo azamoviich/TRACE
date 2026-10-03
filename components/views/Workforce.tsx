@@ -19,7 +19,9 @@ function tr(lang: Language, ru: string, en: string, uz: string) {
   return lang === 'ru' ? ru : lang === 'uz' ? uz : en;
 }
 
-type Tab = 'geofence' | 'roster' | 'payroll' | 'feed' | 'knowledge' | 'chat' | 'hub';
+// Clock-in radius, roster and payroll moved to the Employees page
+// (Employees.tsx imports those tab components from this file).
+type Tab = 'feed' | 'knowledge' | 'chat' | 'hub';
 
 interface Props {
   lang: Language;
@@ -27,15 +29,12 @@ interface Props {
 }
 
 export function Workforce({ lang, onShowToast }: Props) {
-  const [tab, setTab] = useState<Tab>('geofence');
+  const [tab, setTab] = useState<Tab>('feed');
 
   return (
     <div className="space-y-5 animate-fade-in">
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
         {([
-          { id: 'geofence' as Tab, label: tr(lang, 'Геолокация', 'Geofence', 'Geolokatsiya') },
-          { id: 'roster' as Tab, label: tr(lang, 'Расписание', 'Roster', 'Jadval') },
-          { id: 'payroll' as Tab, label: tr(lang, 'Зарплата', 'Payroll', 'Ish haqi') },
           { id: 'feed' as Tab, label: tr(lang, 'Лента', 'Feed', 'Lenta') },
           { id: 'knowledge' as Tab, label: tr(lang, 'База знаний', 'Knowledge', 'Bilimlar') },
           { id: 'chat' as Tab, label: tr(lang, 'Чат', 'Chat', 'Chat') },
@@ -53,9 +52,6 @@ export function Workforce({ lang, onShowToast }: Props) {
         ))}
       </div>
 
-      {tab === 'geofence' && <GeofenceTab lang={lang} onShowToast={onShowToast} />}
-      {tab === 'roster' && <RosterTab lang={lang} onShowToast={onShowToast} />}
-      {tab === 'payroll' && <PayrollTab lang={lang} onShowToast={onShowToast} />}
       {tab === 'feed' && <FeedTab lang={lang} onShowToast={onShowToast} />}
       {tab === 'knowledge' && <KnowledgeTab lang={lang} onShowToast={onShowToast} />}
       {tab === 'chat' && <ChatTab lang={lang} onShowToast={onShowToast} />}
@@ -167,13 +163,12 @@ function HubSettingsTab({ lang, onShowToast }: { lang: Language; onShowToast: (m
 // ── Payroll ──────────────────────────────────────────────────────────────
 // Pay-profile editor (four additive inputs, per plan §1.4) + a period
 // review table. No lock button here yet — that's Phase 7.
-function PayrollTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['onShowToast'] }) {
+export function PayrollTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['onShowToast'] }) {
   const [employees, setEmployees] = useState<ChecklistEmployee[]>([]);
   const [roles, setRoles] = useState<ChecklistRole[]>([]);
   const [periods, setPeriods] = useState<PayrollPeriod[]>([]);
   const [selectedPeriodId, setSelectedPeriodId] = useState('');
   const [payslips, setPayslips] = useState<Payslip[]>([]);
-  const [rules, setRules] = useState<PayrollRule[]>([]);
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
   const [locking, setLocking] = useState(false);
 
@@ -182,7 +177,6 @@ function PayrollTab({ lang, onShowToast }: { lang: Language; onShowToast: Props[
   useEffect(() => {
     checklistApi.employees.list().then(setEmployees).catch(() => {});
     checklistApi.roles.list().then(setRoles).catch(() => {});
-    checklistApi.payroll.rules().then(setRules).catch(() => {});
     loadPeriods();
   }, []);
 
@@ -220,8 +214,6 @@ function PayrollTab({ lang, onShowToast }: { lang: Language; onShowToast: Props[
 
   return (
     <div className="space-y-5">
-      <AttendanceRulesCard lang={lang} rules={rules} onRulesChange={setRules} onShowToast={onShowToast} />
-
       <Card>
         <h3 className="text-[15px] font-semibold text-text tracking-tight mb-3 flex items-center gap-2">
           <Wallet size={16} /> {tr(lang, 'Ставки сотрудников', 'Employee pay rates', "Xodimlar ish haqi")}
@@ -294,11 +286,12 @@ function PayrollTab({ lang, onShowToast }: { lang: Language; onShowToast: Props[
 // Lateness rules the payroll engine applies (TRACEBACKEND services/payroll/
 // compute.ts): past the grace minutes, every missed minute is deducted
 // pro-rata from fixed pay AND the fixed late penalty below is added on top.
-function AttendanceRulesCard({ lang, rules, onRulesChange, onShowToast }: {
-  lang: Language; rules: PayrollRule[];
-  onRulesChange: (rules: PayrollRule[]) => void;
+export function AttendanceRulesCard({ lang, onShowToast }: {
+  lang: Language;
   onShowToast: Props['onShowToast'];
 }) {
+  const [rules, onRulesChange] = useState<PayrollRule[]>([]);
+  useEffect(() => { checklistApi.payroll.rules().then(onRulesChange).catch(() => {}); }, []);
   const [graceMin, setGraceMin] = useState<number | null>(null);
   const [earlyMin, setEarlyMin] = useState<number | null>(null);
   const [lateAmount, setLateAmount] = useState(0);
@@ -369,7 +362,7 @@ const WEEKDAYS: { iso: number; ru: string; en: string; uz: string }[] = [
   { iso: 7, ru: 'Вс', en: 'Sun', uz: 'Ya' },
 ];
 
-function PayProfileEditor({ lang, employee, onShowToast, onDone }: {
+export function PayProfileEditor({ lang, employee, onShowToast, onDone }: {
   lang: Language; employee: ChecklistEmployee;
   onShowToast: Props['onShowToast']; onDone: () => void;
 }) {
@@ -543,7 +536,7 @@ function Field({ label, value, onChange, step = 1 }: { label: string; value: num
 // Build-a-week + swap approvals. Keeps the same Card/tr conventions as the
 // rest of this file — a genuine "grid" builder (drag to assign, etc.) is a
 // future pass; this ships create → publish → approve end-to-end.
-function RosterTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['onShowToast'] }) {
+export function RosterTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['onShowToast'] }) {
   const [roles, setRoles] = useState<ChecklistRole[]>([]);
   const [employees, setEmployees] = useState<ChecklistEmployee[]>([]);
   const [shifts, setShifts] = useState<RosterShift[]>([]);
@@ -766,7 +759,7 @@ async function loadLeaflet() {
 
 const DEFAULT_CENTER: [number, number] = [41.311081, 69.240562]; // Tashkent — sane default before a branch pin exists
 
-function GeofenceTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['onShowToast'] }) {
+export function GeofenceTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['onShowToast'] }) {
   const [settings, setSettings] = useState<WorkforceGeofenceSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

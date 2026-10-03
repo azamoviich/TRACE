@@ -3120,6 +3120,7 @@ export interface EmployeeDashboardRow {
   tempPasswordUsed: boolean;
   appAccount: boolean;
   schedule: { start: string; end: string; days: number[] } | null;
+  faceEnrolled: boolean;
 }
 
 // One staff record from the connected POS, for the invite picker.
@@ -3171,6 +3172,15 @@ export const checklistApi = {
     posPreview: () => checkedFetch<{ groups: { posRoleName: string; names: string[] }[] }>('/checklist/employees/pos-preview'),
     posCandidates: () => checkedFetch<{ groups: { posRoleName: string; names: string[]; candidates: PosCandidate[] }[] }>('/checklist/employees/pos-preview'),
     inviteFull: (data: InviteInput) => post<ChecklistEmployee>('/checklist/employees/invite', data),
+    // Reference face for the clock-in face check — private storage, the
+    // returned url is a short-lived signed link.
+    face: (id: string) => checkedFetch<{ enrolled: boolean; enrolledAt: string | null; url: string | null }>(`/checklist/employees/${id}/face`),
+    uploadFace: (id: string, file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return checkedFetch<{ ok: true; url: string | null }>(`/checklist/employees/${id}/face`, { method: 'POST', body: form });
+    },
+    removeFace: (id: string) => checkedFetch<{ ok: true }>(`/checklist/employees/${id}/face`, { method: 'DELETE' }),
     updateDetails: (id: string, data: Partial<{ name: string; phone: string | null; email: string | null; birthDate: string | null; roleId: string; active: boolean }>) =>
       checkedFetch<ChecklistEmployee>(`/checklist/employees/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
     import: (roleId: string, names: string[]) =>

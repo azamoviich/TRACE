@@ -5,10 +5,10 @@
 // shift schedule. Payroll/roster/geofence UIs are shared with Workforce.tsx;
 // Workforce keeps the team-hub content (feed, learn, chat, hub settings).
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Search, X, ChevronRight, ChevronLeft, Send, Check, UserPlus, Link2, RotateCcw, Wallet, Phone, Mail, Cake, Users, Clock, CalendarDays } from 'lucide-react';
+import { Plus, Search, X, ChevronRight, ChevronLeft, Send, Check, UserPlus, Link2, RotateCcw, Wallet, Phone, Mail, Cake, Users, Clock, CalendarDays, ScanFace, Camera, Trash2 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Language, ChecklistRole, ChecklistEmployee } from '../../types';
-import { checklistApi, EmployeeDashboard, EmployeeDashboardRow, EmployeeStatus, PosCandidate } from '../../services/traceApi';
+import { checklistApi, traceApi, EmployeeDashboard, EmployeeDashboardRow, EmployeeStatus, PosCandidate } from '../../services/traceApi';
 import { statusBadge, relativeTimeShort } from './Checklists';
 import { PayrollTab, PayProfileEditor, RosterTab, GeofenceTab, AttendanceRulesCard } from './Workforce';
 
@@ -81,6 +81,7 @@ export function Employees({ lang, onShowToast }: Props) {
       {tab === 'settings' && (
         <div className="space-y-5">
           <AttendanceRulesCard lang={lang} onShowToast={onShowToast} />
+          <FaceRulesCard lang={lang} onShowToast={onShowToast} />
           <GeofenceTab lang={lang} onShowToast={onShowToast} />
         </div>
       )}
@@ -219,6 +220,7 @@ function EmployeeRow({ lang, e, onOpen }: { lang: Language; e: EmployeeDashboard
             ? ` · ${tr(lang, 'приглашён', 'invited', 'taklif qilingan')} ${relativeTimeShort(lang, e.invitedAt)}`
             : ` · ${tr(lang, 'был(а)', 'active', 'faol edi')} ${relativeTimeShort(lang, e.lastActiveAt)}`}
           {e.posEmployeeId && ' · iiko'}
+          {!e.faceEnrolled && e.appAccount && ` · ${tr(lang, 'без фото лица', 'no face photo', "yuz rasmi yo'q")}`}
         </p>
       </div>
       {e.payroll && (
@@ -549,6 +551,8 @@ function EmployeeDrawer({ lang, e, roles, onShowToast, onClose, onChanged }: {
               </div>
             )}
 
+            <FaceSection lang={lang} employeeId={e.id} onShowToast={onShowToast} onChanged={onChanged} />
+
             <div className="space-y-3">
               <FormField label={tr(lang, 'Телефон', 'Phone', 'Telefon')} icon={Phone}>
                 <input value={phone} inputMode="tel" onChange={ev => setPhone(ev.target.value ? '+' + ev.target.value.replace(/\D/g, '').slice(0, 15) : '')} className={`${input} tabular-nums`} />
@@ -590,6 +594,126 @@ function EmployeeDrawer({ lang, e, roles, onShowToast, onClose, onChanged }: {
         )}
       </div>
     </div>
+  );
+}
+
+// ── Face check ───────────────────────────────────────────────────────────
+const FACE_ERRORS: Record<string, [string, string, string]> = {
+  NO_FACE: ['На фото не найдено лицо', 'No face found in the photo', 'Rasmda yuz topilmadi'],
+  MULTIPLE_FACES: ['На фото несколько лиц — нужен только сотрудник', 'More than one face — only the employee should be in it', "Bir nechta yuz — faqat xodim bo'lishi kerak"],
+  FACE_TOO_SMALL: ['Лицо слишком мелкое — снимите ближе', 'Face too small — take it closer', 'Yuz juda kichik — yaqinroqdan oling'],
+};
+
+function FaceSection({ lang, employeeId, onShowToast, onChanged }: { lang: Language; employeeId: string; onShowToast: Toast; onChanged: () => void }) {
+  const [face, setFace] = useState<{ enrolled: boolean; url: string | null } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  useEffect(() => { checklistApi.employees.face(employeeId).then(setFace).catch(() => setFace({ enrolled: false, url: null })); }, [employeeId]);
+
+  const upload = async (file: File | undefined) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const r = await checklistApi.employees.uploadFace(employeeId, file);
+      setFace({ enrolled: true, url: r.url });
+      onShowToast(tr(lang, 'Фото лица сохранено', 'Face photo saved', 'Yuz rasmi saqlandi'), 'success');
+      onChanged();
+    } catch (err) {
+      const code = serverMessage(err) ?? '';
+      const msg = FACE_ERRORS[code];
+      onShowToast(msg ? tr(lang, ...msg) : tr(lang, 'Не удалось загрузить фото', 'Failed to upload photo', "Rasmni yuklab bo'lmadi"), 'error');
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  const remove = async () => {
+    if (!window.confirm(tr(lang, 'Удалить фото лица? Сотрудник будет открывать смену только по геолокации.', 'Remove the face photo? They will clock in by location only.', "Yuz rasmini o'chirasizmi? Xodim faqat geolokatsiya bilan kiradi."))) return;
+    await checklistApi.employees.removeFace(employeeId).catch(() => {});
+    setFace({ enrolled: false, url: null });
+    onChanged();
+  };
+
+  return (
+    <div className="p-3.5 rounded-xl border border-border bg-background">
+      <div className="flex items-center gap-3">
+        <div className="w-16 h-16 rounded-xl overflow-hidden bg-card border border-border flex items-center justify-center shrink-0">
+          {face?.url ? <img src={face.url} alt="" className="w-full h-full object-cover" /> : <ScanFace size={26} className="text-muted" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-semibold text-text">{tr(lang, 'Лицо для входа на смену', 'Face for clock-in', 'Smenaga kirish uchun yuz')}</p>
+          <p className="text-[11px] text-muted mt-0.5">
+            {face === null ? '…' : face.enrolled
+              ? tr(lang, 'При открытии смены: моргнуть и повернуть голову', 'At clock-in: blink and turn the head', 'Smena ochilganda: ko\'z qisish va boshni burish')
+              : tr(lang, 'Не добавлено — смена открывается только по геолокации', 'Not added — clock-in checks location only', "Qo'shilmagan — faqat geolokatsiya tekshiriladi")}
+          </p>
+        </div>
+      </div>
+      <div className="flex gap-2 mt-3">
+        <input ref={inputRef} type="file" accept="image/*" capture="user" className="hidden" onChange={ev => upload(ev.target.files?.[0])} />
+        <button onClick={() => inputRef.current?.click()} disabled={busy} className="px-3 py-1.5 rounded-lg bg-primary text-white text-[12px] font-semibold flex items-center gap-1.5 disabled:opacity-50">
+          <Camera size={13} /> {busy ? tr(lang, 'Проверяем фото…', 'Checking photo…', 'Rasm tekshirilmoqda…') : face?.enrolled ? tr(lang, 'Заменить', 'Replace', 'Almashtirish') : tr(lang, 'Добавить фото', 'Add photo', "Rasm qo'shish")}
+        </button>
+        {face?.enrolled && (
+          <button onClick={remove} className="px-3 py-1.5 rounded-lg border border-border text-[12px] text-muted hover:text-red-500 flex items-center gap-1.5">
+            <Trash2 size={13} /> {tr(lang, 'Удалить', 'Remove', "O'chirish")}
+          </button>
+        )}
+      </div>
+      <p className="text-[10px] text-muted mt-2">{tr(lang, 'Лицо крупно, анфас, хороший свет, без очков от солнца.', 'Face close up, straight on, good light, no sunglasses.', "Yuz yaqindan, to'g'ridan, yaxshi yorug'lik, quyosh ko'zoynaksiz.")}</p>
+    </div>
+  );
+}
+
+function FaceRulesCard({ lang, onShowToast }: { lang: Language; onShowToast: Toast }) {
+  const [threshold, setThreshold] = useState<number | null>(null);
+  const [policy, setPolicy] = useState<'allow_flagged' | 'block'>('allow_flagged');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    traceApi.settings.geofence().then(st => { setThreshold(Number(st.faceMatchThreshold ?? 80)); setPolicy(st.faceFailPolicy ?? 'allow_flagged'); }).catch(() => {});
+  }, []);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await traceApi.settings.saveGeofence({ faceMatchThreshold: threshold ?? 80, faceFailPolicy: policy });
+      onShowToast(tr(lang, 'Сохранено', 'Saved', 'Saqlandi'), 'success');
+    } catch { onShowToast(tr(lang, 'Не удалось сохранить', 'Failed to save', "Saqlab bo'lmadi"), 'error'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Card>
+      <h3 className="text-[15px] font-semibold text-text tracking-tight mb-1 flex items-center gap-2"><ScanFace size={16} /> {tr(lang, 'Проверка лица', 'Face check', 'Yuz tekshiruvi')}</h3>
+      <p className="text-[12px] text-muted mb-4">
+        {tr(lang, 'Работает для сотрудников, у которых в карточке есть фото лица: сотрудник смотрит в камеру, моргает и поворачивает голову в случайную сторону.', 'Applies to employees with a face photo on their card: they look at the camera, blink, and turn their head in a random direction.', "Kartasida yuz rasmi bor xodimlar uchun: kameraga qaraydi, ko'z qisadi va boshini tasodifiy tomonga buradi.")}
+      </p>
+      <label className="text-[11px] text-muted block mb-1">{tr(lang, 'Строгость совпадения', 'Match strictness', 'Moslik qat\'iyligi')}: <span className="text-text font-semibold">{threshold ?? '…'}</span></label>
+      <input type="range" min={60} max={95} step={5} value={threshold ?? 80} onChange={e => setThreshold(Number(e.target.value))} className="w-full accent-[rgb(var(--color-primary))]" />
+      <div className="flex justify-between text-[10px] text-muted mb-4">
+        <span>{tr(lang, 'Мягче — меньше ложных отказов', 'Lenient — fewer false rejections', 'Yumshoq')}</span>
+        <span>{tr(lang, 'Строже', 'Strict', "Qat'iy")}</span>
+      </div>
+      <p className="text-[11px] text-muted mb-1.5">{tr(lang, 'Если лицо не совпало', "If the face doesn't match", 'Agar yuz mos kelmasa')}</p>
+      <div className="grid sm:grid-cols-2 gap-2">
+        {([
+          ['allow_flagged', tr(lang, 'Пустить, но отметить', 'Allow, but flag it', "Kiritish, lekin belgilash"), tr(lang, 'Смена откроется, вы увидите её на проверке', 'Shift opens; you see it for review', "Smena ochiladi, siz tekshirasiz")],
+          ['block', tr(lang, 'Не пускать', 'Block', 'Kiritmaslik'), tr(lang, 'Смену открыть нельзя, пока лицо не совпадёт', "Can't clock in until the face matches", "Yuz mos kelmaguncha smena ochilmaydi")],
+        ] as const).map(([id, title, sub]) => (
+          <button key={id} onClick={() => setPolicy(id)}
+            className={`text-left p-3 rounded-lg border transition-colors ${policy === id ? 'border-primary bg-primary/10' : 'border-border bg-background hover:border-primary/40'}`}>
+            <p className="text-[13px] font-semibold text-text">{title}</p>
+            <p className="text-[11px] text-muted mt-0.5">{sub}</p>
+          </button>
+        ))}
+      </div>
+      <button onClick={save} disabled={busy || threshold === null} className="mt-4 px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold disabled:opacity-50">
+        {busy ? tr(lang, 'Сохранение…', 'Saving…', 'Saqlanmoqda…') : tr(lang, 'Сохранить', 'Save', 'Saqlash')}
+      </button>
+    </Card>
   );
 }
 

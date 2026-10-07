@@ -229,7 +229,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ lang, branch, onContextRea
   const [feedOpen, setFeedOpen] = useState(false);
   const { connected } = useRealtimeData({
     backendWsUrl: wsUrl ?? '',
-    enabled: !!wsUrl && !demo,
+    // No `!!wsUrl` gate: useRealtimeData falls back to the page's own host.
+    enabled: !demo,
     onEvent: useCallback((e: RealtimeEvent) => {
       if (FEED_TYPES.has(e.type)) setFeed(p => [{ ...e, id: `${Date.now()}-${Math.random()}` }, ...p].slice(0, 300));
     }, []),

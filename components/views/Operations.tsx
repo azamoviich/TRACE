@@ -860,7 +860,8 @@ export const Operations: React.FC<{
   const wsUrl = import.meta.env.VITE_BACKEND_WS_URL as string | undefined;
   const { connected: rtConnected } = useRealtimeData({
     backendWsUrl: wsUrl ?? '',
-    enabled: !!wsUrl && !demo,
+    // See Dashboard: no `!!wsUrl` gate — the hook falls back to same host.
+    enabled: !demo,
     onEvent: useCallback((event: RealtimeEvent) => {
       // Poster Marketplace webhooks (posterWebhook.ts), namespaced
       // `poster.<object>.<action>`. The body is a bare ping, so each object

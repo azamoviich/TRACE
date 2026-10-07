@@ -1056,6 +1056,30 @@ export const TenantDrawer: React.FC<{
                     <div className="space-y-2.5 mb-5">{[80, 60, 70].map(w => <div key={w} className="h-3 bg-card-hover rounded animate-pulse" style={{ width: `${w}%` }} />)}</div>
                   ) : (
                     <div className="space-y-2.5 mb-5">
+                      {status.poster && (
+                        <>
+                          <div className="flex items-center gap-3">
+                            <span className="text-[9px] text-muted uppercase tracking-[0.15em] w-24 flex-shrink-0">Poster API</span>
+                            {status.poster.ok === true ? (
+                              <span className="flex items-center gap-1.5 text-[12px] text-success"><span className="w-2 h-2 rounded-full bg-success" />Answering</span>
+                            ) : status.poster.ok === false ? (
+                              <span className="flex items-center gap-1.5 text-[12px] text-danger"><span className="w-2 h-2 rounded-full bg-danger" />Failing</span>
+                            ) : (
+                              <span className="flex items-center gap-1.5 text-[12px] text-muted"><span className="w-2 h-2 rounded-full bg-muted/40" />Not checked yet</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-[9px] text-muted uppercase tracking-[0.15em] w-24 flex-shrink-0">Last OK call</span>
+                            <span className="text-[12px] text-muted">{relativeTime(status.poster.lastOkAt)}</span>
+                          </div>
+                          {status.poster.ok === false && status.poster.lastError && (
+                            <div className="flex items-start gap-3">
+                              <span className="text-[9px] text-muted uppercase tracking-[0.15em] w-24 flex-shrink-0 pt-0.5">Error</span>
+                              <span className="text-[11px] text-danger font-mono break-all">{status.poster.lastError}</span>
+                            </div>
+                          )}
+                        </>
+                      )}
                       <div className="flex items-center gap-3">
                         <span className="text-[9px] text-muted uppercase tracking-[0.15em] w-24 flex-shrink-0">Plugin</span>
                         {status.pluginConnected ? (

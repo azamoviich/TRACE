@@ -2423,6 +2423,7 @@ export interface Tenant {
 export interface ConnectionTestResults {
   cloud_api?: { ok: boolean; error?: string };
   server?: { ok: boolean; error?: string };
+  poster?: { ok: boolean; error?: string; spots?: { id: string; name: string }[] };
   onec?: { ok: boolean; error?: string; entitySets?: string[] };
 }
 
@@ -2574,7 +2575,19 @@ export interface LiveStatus {
   ip: string | null;
   eventsToday: number;
   lastEventAt: string | null;
+  // Poster tenants only: the API connection (no plugin there). ok = null
+  // until the server has made a call for this tenant since its last restart.
+  poster?: {
+    ok: boolean | null;
+    lastOkAt: string | null;
+    lastError: string | null;
+    incident: string | null;
+    incidentSince: string | null;
+  };
 }
+
+/** Plugin connected (iiko) or Poster API answering (Poster). */
+export const isLive = (s?: LiveStatus) => !!s && (s.pluginConnected || s.poster?.ok === true);
 
 export interface RealtimeEvent {
   id: string;

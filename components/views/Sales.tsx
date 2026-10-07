@@ -263,7 +263,7 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
     const catLines = [...byCat.entries()].sort((a, b) => b[1] - a[1]).map(([c, r]) => `  ${c}: ${f(r)} UZS`).join('\n');
     const itemLines = [...filtered].sort((a, b) => b.revenue - a.revenue).slice(0, 40)
       .map(it => `  "${it.name}" [${it.cat}] — выручка ${f(it.revenue)} UZS, ${it.qty} шт., ${it.velocity}/день, фудкост ${it.fc != null ? Math.round(it.fc) + '%' : 'н/д'}, прибыль ${f(it.profit)} UZS, группа ${QUADS[it.q].name}, ABC (кол-во/выручка/прибыль): ${it.abcQty}${it.abcRevenue}${it.abcProfit}`).join('\n');
-    const ctx = `Ты аналитик меню ресторана. Модификаторы, сервисный сбор и чаевые уже исключены. Период: ${exportLabel}. Позиций: ${filtered.length}.\n\nВыручка по категориям:\n${catLines}\n\nТоп-40 позиций по выручке:\n${itemLines}`;
+    const ctx = `Ты аналитик меню ресторана. Модификаторы, сервисный сбор и чаевые уже исключены. Период: ${exportLabel}${to >= tashkentDateStr() ? ' (день ещё не закончился — данные за сегодня неполные, выводы о спросе делай осторожно)' : ''}. Позиций: ${filtered.length}.\n\nВыручка по категориям:\n${catLines}\n\nТоп-40 позиций по выручке:\n${itemLines}`;
     const prompt = tr(lang,
       'Что делать с меню по этим цифрам: какие позиции держать, какие переделать, где теряется прибыль. 4 коротких абзаца, каждый начинается с вывода жирным (**так**), с конкретными цифрами и эффектом в сумах. Без заголовков и списков.',
       'What to do with the menu based on these numbers: what to keep, what to rework, where profit leaks. 4 short paragraphs, each starting with the takeaway in bold (**like this**), with concrete numbers and effect in UZS. No headings or lists.',

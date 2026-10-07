@@ -1,6 +1,6 @@
 import React from 'react';
 import { ChevronRight } from 'lucide-react';
-import { Tenant, LiveStatus } from '../../services/traceApi';
+import { Tenant, LiveStatus, isLive } from '../../services/traceApi';
 import { DOMAIN, relativeTime } from './helpers';
 import { computeHealth } from './health';
 
@@ -73,7 +73,7 @@ export const TenantItem: React.FC<{
   branchCount: number;
   onClick: () => void;
 }> = ({ tenant, status, selected, branchCount, onClick }) => {
-  const pluginLive = status?.pluginConnected ?? false;
+  const pluginLive = isLive(status);
 
   return (
     <button
@@ -120,7 +120,7 @@ export const TenantItem: React.FC<{
             )
           )}
           {status !== undefined && (
-            <span className="text-[10px] text-muted/70 flex-shrink-0">{relativeTime(status.lastEventAt)}</span>
+            <span className="text-[10px] text-muted/70 flex-shrink-0">{relativeTime(status.poster?.lastOkAt ?? status.lastEventAt)}</span>
           )}
           <span className="text-[10px] text-muted/70 flex-shrink-0" title={tenant.last_active_at ? `Last active ${new Date(tenant.last_active_at).toLocaleString()}` : 'No web activity recorded yet'}>
             {tenant.last_active_at ? `Active ${relativeTime(tenant.last_active_at)}` : 'No activity yet'}

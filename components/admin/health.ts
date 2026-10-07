@@ -1,5 +1,12 @@
 import { Tenant, LiveStatus, ConnectionTestResults } from '../../services/traceApi';
 
+const POSTER_INCIDENT: Record<string, string> = {
+  auth: 'token rejected',
+  unreachable: 'Poster not answering',
+  rate_limit: 'rate limited',
+  spot_missing: 'spot not found',
+};
+
 export type CheckState = 'ok' | 'missing' | 'unknown';
 
 export interface HealthCheck {
@@ -37,7 +44,7 @@ export function computeHealth(tenant: Tenant, live?: LiveStatus, testResult?: Co
   // POS reachability is only known once a test has actually been run this
   // session — never inferred, never auto-triggered.
   if (testResult) {
-    const relevant = tenant.pos_type === 'poster' ? null : (testResult.server ?? testResult.cloud_api);
+    const relevant = tenant.pos_type === 'poster' ? testResult.poster : (testResult.server ?? testResult.cloud_api);
     checks.push(
       relevant
         ? { key: 'pos_reachable', label: 'POS reachable', state: relevant.ok ? 'ok' : 'missing', detail: relevant.ok ? 'verified' : relevant.error }
@@ -50,6 +57,12 @@ export function computeHealth(tenant: Tenant, live?: LiveStatus, testResult?: Co
   checks.push(
     live === undefined
       ? { key: 'plugin', label: 'Plugin', state: 'unknown', detail: 'loading' }
+      : tenant.pos_type === 'poster'
+      ? live.poster?.ok === true
+        ? { key: 'plugin', label: 'Poster API', state: 'ok', detail: 'answering' }
+        : live.poster?.ok === false
+        ? { key: 'plugin', label: 'Poster API', state: 'missing', detail: POSTER_INCIDENT[live.poster.incident ?? ''] ?? live.poster.lastError ?? 'failing' }
+        : { key: 'plugin', label: 'Poster API', state: 'unknown', detail: 'not checked yet' }
       : live.pluginConnected
       ? { key: 'plugin', label: 'Plugin', state: 'ok', detail: 'connected' }
       : { key: 'plugin', label: 'Plugin', state: 'missing', detail: 'offline' }
@@ -69,9 +82,11 @@ export function computeHealth(tenant: Tenant, live?: LiveStatus, testResult?: Co
   );
 
   if (live !== undefined) {
-    const fresh = !!live.lastEventAt && (Date.now() - new Date(live.lastEventAt).getTime()) < 86_400_000;
+    // Poster's live updates are polled, not stored as events — its activity is the last good API call.
+    const lastAt = tenant.pos_type === 'poster' ? (live.poster?.lastOkAt ?? live.lastEventAt) : live.lastEventAt;
+    const fresh = !!lastAt && (Date.now() - new Date(lastAt).getTime()) < 86_400_000;
     checks.push(
-      !live.lastEventAt
+      !lastAt
         ? { key: 'activity', label: 'Recent activity', state: 'unknown', detail: 'no events yet' }
         : fresh
         ? { key: 'activity', label: 'Recent activity', state: 'ok', detail: 'within 24h' }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Search, RefreshCw, LogOut, Building2, CheckCircle2, Activity, Zap, WifiOff } from 'lucide-react';
-import { traceApi, Tenant, LiveStatus, RealtimeEvent, HallPlan, IikoSection, ConnectionTestResults } from '../../services/traceApi';
+import { traceApi, Tenant, LiveStatus, isLive, RealtimeEvent, HallPlan, IikoSection, ConnectionTestResults } from '../../services/traceApi';
 import { HallEditor } from '../HallEditor';
 import { AdminLogin } from './AdminLogin';
 import { TenantItem } from './TenantList';
@@ -13,14 +13,14 @@ const StatsBar: React.FC<{ tenants: Tenant[]; statuses: Record<string, LiveStatu
   const total = tenants.length;
   const active = tenants.filter(t => t.enabled).length;
   const inactive = tenants.filter(t => !t.enabled).length;
-  const pluginConnected = Object.values(statuses).filter(s => s.pluginConnected).length;
+  const pluginConnected = Object.values(statuses).filter(s => isLive(s)).length;
   const eventsToday = Object.values(statuses).reduce((sum, s) => sum + (s.eventsToday ?? 0), 0);
 
   const stats = [
     { label: 'Total', value: String(total), icon: <Building2 size={13} />, color: 'text-text' },
     { label: 'Active', value: String(active), icon: <CheckCircle2 size={13} />, color: 'text-success' },
     { label: 'Inactive', value: String(inactive), icon: <Building2 size={13} />, color: 'text-muted' },
-    { label: 'Plugin live', value: statusLoading ? '—' : String(pluginConnected), icon: <Activity size={13} />, color: 'text-secondary' },
+    { label: 'Live', value: statusLoading ? '—' : String(pluginConnected), icon: <Activity size={13} />, color: 'text-secondary' },
     { label: 'Orders today', value: statusLoading ? '—' : eventsToday.toLocaleString(), icon: <Zap size={13} />, color: 'text-primary' },
   ];
 

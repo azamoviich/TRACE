@@ -308,9 +308,9 @@ function demoPriceElasticity(lang: Language) {
         reasoning: en ? '18% below category avg price, strong demand'
           : uz ? 'Kategoriya o\'rtachasidan 18% past, talab yuqori'
           : 'На 18% ниже средней цены категории, высокий спрос',
-        promo: en ? 'Marathon: sell 25 orders this week — 40,000 UZS bonus'
-          : uz ? 'Marafon: bu hafta 25 buyurtma sot — 40 000 UZS bonus'
-          : 'Марафон: продай 25 порций за неделю — бонус 40 000 UZS',
+        promo: en ? 'Offer it as a light starter to every table ordering a main'
+          : uz ? 'Asosiy taom buyurtma qilgan har bir stolga yengil boshlang\'ich sifatida taklif qiling'
+          : 'Предлагайте как лёгкую закуску каждому столу, заказывающему горячее',
       },
       {
         name: 'Mojito', currentPrice: 55_000, suggestedPrice: 60_000,

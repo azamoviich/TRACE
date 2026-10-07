@@ -1,3 +1,4 @@
+import { renderAiMarkdown } from '../../utils/aiText';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
@@ -599,9 +600,17 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
     const itemLines = [...filtered].sort((a, b) => b.revenue - a.revenue).slice(0, 40)
       .map(it => `  "${it.name}" [категория: ${it.cat}] — выручка ${fmt(it.revenue)} UZS, ${it.qty} шт., ${it.velocity}/день, фудкост ${it.foodCostPct != null ? it.foodCostPct + '%' : 'н/д'}, маржа ${it.marginPct != null ? it.marginPct + '%' : 'н/д'}, ABC (кол-во/выручка/маржа): ${it.abcQty}${it.abcRevenue}${it.abcProfit}`)
       .join('\n');
+    // The model must know the window — without it, per-day rates from a
+    // partial "today" view were read as a full day's sales.
+    const periodLabel = range === 'custom' && customRange
+      ? `${customRange.from} – ${customRange.to}`
+      : ABC_TIME_RANGES.find(r => r.key === range)?.[ru ? 'ru' : 'en'] ?? range;
+    const periodNote = range === 'today'
+      ? (ru ? ' (день ещё не закончился — данные неполные, выводы о спросе делай осторожно)' : ' (day still in progress — partial data, be careful with demand conclusions)')
+      : '';
     const ctx = ru
-      ? `Ты аналитик меню ресторана. Ниже список позиций меню с их категорией (модификаторы, сервисный сбор и чаевые уже исключены из этого списка — считай всё ниже реальными продаваемыми позициями, будь то блюдо, напиток или предмет типа "кальян"/"попкорн" — определяй тип по названию и категории). Всего позиций: ${filtered.length}, из них ${aCount} формируют 70% выручки.\n\nВыручка по категориям:\n${catLines}\n\nТоп-40 позиций по выручке:\n${itemLines}`
-      : `You are a restaurant menu analyst. Below are menu items with category (modifiers/service charge/tips are already excluded — treat everything below as a real sellable item, whether a dish, drink, or something like hookah/popcorn — infer the type from name and category). Total items: ${filtered.length}, ${aCount} of which make up 70% of revenue.\n\nRevenue by category:\n${catLines}\n\nTop 40 items by revenue:\n${itemLines}`;
+      ? `Период данных: ${periodLabel}${periodNote}.\nТы аналитик меню ресторана. Ниже список позиций меню с их категорией (модификаторы, сервисный сбор и чаевые уже исключены из этого списка — считай всё ниже реальными продаваемыми позициями, будь то блюдо, напиток или предмет типа "кальян"/"попкорн" — определяй тип по названию и категории). Всего позиций: ${filtered.length}, из них ${aCount} формируют 70% выручки.\n\nВыручка по категориям:\n${catLines}\n\nТоп-40 позиций по выручке:\n${itemLines}`
+      : `Data period: ${periodLabel}${periodNote}.\nYou are a restaurant menu analyst. Below are menu items with category (modifiers/service charge/tips are already excluded — treat everything below as a real sellable item, whether a dish, drink, or something like hookah/popcorn — infer the type from name and category). Total items: ${filtered.length}, ${aCount} of which make up 70% of revenue.\n\nRevenue by category:\n${catLines}\n\nTop 40 items by revenue:\n${itemLines}`;
     const prompt = ru
       ? 'Дай общий анализ меню: 1) какие категории/позиции недооценены или переоценены по цене, 2) что стоит убрать или продвигать, 3) любые аномалии (например, позиция с высокой выручкой но низкой маржой). 4-6 конкретных пунктов.'
       : 'Give an overall menu analysis: 1) which categories/items are under- or over-priced, 2) what to cut or promote, 3) any anomalies (e.g. high revenue but low margin). 4-6 specific points.';
@@ -1126,7 +1135,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
             ) : menuAiError ? (
               <p className="text-[12px] text-danger mt-1">{ru ? 'Ошибка AI. Попробуйте ещё раз.' : isUz ? 'AI xatosi. Qayta urining.' : 'AI error. Try again.'}</p>
             ) : menuAiText ? (
-              <p className="text-[12px] text-muted leading-relaxed mt-1 whitespace-pre-line">{menuAiText}</p>
+              <div className="text-[12px] text-muted leading-relaxed mt-1 [&_strong]:text-text" dangerouslySetInnerHTML={{ __html: renderAiMarkdown(menuAiText) }} />
             ) : (
               <p className="text-[11px] text-muted/60 mt-1">{ru ? 'Общий разбор всего меню — что убрать, что продвигать, где аномалии по марже' : isUz ? "Butun menyu bo'yicha umumiy tahlil" : 'Whole-menu breakdown — what to cut, promote, or investigate for margin anomalies'}</p>
             )}
@@ -1699,7 +1708,7 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
       .finally(() => setGuestReturnLoading(false));
   };
 
-  const [priceHints, setPriceHints] = useState<{ name: string; currentPrice: number; suggestedPrice: number; reasoning: string; promo?: string }[] | null>(null);
+  const [priceHints, setPriceHints] = useState<{ name: string; action?: 'raise' | 'lower' | 'recipe'; currentPrice: number; suggestedPrice: number; reasoning: string; impact?: string; promo?: string }[] | null>(null);
   const [priceLoading, setPriceLoading] = useState(false);
   const generatePriceHints = (force = false) => {
     setPriceLoading(true);
@@ -2121,7 +2130,7 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {[
               {
-                title: tr(lang, 'Ценовая эластичность', 'Price elasticity', 'Narx elastikligi'),
+                title: tr(lang, 'Ревизия цен', 'Price review', 'Narxlar tahlili'),
                 desc:  tr(lang, 'Советы по ценообразованию на основе данных продаж', 'Pricing hints from your sales data', 'Sotuv ma\'lumotlariga asoslangan narx maslahatlar'),
               },
               {
@@ -2159,8 +2168,8 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
       <AIInsightCard
         lang={lang}
         icon={<TrendingUp size={15} />}
-        title={tr(lang, 'Ценовая эластичность', 'Price elasticity', 'Narx elastikligi')}
-        description={tr(lang, 'Блюда, цену которых можно безопасно повысить — сравнение со средней ценой/маржой по категории меню, плюс механика для официантов', 'Dishes where a price increase is likely safe — compared to your own category average price/margin, plus a staff promo mechanic', "Narxini xavfsiz oshirish mumkin bo'lgan taomlar")}
+        title={tr(lang, 'Ревизия цен', 'Price review', 'Narxlar tahlili')}
+        description={tr(lang, 'Что поднять, что снизить и где менять себестоимость — по фудкосту, прибыли с порции и спросу', 'What to raise, what to lower, and where to cut cost — by food cost, profit per portion and demand', "Nimani oshirish, nimani tushirish va qayerda tannarxni kamaytirish — fudkost, porsiya foydasi va talab bo'yicha")}
         loading={priceLoading}
         hasResult={!!priceHints}
         onGenerate={(refresh) => generatePriceHints(refresh)}
@@ -2172,12 +2181,26 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
               <div key={i} className="py-2.5 border-b border-border last:border-0">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="text-[12px] font-medium text-text">{h.name}</p>
+                    <p className="text-[12px] font-medium text-text flex items-center gap-1.5 flex-wrap">
+                      {h.name}
+                      {h.action && (
+                        <span className={`text-[9px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded ${h.action === 'lower' ? 'bg-blue-500/10 text-blue-500' : h.action === 'recipe' ? 'bg-amber-500/10 text-amber-500' : 'bg-success/10 text-success'}`}>
+                          {h.action === 'lower' ? tr(lang, 'снизить', 'lower', 'tushirish') : h.action === 'recipe' ? tr(lang, 'себестоимость', 'recipe cost', 'tannarx') : tr(lang, 'поднять', 'raise', 'oshirish')}
+                        </span>
+                      )}
+                    </p>
                     <p className="text-[11px] text-muted mt-0.5">{h.reasoning}</p>
+                    {h.impact && <p className="text-[11px] text-text/80 mt-0.5">{h.impact}</p>}
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="text-[11px] text-muted line-through">{h.currentPrice.toLocaleString('ru-RU')}</p>
-                    <p className="text-[13px] font-bold text-success">{h.suggestedPrice.toLocaleString('ru-RU')} <span className="text-[9px] font-normal">UZS</span></p>
+                    {h.suggestedPrice !== h.currentPrice ? (
+                      <>
+                        <p className="text-[11px] text-muted line-through">{h.currentPrice.toLocaleString('ru-RU')}</p>
+                        <p className="text-[13px] font-bold text-success">{h.suggestedPrice.toLocaleString('ru-RU')} <span className="text-[9px] font-normal">UZS</span></p>
+                      </>
+                    ) : (
+                      <p className="text-[13px] font-bold text-text">{h.currentPrice.toLocaleString('ru-RU')} <span className="text-[9px] font-normal">UZS</span></p>
+                    )}
                   </div>
                 </div>
                 {h.promo && (

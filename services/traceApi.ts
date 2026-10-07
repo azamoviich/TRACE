@@ -302,35 +302,33 @@ function demoGuestReturn(lang: Language) {
 function demoPriceElasticity(lang: Language) {
   const uz = lang === 'uz';
   const en = lang === 'en';
+  const t = (ru: string, e: string, u: string) => (en ? e : uz ? u : ru);
   return {
     fromAI: true,
     hints: [
       {
-        name: 'Caesar Salad', currentPrice: 65_000, suggestedPrice: 72_000,
-        reasoning: en ? '18% below category avg price, strong demand'
-          : uz ? 'Kategoriya o\'rtachasidan 18% past, talab yuqori'
-          : 'На 18% ниже средней цены категории, высокий спрос',
-        promo: en ? 'Offer it as a light starter to every table ordering a main'
-          : uz ? 'Asosiy taom buyurtma qilgan har bir stolga yengil boshlang\'ich sifatida taklif qiling'
-          : 'Предлагайте как лёгкую закуску каждому столу, заказывающему горячее',
+        name: 'Caesar Salad', action: 'raise', currentPrice: 65_000, suggestedPrice: 70_000,
+        reasoning: t('Фудкост 38% при стабильном спросе, цена ниже категории', 'Food cost 38% with steady demand, priced below category', 'Fudkost 38%, talab barqaror, narx kategoriyadan past'),
+        impact: t('+1,1 млн UZS прибыли в месяц при −3% продаж', '+1.1M UZS profit per month at −3% sales', '−3% sotuvda oyiga +1,1 mln UZS foyda'),
+        promo: t('Предлагайте как лёгкую закуску к каждому горячему', 'Offer it as a light starter with every main', "Har bir issiq taomga yengil gazak sifatida taklif qiling"),
       },
       {
-        name: 'Mojito', currentPrice: 55_000, suggestedPrice: 60_000,
-        reasoning: en ? 'Margin below category average during evening hours'
-          : uz ? 'Kechki soatlarda kategoriya o\'rtachasidan past marja'
-          : 'Маржа ниже средней по категории в вечерние часы',
-        promo: en ? '2 sales per shift — +15,000 UZS to pay'
-          : uz ? 'Smenada 2 sotuv — ish haqiga +15 000 UZS'
-          : '2 продажи в смену — +15 000 UZS к зарплате',
+        name: 'Ribeye Steak', action: 'lower', currentPrice: 245_000, suggestedPrice: 225_000,
+        reasoning: t('Продаётся медленно, на 20% дороже категории, фудкост 24%', 'Slow seller, 20% above category, food cost 24%', "Sekin sotiladi, kategoriyadan 20% qimmat, fudkost 24%"),
+        impact: t('+0,8 млн UZS прибыли в месяц, если продажи вырастут на 25%', '+0.8M UZS profit per month if sales grow 25%', "Sotuv 25% oshsa, oyiga +0,8 mln UZS foyda"),
+        promo: t('Рекомендовать вместе с бокалом красного вина', 'Recommend it with a glass of red wine', "Bir qadah qizil vino bilan tavsiya qiling"),
       },
       {
-        name: 'Espresso', currentPrice: 28_000, suggestedPrice: 32_000,
-        reasoning: en ? 'High volume, price well below category avg'
-          : uz ? 'Yuqori hajm, narx kategoriya o\'rtachasidan past'
-          : 'Высокий объём, цена заметно ниже средней по категории',
-        promo: en ? 'Sell 40 this week — team lunch on the house'
-          : uz ? 'Bu hafta 40 ta sot — jamoa uchun bepul tushlik'
-          : 'Продай 40 за неделю — командный обед за счёт заведения',
+        name: 'Salmon Benedict', action: 'recipe', currentPrice: 148_000, suggestedPrice: 148_000,
+        reasoning: t('Фудкост 44%, цена уже выше категории', 'Food cost 44%, price already above category', "Fudkost 44%, narx kategoriyadan yuqori"),
+        impact: t('Фудкост до 34% даёт +1,6 млн UZS в месяц', 'Food cost down to 34% adds +1.6M UZS per month', "Fudkost 34% gacha — oyiga +1,6 mln UZS"),
+        promo: t('Перевзвесить порцию лосося (120 → 100 г) и сверить цену поставщика', 'Re-weigh the salmon portion (120 → 100 g) and check supplier price', "Losos porsiyasini qayta tortish (120 → 100 g), yetkazib beruvchi narxini tekshirish"),
+      },
+      {
+        name: 'Espresso', action: 'raise', currentPrice: 28_000, suggestedPrice: 30_000,
+        reasoning: t('Высокий объём, цена заметно ниже категории', 'High volume, price well below category', "Yuqori hajm, narx kategoriyadan past"),
+        impact: t('+0,9 млн UZS в месяц при неизменном спросе', '+0.9M UZS per month at unchanged demand', "Talab o'zgarmasa, oyiga +0,9 mln UZS"),
+        promo: t('К эспрессо предлагать десерт дня', 'Offer the dessert of the day with every espresso', "Espressoga kun desertini taklif qiling"),
       },
     ],
   };
@@ -348,9 +346,9 @@ function demoComboSuggestions(lang: Language) {
         reason: en ? 'Frequently ordered together on Friday evenings'
           : uz ? 'Juma kechlarida tez-tez birgalikda buyurtma qilinadi'
           : 'Часто заказывают вместе по пятницам вечером',
-        mechanic: en ? '10% off when ordered as a pair'
-          : uz ? 'Juft buyurtmada 10% chegirma'
-          : 'Скидка 10% при заказе пары',
+        mechanic: en ? 'Already a natural pair — waiter script, no discount: "A Mojito with the steak?"'
+          : uz ? 'Tabiiy juftlik — chegirmasiz ofitsiant skripti: «Steyk bilan Mojito?»'
+          : 'И так берут вместе — скрипт без скидки: «К стейку мохито?»'
       },
       {
         items: ['Caesar Salad', 'Passion Fruit Lemonade'],

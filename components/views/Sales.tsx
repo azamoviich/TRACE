@@ -14,7 +14,7 @@ import { Language, TimeRange, ComparisonPeriod } from '../../types';
 import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, Calendar, ChevronDown, ChevronUp, ChevronsUpDown, X, Sparkles, TrendingUp, TrendingDown, Minus, ExternalLink, Users, Download, FileText, FileSpreadsheet, Lock, SlidersHorizontal, Tags } from 'lucide-react';
 import { ComparisonSelector } from '../ui/ComparisonSelector';
 import { useRealtimeData, RealtimeEvent } from '../../hooks/useRealtimeData';
-import { traceApi, getTenantPlan, RevenueRow, HourlyRow, DishRow, CategoryPerfRow, AbcRow, AbcHistoryItem, DaypartData } from '../../services/traceApi';
+import { traceApi, isDemoTenant, getTenantPlan, RevenueRow, HourlyRow, DishRow, CategoryPerfRow, AbcRow, AbcHistoryItem, DaypartData } from '../../services/traceApi';
 import { ComingSoon } from '../ui/ComingSoon';
 
 type AbcFilter = 'all' | 'A' | 'B' | 'C';
@@ -1728,7 +1728,8 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
 
   useRealtimeData({
     backendWsUrl: wsUrl ?? '',
-    enabled: !!wsUrl && timeRange === 'today',
+    // See Dashboard: no `!!wsUrl` gate — the hook falls back to same host.
+    enabled: !isDemoTenant() && timeRange === 'today',
     onEvent: useCallback((event: RealtimeEvent) => {
       if (event.type !== 'order_closed') return;
       const d = event.data as any;

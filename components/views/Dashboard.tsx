@@ -641,7 +641,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ lang, onShowToast, branch,
   const wsUrl = import.meta.env.VITE_BACKEND_WS_URL as string | undefined;
   const { connected: wsConnected } = useRealtimeData({
     backendWsUrl: wsUrl ?? '',
-    enabled: !!wsUrl && !demo,
+    // No `!!wsUrl` gate: useRealtimeData falls back to the page's own host
+    // (the backend serves the frontend), so a build without
+    // VITE_BACKEND_WS_URL still gets live data instead of silently none.
+    enabled: !demo,
     onEvent: useCallback((event: RealtimeEvent) => {
       // Poster Marketplace webhook (posterWebhook.ts on the backend) — a
       // `transaction` event means the occupancy-driving active-orders

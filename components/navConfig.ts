@@ -32,6 +32,11 @@ export const HIDEABLE_PAGE_IDS: ViewState[] = [
   'sales', 'operations', 'financial', 'plan', 'reviews', 'loyalty', 'reports', 'employees', 'checklists', 'workforce',
 ];
 
+// Pages that belong to the Employee App add-on (admin panel → Employee Hub
+// master toggle). With the module off they don't exist for the tenant at all —
+// not in the nav, not in Settings' hide list — and the backend 403s the routes.
+export const EMPLOYEE_APP_PAGE_IDS: ViewState[] = ['employees', 'checklists', 'workforce'];
+
 export const NAV_STYLE_KEY = 'trace_nav_style';
 export const MOBILE_NAV_STYLE_KEY = 'trace_mobile_nav_style';
 export const HIDDEN_PAGES_KEY = 'trace_hidden_pages';

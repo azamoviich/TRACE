@@ -31,6 +31,9 @@ export const Settings: React.FC<{
   mobileNavStyle: MobileNavStyle;
   setMobileNavStyle: (s: MobileNavStyle) => void;
   hiddenPages: ViewState[];
+  // Pages the tenant doesn't have (add-on off, POS without plan/fact) — not
+  // listed here at all, since showing or hiding them isn't the user's call.
+  unavailablePages: ViewState[];
   setHiddenPages: (pages: ViewState[]) => void;
   defaultPage: ViewState;
   setDefaultPage: (p: ViewState) => void;
@@ -40,7 +43,7 @@ export const Settings: React.FC<{
   setLogoUrl: (url: string | null) => void;
 }> = ({
   lang, onShowToast, theme, setTheme, navStyle, setNavStyle, mobileNavStyle, setMobileNavStyle,
-  hiddenPages, setHiddenPages, defaultPage, setDefaultPage, accent, setAccent, logoUrl, setLogoUrl,
+  hiddenPages, unavailablePages, setHiddenPages, defaultPage, setDefaultPage, accent, setAccent, logoUrl, setLogoUrl,
 }) => {
   const ru = lang === 'ru';
   const isUz = lang === 'uz';
@@ -297,7 +300,7 @@ export const Settings: React.FC<{
       <Card title={t.pages_visibility_title} action={<Eye size={18} className="text-muted" />}>
         <p className="text-[13px] text-muted -mt-1 mb-5">{t.pages_visibility_desc}</p>
         <div className="space-y-1">
-          {NAV_ITEMS.filter(({ id }) => id !== 'settings').map(({ id, icon: Icon }) => {
+          {NAV_ITEMS.filter(({ id }) => id !== 'settings' && !unavailablePages.includes(id)).map(({ id, icon: Icon }) => {
             const isHideable = HIDEABLE_PAGE_IDS.includes(id);
             const isHidden = hiddenPages.includes(id);
             return (
@@ -326,11 +329,11 @@ export const Settings: React.FC<{
       <Card title={t.default_page_title} action={<Home size={18} className="text-muted" />}>
         <p className="text-[13px] text-muted -mt-1 mb-4">{t.default_page_desc}</p>
         <select
-          value={hiddenPages.includes(defaultPage) ? 'dashboard' : defaultPage}
+          value={hiddenPages.includes(defaultPage) || unavailablePages.includes(defaultPage) ? 'dashboard' : defaultPage}
           onChange={e => setDefaultPage(e.target.value as ViewState)}
           className="w-full bg-card border border-border rounded-lg px-3 py-2.5 text-[13px] text-text focus:outline-none focus:border-primary transition-colors cursor-pointer"
         >
-          {DEFAULT_PAGE_CHOICES.filter(id => !hiddenPages.includes(id)).map(id => (
+          {DEFAULT_PAGE_CHOICES.filter(id => !hiddenPages.includes(id) && !unavailablePages.includes(id)).map(id => (
             <option key={id} value={id}>{t[id as keyof typeof t] as string}</option>
           ))}
         </select>

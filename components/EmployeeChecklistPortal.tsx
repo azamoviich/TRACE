@@ -86,8 +86,11 @@ function LoginFlow({ lang, loginTenantSubdomain, onLoggedIn }: {
       } else {
         setStep('branch');
       }
-    } catch {
-      setError(tr(lang, 'Неверный PIN', 'Wrong PIN', "PIN noto'g'ri"));
+    } catch (e: any) {
+      // 403 = employee_app module switched off for this restaurant in the admin panel
+      setError(String(e?.message ?? '').startsWith('403')
+        ? tr(lang, 'Чек-листы отключены для этого ресторана', 'Checklists are turned off for this restaurant', "Cheklistlar ushbu restoran uchun o'chirilgan")
+        : tr(lang, 'Неверный PIN', 'Wrong PIN', "PIN noto'g'ri"));
       setPin('');
     } finally {
       setBusy(false);

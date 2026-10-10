@@ -1912,6 +1912,12 @@ export const traceApi = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }).then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); }),
+    // Cheap capability probe — employeeAppEnabled decides whether the
+    // Employees/Checklists/Workforce pages exist for this tenant at all.
+    featureFlags: (): Promise<{ shiftReportsEnabled: boolean; employeeAppEnabled: boolean }> =>
+      isDemoTenant()
+        ? Promise.resolve({ shiftReportsEnabled: false, employeeAppEnabled: true })
+        : apiFetch(`/settings/feature-flags`).then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); }),
     // Employee Hub Phase 7 (plan §6/§7) — hub config on top of the Phase 0
     // module rows, server-backed (replaces navConfig.ts's localStorage hiding).
     hubConfig: (): Promise<{ modules: { moduleKey: string; enabled: boolean; config: Record<string, unknown> }[] }> =>

@@ -27,7 +27,7 @@ import { PWAInstallGuide } from './components/PWAInstallGuide';
 import { Sidebar } from './components/Sidebar';
 import { useWindowMaximized } from './hooks/useWindowMaximized';
 import {
-  NAV_ITEMS, NavStyle, MobileNavStyle, NAV_STYLE_KEY, MOBILE_NAV_STYLE_KEY, HIDDEN_PAGES_KEY, DEFAULT_PAGE_KEY, ACCENT_KEY, LOGO_URL_KEY,
+  NAV_ITEMS, EMPLOYEE_APP_PAGE_IDS, NavStyle, MobileNavStyle, NAV_STYLE_KEY, MOBILE_NAV_STYLE_KEY, HIDDEN_PAGES_KEY, DEFAULT_PAGE_KEY, ACCENT_KEY, LOGO_URL_KEY,
   loadNavStyle, loadMobileNavStyle, loadHiddenPages, loadDefaultPage, loadAccent, applyAccent, loadLogoUrl,
 } from './components/navConfig';
 
@@ -394,14 +394,24 @@ export default function App() {
   // План и факт exists only for iiko restaurants (GET /plan/meta); hidden
   // from the nav until that's confirmed so other venues never see it flash.
   const [planAvailable, setPlanAvailable] = useState<boolean | null>(null);
+  // Employee App is a per-tenant add-on switched on in the admin panel
+  // (GET /settings/feature-flags). Off or still unknown → its pages don't exist.
+  const [employeeAppEnabled, setEmployeeAppEnabled] = useState<boolean | null>(null);
+  // Pages this tenant doesn't have at all — unlike hiddenPagesState these are
+  // never the user's choice, so they're kept out of Settings and localStorage.
+  const unavailablePages: ViewState[] = [
+    ...(planAvailable ? [] : ['plan' as ViewState]),
+    ...(employeeAppEnabled ? [] : EMPLOYEE_APP_PAGE_IDS),
+  ];
   const hiddenPages: ViewState[] = isMarketing
     ? NAV_ITEMS.map(n => n.id).filter(id => id !== 'reviews' && id !== 'loyalty')
-    : planAvailable ? hiddenPagesState : [...hiddenPagesState, 'plan'];
+    : [...hiddenPagesState, ...unavailablePages];
   const setHiddenPages = (pages: ViewState[]) => { setHiddenPagesState(pages); localStorage.setItem(HIDDEN_PAGES_KEY, JSON.stringify(pages)); };
 
   // A page hidden while it was the active tab needs somewhere safe to land.
   useEffect(() => {
     if (currentView === 'plan' && planAvailable === null) return; // still checking — don't bounce a ?view=plan deep link
+    if (EMPLOYEE_APP_PAGE_IDS.includes(currentView) && employeeAppEnabled === null && !hiddenPagesState.includes(currentView)) return; // same for ?view=employees etc.
     if (hiddenPages.includes(currentView)) setCurrentView('dashboard');
   }, [hiddenPages]);
 
@@ -474,6 +484,13 @@ export default function App() {
       .catch(() => setPlanAvailable(false));
   }, [isLoggedIn, isMarketing, activeBranchId]);
 
+  useEffect(() => {
+    if (!isLoggedIn || isMarketing) return;
+    traceApi.settings.featureFlags()
+      .then(f => setEmployeeAppEnabled(!!f.employeeAppEnabled))
+      .catch(() => setEmployeeAppEnabled(false));
+  }, [isLoggedIn, isMarketing]);
+
   // Load sibling branches once (multi-branch orgs only — empty for single-branch tenants)
   useEffect(() => {
     if (isDemoTenant() || isMarketing) return;
@@ -536,6 +553,9 @@ export default function App() {
 
   const renderContent = () => {
     const branchKey = activeBranchId ?? 'self';
+    // Add-on off (or flag still loading on a ?view= deep link) — never mount
+    // these views, they'd only fire requests the backend refuses.
+    if (EMPLOYEE_APP_PAGE_IDS.includes(currentView) && !employeeAppEnabled) return null;
     switch (isMarketing && currentView !== 'loyalty' ? 'reviews' : currentView) {
       case 'dashboard':   return <Dashboard key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} onOpenPlan={planAvailable && !hiddenPages.includes('plan') ? () => setCurrentView('plan') : undefined} />;
       case 'sales':       return <Sales key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} />;
@@ -558,7 +578,8 @@ export default function App() {
           setNavStyle={setNavStyle}
           mobileNavStyle={mobileNavStyle}
           setMobileNavStyle={setMobileNavStyle}
-          hiddenPages={hiddenPages}
+          hiddenPages={hiddenPagesState}
+          unavailablePages={unavailablePages}
           setHiddenPages={setHiddenPages}
           defaultPage={defaultPage}
           setDefaultPage={setDefaultPage}

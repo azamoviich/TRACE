@@ -88,8 +88,11 @@ function LoginScreen({ lang, onLoggedIn }: { lang: Language; onLoggedIn: (s: Ses
       };
       saveSession(session);
       onLoggedIn(session);
-    } catch {
-      setError(tr(lang, 'Неверный пароль', 'Invalid password', "Parol noto'g'ri"));
+    } catch (e: any) {
+      // 403 = employee_app module switched off for this restaurant in the admin panel
+      setError(String(e?.message ?? '').startsWith('403')
+        ? tr(lang, 'Раздел отключён для этого ресторана', 'This section is turned off for this restaurant', "Bu bo'lim ushbu restoran uchun o'chirilgan")
+        : tr(lang, 'Неверный пароль', 'Invalid password', "Parol noto'g'ri"));
     } finally {
       setBusy(false);
     }

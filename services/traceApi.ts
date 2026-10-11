@@ -3789,6 +3789,11 @@ export const bookingApi = {
   },
   // Live table states "now" (hostess map) — with guest names, staff only.
   status: () => bookingFetch<{ at: string; tables: StaffTableStatus[] }>('/status'),
+  // Owner/manager report for local days from..to (inclusive), default last 30 days.
+  report: (from?: string, to?: string) => {
+    const qs = new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) }).toString();
+    return bookingFetch<BookingReport>(`/report${qs ? `?${qs}` : ''}`);
+  },
   reservations: {
     // date = YYYY-MM-DD in the restaurant's timezone, or an explicit range.
     list: (q: { date: string } | { from: string; to: string }, statuses?: ReservationStatus[]) => {
@@ -3841,6 +3846,29 @@ export const bookingApi = {
 export interface StaffTelegramChat { chat_id: string; kind: 'private' | 'group'; title: string; created_at: string }
 
 export type ReservationStatus = 'pending' | 'confirmed' | 'seated' | 'completed' | 'cancelled' | 'no_show';
+
+export interface BookingReport {
+  from: string;
+  to: string;
+  totals: {
+    bookings: number;
+    visited: number;
+    guests: number;
+    avg_party: number | null;
+    no_show: number;
+    cancelled: number;
+    upcoming: number;
+    no_show_rate: number | null;
+    cancel_rate: number | null;
+    by_source: { online: number; phone: number; walk_in: number };
+    median_lead_hours: number | null;
+  };
+  days: Array<{ date: string; bookings: number; visited: number; guests: number; no_show: number; cancelled: number }>;
+  hours: Array<{ hour: number; bookings: number }>;
+  weekdays: Array<{ weekday: number; bookings: number }>;
+  tables: Array<{ table_id: string; name: string; hall: string; bookings: number; visited: number; occupancy_pct: number | null }>;
+  regulars: Array<{ phone: string; name: string; visits: number; no_shows: number; last_visit: string | null }>;
+}
 
 export interface StaffReservation {
   id: string;
@@ -4052,8 +4080,6 @@ export interface GuestReservation {
   timezone: string;
   can_cancel: boolean;
   cancel_token?: string;
-  // t.me deep link to the guest booking bot; null when the bot is off.
-  telegram_link?: string | null;
 }
 
 async function publicFetch<T>(path: string, init: RequestInit = {}): Promise<T> {

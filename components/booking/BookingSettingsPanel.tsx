@@ -147,13 +147,10 @@ export function BookingSettingsPanel({ lang, onShowToast }: { lang: Language; on
         {num(tr(lang, 'Бронировать не позже чем за', 'Book at least', 'Kamida oldin band qilish'), s.min_lead_min, 'min_lead_min', 0, 10080, min)}
         {num(tr(lang, 'Максимум дней вперёд', 'Max days ahead', 'Oldinga maksimal kun'), s.max_days_ahead, 'max_days_ahead', 1, 365, tr(lang, 'дн', 'days', 'kun'))}
         {num(tr(lang, 'Активных броней на один телефон', 'Active bookings per phone', 'Bitta telefonga faol bronlar'), s.max_active_per_phone, 'max_active_per_phone', 1, 50)}
-        <label className="flex items-center justify-between gap-3 py-2 cursor-pointer">
-          <span>
-            <span className="block text-[13px] text-text">{tr(lang, 'Подтверждать автоматически', 'Confirm automatically', 'Avtomatik tasdiqlash')}</span>
-            <span className="block text-[12px] text-muted">{tr(lang, 'Выключите, если хостес должна подтверждать каждую онлайн-бронь', 'Turn off if the hostess should confirm each online booking', "Xostes har bir onlayn bronni tasdiqlashi kerak bo'lsa, o'chiring")}</span>
-          </span>
-          <input type="checkbox" checked={s.auto_confirm} onChange={e => set({ auto_confirm: e.target.checked })} className="w-5 h-5 accent-primary" />
-        </label>
+        <p className="text-[12px] text-muted py-2">{tr(lang,
+          'Онлайн-бронь приходит заявкой: хостес звонит гостю и подтверждает её.',
+          'An online booking arrives as a request: the hostess calls the guest and confirms it.',
+          'Onlayn bron so‘rov sifatida keladi: xostes mehmonga qo‘ng‘iroq qilib tasdiqlaydi.')}</p>
       </div>
 
       {s.pos_type === 'iiko' && !isDemoTenant() && (

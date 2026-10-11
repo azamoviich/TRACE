@@ -159,7 +159,9 @@ export function BookingReport({ lang }: { lang: Language }) {
               'Time guests with bookings sat at the table, as a share of opening hours',
               'Bron bo‘yicha mehmonlar stolda o‘tirgan vaqt, ish soatlariga nisbatan')}</p>
             <div className="space-y-1.5">
-              {[...report.tables].sort((a, b) => (b.occupancy_pct ?? 0) - (a.occupancy_pct ?? 0)).map(tb => (
+              {[...report.tables]
+                .sort((a, b) => (b.occupancy_pct ?? 0) - (a.occupancy_pct ?? 0) || a.name.localeCompare(b.name, undefined, { numeric: true }))
+                .map(tb => (
                 <div key={tb.table_id} className="flex items-center gap-3 text-[12px]"
                   title={tr(lang, `броней ${tb.bookings}, пришли ${tb.visited}`, `${tb.bookings} bookings, ${tb.visited} came`, `${tb.bookings} bron, ${tb.visited} keldi`)}>
                   <span className="w-28 shrink-0 truncate text-text">{tr(lang, 'Стол', 'Table', 'Stol')} {tb.name} <span className="text-muted">· {tb.hall}</span></span>

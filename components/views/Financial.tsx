@@ -5,7 +5,7 @@ import { DateRangePicker } from '../ui/DateRangePicker';
 import { Language } from '../../types';
 import { TRANSLATIONS, tr } from '../../constants';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { CheckCircle, Package, TrendingDown, Sparkles, X, ChevronRight, ChevronLeft, TrendingUp, Calendar as CalendarIcon } from 'lucide-react';
+import { CheckCircle, Package, TrendingDown, Sparkles, ChevronRight, ChevronLeft, TrendingUp, Calendar as CalendarIcon } from 'lucide-react';
 import {
   traceApi,
   FinancialWriteoffRow,
@@ -14,176 +14,12 @@ import {
   PosterInventoryItem,
   PosterInventoryDoc,
   PosterGLCategory,
-  InventoryItem,
   FinancialPL,
   GLSummary,
   CashShiftDoc,
   MenuAnalysisRow,
 } from '../../services/traceApi';
-
-// ── Inventory Detail Drawer ───────────────────────────────────────────────────
-const InventoryDrawer: React.FC<{
-  doc: FinancialInventoryDoc;
-  lang: Language;
-  onClose: () => void;
-}> = ({ doc, lang, onClose }) => {
-  const ru = lang === 'ru';
-  const isUz = lang === 'uz';
-  const [items, setItems] = useState<InventoryItem[] | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    traceApi.financial.inventoryItems(doc.id, doc.date, doc.documentNumber)
-      .then(setItems)
-      .catch(() => setItems([]))
-      .finally(() => setLoading(false));
-  }, [doc.id, doc.date]);
-
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, [onClose]);
-
-  const totalSum = items?.reduce((s, i) => s + i.sum, 0) ?? 0;
-
-  const fmt = (n: number) => n.toLocaleString('ru-RU');
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-      style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)' }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-card border border-border rounded-t-2xl sm:rounded-2xl w-full sm:max-w-3xl max-h-[90vh] flex flex-col shadow-2xl">
-
-        {/* Header */}
-        <div className="flex items-start justify-between px-5 pt-5 pb-4 border-b border-border flex-shrink-0">
-          <div>
-            <div className="flex items-center gap-2 mb-0.5">
-              <p className="font-mono text-[13px] font-bold text-text">{doc.documentNumber}</p>
-              <span className={`px-2 py-0.5 rounded-[3px] text-[10px] font-semibold uppercase tracking-[0.08em] ${
-                doc.status === 'PROCESSED' ? 'text-success bg-success/10' :
-                doc.status === 'NEW'       ? 'text-amber-400 bg-amber-400/10' : 'text-muted bg-muted/10'
-              }`}>
-                {doc.status === 'PROCESSED' ? tr(lang, 'Проведено', 'Posted', "O'tkazilgan")
-                  : doc.status === 'NEW' ? tr(lang, 'Черновик', 'Draft', 'Qoralama')
-                  : doc.status}
-              </span>
-            </div>
-            <p className="text-[11px] text-muted">{doc.date} · {doc.storeCode || '—'}{doc.comment ? ` · ${doc.comment}` : ''}</p>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-muted hover:text-text hover:bg-card-hover transition-colors ml-4 flex-shrink-0">
-            <X size={14} />
-          </button>
-        </div>
-
-        {/* Summary chips */}
-        {items && items.length > 0 && (
-          <div className="flex flex-wrap gap-2 px-5 py-3 border-b border-border flex-shrink-0">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-background border border-border">
-              <Package size={11} className="text-muted" />
-              <span className="text-[11px] text-muted">{items.length} {tr(lang, 'позиций', 'items', 'pozitsiya')}</span>
-            </div>
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-background border border-border ml-auto">
-              <span className="text-[11px] font-semibold text-text">
-                {fmt(Math.round(totalSum))} UZS
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Items table */}
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          {loading ? (
-            <div className="space-y-2 py-2">
-              {[90,70,80,60,75].map(w => <div key={w} className="h-3 bg-border/60 rounded animate-pulse" style={{ width: `${w}%` }} />)}
-            </div>
-          ) : !items || items.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-10 text-center">
-              <Package size={24} className="text-muted/40" />
-              <p className="text-[12px] text-muted">{tr(lang, 'Позиции не найдены', 'No items found', 'Pozitsiyalar topilmadi')}</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left min-w-[620px]">
-                <thead className="border-b border-border">
-                  <tr>
-                    {[
-                      tr(lang, 'Наименование', 'Product', 'Nomi'),
-                      tr(lang, 'Категория', 'Category', 'Kategoriya'),
-                      tr(lang, 'Ед.', 'Unit', 'Birlik'),
-                      tr(lang, 'По книге', 'Book', 'Kitob'),
-                      tr(lang, 'Факт', 'Actual', 'Fakt'),
-                      tr(lang, 'Разница', 'Diff', 'Farq'),
-                      tr(lang, 'Цена', 'Price', 'Narx'),
-                      tr(lang, 'Сумма', 'Amount', 'Summa'),
-                    ].map(h => (
-                      <th key={h} className="pb-3 pr-3 text-[10px] uppercase tracking-[0.12em] text-muted font-medium whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item, i) => (
-                    <tr key={i} className="border-b border-border/50 last:border-0 hover:bg-card-hover/50 transition-colors">
-                      <td className="py-2.5 pr-3 text-[12px] font-medium text-text max-w-[180px]">
-                        <div className="truncate">{item.productName}</div>
-                        {item.productCode && <div className="text-[10px] text-muted font-mono mt-0.5">{item.productCode}</div>}
-                      </td>
-                      <td className="py-2.5 pr-3 text-[11px] text-muted truncate max-w-[100px]">{item.category || '—'}</td>
-                      <td className="py-2.5 pr-3 text-[11px] text-muted font-mono">{item.unit || '—'}</td>
-                      <td className="py-2.5 pr-3 text-[12px] text-muted font-mono">{item.bookQty ? item.bookQty.toFixed(2) : '—'}</td>
-                      <td className="py-2.5 pr-3 text-[12px] text-text font-mono font-semibold">{item.actualQty ? item.actualQty.toFixed(2) : '—'}</td>
-                      <td className="py-2.5 pr-3">
-                        <span className={`text-[12px] font-mono font-semibold ${
-                          (item.diffQty ?? 0) < 0 ? 'text-danger' : (item.diffQty ?? 0) > 0 ? 'text-success' : 'text-muted'
-                        }`}>
-                          {(item.diffQty ?? 0) > 0 ? '+' : ''}{(item.diffQty ?? 0).toFixed(2)}
-                        </span>
-                      </td>
-                      <td className="py-2.5 pr-3 text-[12px] text-muted font-mono">{fmt(Math.round(item.price ?? 0))}</td>
-                      <td className="py-2.5 text-[12px] text-muted font-mono">{fmt(Math.round(item.sum ?? 0))}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        {items && items.length > 0 && (() => {
-          const positiveSum = items.filter(i => i.sum >= 0).reduce((s, i) => s + i.sum, 0);
-          const negativeSum = items.filter(i => i.sum < 0).reduce((s, i) => s + i.sum, 0);
-          const totalSum    = items.reduce((s, i) => s + i.sum, 0);
-          return (
-            <div className="px-5 py-3 border-t border-border flex-shrink-0 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-muted">{tr(lang, 'Позиций', 'Items', 'Pozitsiyalar')}</span>
-                <span className="text-[11px] text-muted font-mono">{items.length}</span>
-              </div>
-              {negativeSum !== 0 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] text-muted">{tr(lang, 'Недостача', 'Shortage', 'Kamomad')}</span>
-                  <span className="text-[11px] text-red-400 font-mono">{fmt(Math.round(negativeSum))} UZS</span>
-                </div>
-              )}
-              {positiveSum !== 0 && negativeSum !== 0 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] text-muted">{tr(lang, 'Излишки', 'Surplus', 'Ortiqcha')}</span>
-                  <span className="text-[11px] text-success font-mono">+{fmt(Math.round(positiveSum))} UZS</span>
-                </div>
-              )}
-              <div className="flex items-center justify-between border-t border-border pt-1.5">
-                <p className="text-[11px] text-muted">{tr(lang, 'Итого', 'Total', 'Jami')}</p>
-                <p className="text-[13px] font-semibold text-text font-mono">{fmt(Math.round(totalSum))} UZS</p>
-              </div>
-            </div>
-          );
-        })()}
-      </div>
-    </div>
-  );
-};
+import { StocktakeList, StocktakeDrawer } from './InventoryStocktake';
 
 // ── Waste Impact Banner ───────────────────────────────────────────────────────
 
@@ -1419,7 +1255,7 @@ export const Financial: React.FC<{
               ? (inventoryView === 'live'
                 ? tr(lang, 'Текущие остатки склада · Poster', 'Current stock balance · Poster', 'Joriy ombor qoldig\'i · Poster')
                 : tr(lang, 'Архив инвентаризаций · Poster', 'Stocktaking archive · Poster', 'Inventarizatsiya arxivi · Poster'))
-              : tr(lang, 'Документы инвентаризации · iikoServer', 'Stocktaking documents · iikoServer', 'Inventarizatsiya hujjatlari · iikoServer')}
+              : tr(lang, 'Недостачи и излишки по каждой инвентаризации · iikoServer', 'Shortages and surpluses per stocktake · iikoServer', "Har bir inventarizatsiya bo'yicha kamomad va ortiqcha · iikoServer")}
           </p>
           {isPoster && (
             <div className="inline-flex items-center gap-1 bg-background border border-border rounded-lg p-0.5 mb-3">
@@ -1521,69 +1357,17 @@ export const Financial: React.FC<{
               </div>
             </>
           ) : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left min-w-[500px]">
-                  <thead className="border-b border-border">
-                    <tr>
-                      {[
-                        tr(lang, '№ документа', 'Doc #', 'Hujjat №'),
-                        tr(lang, 'Дата', 'Date', 'Sana'),
-                        tr(lang, 'Склад', 'Store', 'Ombor'),
-                        tr(lang, 'Сумма', 'Amount', 'Summa'),
-                        tr(lang, 'Статус', 'Status', 'Holati'),
-                        tr(lang, 'Комментарий', 'Comment', 'Izoh'),
-                        '',
-                      ].map(h => (
-                        <th key={h} className="pb-3 pr-4 text-[10px] uppercase tracking-[0.15em] text-muted font-medium">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {inventory.filter((d): d is FinancialInventoryDoc => !isPosterInventoryItem(d)).map(doc => (
-                      <tr key={doc.id}
-                        onClick={() => setInventoryDoc(doc)}
-                        className="border-b border-border last:border-0 hover:bg-card-hover transition-colors cursor-pointer group">
-                        <td className="py-3 pr-4 text-[12px] font-mono text-text group-hover:text-primary transition-colors">{doc.documentNumber}</td>
-                        <td className="py-3 pr-4 text-[12px] text-muted">{doc.date}</td>
-                        <td className="py-3 pr-4 text-[11px] text-muted">{doc.storeCode || '—'}</td>
-                        <td className="py-3 pr-4 text-[12px] text-muted font-mono">{doc.sum != null ? doc.sum.toLocaleString('ru-RU') : '—'}</td>
-                        <td className="py-3 pr-4">
-                          <span className={`px-2 py-0.5 rounded-[3px] text-[10px] font-semibold uppercase tracking-[0.08em] ${
-                            doc.status === 'PROCESSED' ? 'text-success bg-success/10' :
-                            doc.status === 'NEW'       ? 'text-amber-400 bg-amber-400/10' :
-                                                         'text-muted bg-muted/10'
-                          }`}>
-                            {doc.status === 'PROCESSED'
-                              ? tr(lang, 'Проведено', 'Posted', "O'tkazilgan")
-                              : doc.status === 'NEW'
-                              ? tr(lang, 'Черновик', 'Draft', 'Qoralama')
-                              : doc.status}
-                          </span>
-                        </td>
-                        <td className="py-3 pr-2 text-[11px] text-muted truncate max-w-[120px]">{doc.comment || '—'}</td>
-                        <td className="py-3 text-muted group-hover:text-primary transition-colors"><ChevronRight size={13} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="mt-4 pt-3 border-t border-border flex items-center justify-between">
-                <p className="text-[11px] text-muted">
-                  {tr(lang,
-                    `${inventory.length} докум. · итого ${inventory.reduce((s, d) => s + ((d as FinancialInventoryDoc).sum ?? 0), 0).toLocaleString('ru-RU')} UZS`,
-                    `${inventory.length} docs · total ${inventory.reduce((s, d) => s + ((d as FinancialInventoryDoc).sum ?? 0), 0).toLocaleString('ru-RU')} UZS`,
-                    `${inventory.length} hujjat · jami ${inventory.reduce((s, d) => s + ((d as FinancialInventoryDoc).sum ?? 0), 0).toLocaleString('ru-RU')} UZS`)}
-                </p>
-                <p className="text-[10px] text-muted/50">{tr(lang, 'Нажмите на строку для деталей', 'Click a row for details', 'Tafsilotlar uchun qatorni bosing')}</p>
-              </div>
-            </>
+            <StocktakeList
+              docs={inventory.filter((d): d is FinancialInventoryDoc => !isPosterInventoryItem(d))}
+              lang={lang}
+              onOpen={setInventoryDoc}
+            />
           )}
         </Card>
       )}
 
       {inventoryDoc && (
-        <InventoryDrawer doc={inventoryDoc} lang={lang} onClose={() => setInventoryDoc(null)} />
+        <StocktakeDrawer doc={inventoryDoc} lang={lang} onClose={() => setInventoryDoc(null)} />
       )}
 
       {/* ── CASH SHIFTS TAB ── */}

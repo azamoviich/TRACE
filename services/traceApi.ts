@@ -1132,10 +1132,22 @@ function demoInvoices(): FinancialInvoiceRow[] {
 }
 
 function demoInventory(): FinancialInventoryDoc[] {
+  const doc = (id: string, documentNumber: string, daysAgo: number, storeCode: string): FinancialInventoryDoc => {
+    const items = demoInventoryItems(id);
+    const short = items.filter(i => i.sum < 0), over = items.filter(i => i.sum > 0);
+    const shortageSum = -short.reduce((s, i) => s + i.sum, 0);
+    const surplusSum  = over.reduce((s, i) => s + i.sum, 0);
+    return {
+      id, documentNumber, date: demoDateStr(daysAgo), status: 'PROCESSED', storeCode, comment: '',
+      itemCount: items.length, sum: surplusSum - shortageSum,
+      surplusSum, shortageSum, surplusCount: over.length, shortageCount: short.length,
+      surplusAccount: `Излишки · ${storeCode}`, shortageAccount: `Недостача · ${storeCode}`,
+    };
+  };
   return [
-    { id: 'inv-doc-1', documentNumber: 'ИНВ-0034', date: demoDateStr(2), status: 'PROCESSED', storeCode: 'Кухня', comment: 'Плановая инвентаризация', itemCount: 86, sum: 24_300_000 },
-    { id: 'inv-doc-2', documentNumber: 'ИНВ-0033', date: demoDateStr(9), status: 'PROCESSED', storeCode: 'Бар', comment: 'Плановая инвентаризация', itemCount: 54, sum: 9_120_000 },
-    { id: 'inv-doc-3', documentNumber: 'ИНВ-0032', date: demoDateStr(16), status: 'NEW', storeCode: 'Склад', comment: 'Сверка остатков', itemCount: 132, sum: 41_870_000 },
+    doc('inv-doc-1', '0034', 2, 'Кухня'),
+    doc('inv-doc-2', '0033', 9, 'Бар'),
+    doc('inv-doc-3', '0032', 16, 'Склад'),
   ];
 }
 
@@ -1159,43 +1171,37 @@ function demoPosterInventoryDocs(): PosterInventoryDoc[] {
 }
 
 function demoInventoryItems(docId: string): InventoryItem[] {
+  const row = (productName: string, productCode: string, category: string, unit: string, diffQty: number, price: number): InventoryItem =>
+    ({ productName, productCode, category, unit, kind: diffQty < 0 ? 'shortage' : 'surplus', diffQty, price, sum: Math.round(diffQty * price) });
   const sets: Record<string, InventoryItem[]> = {
     'inv-doc-1': [
-      { productName: 'Говядина (вырезка)', productCode: '00142', category: 'Мясо', unit: 'кг', bookQty: 12.0, actualQty: 12.2, diffQty: 0.2, price: 180_000, sum: 2_196_000 },
-      { productName: 'Курица (филе)', productCode: '00143', category: 'Мясо', unit: 'кг', bookQty: 18.0, actualQty: 18.5, diffQty: 0.5, price: 85_000, sum: 1_572_500 },
-      { productName: 'Лосось охл.', productCode: '00210', category: 'Рыба', unit: 'кг', bookQty: 6.0, actualQty: 6.0, diffQty: 0, price: 320_000, sum: 1_920_000 },
-      { productName: 'Масло сливочное', productCode: '00301', category: 'Молочное', unit: 'кг', bookQty: 4.0, actualQty: 4.3, diffQty: 0.3, price: 48_000, sum: 206_400 },
-      { productName: 'Сливки 33%', productCode: '00302', category: 'Молочное', unit: 'л', bookQty: 8.5, actualQty: 8.5, diffQty: 0, price: 32_000, sum: 272_000 },
-      { productName: 'Помидоры', productCode: '00401', category: 'Овощи', unit: 'кг', bookQty: 15.0, actualQty: 15.4, diffQty: 0.4, price: 18_000, sum: 277_200 },
-      { productName: 'Картофель', productCode: '00402', category: 'Овощи', unit: 'кг', bookQty: 30.0, actualQty: 31.0, diffQty: 1.0, price: 8_000, sum: 248_000 },
-      { productName: 'Трюфельное масло', productCode: '00501', category: 'Специи/соусы', unit: 'л', bookQty: 0.5, actualQty: 0.5, diffQty: 0, price: 420_000, sum: 210_000 },
+      row('Говядина (вырезка)', '00142', 'Мясо', 'кг', -3.4, 180_000),
+      row('Лосось охл.', '00210', 'Рыба', 'кг', -1.25, 320_000),
+      row('Курица (филе)', '00143', 'Мясо', 'кг', 2.1, 85_000),
+      row('Масло сливочное', '00301', 'Молочное', 'кг', -1.8, 96_000),
+      row('Сливки 33%', '00302', 'Молочное', 'л', -2.5, 42_000),
+      row('Трюфельное масло', '00501', 'Специи/соусы', 'л', -0.15, 420_000),
+      row('Помидоры', '00401', 'Овощи', 'кг', 4.2, 18_000),
+      row('Картофель', '00402', 'Овощи', 'кг', 6.0, 8_000),
+      row('Сыр пармезан', '00305', 'Молочное', 'кг', -0.6, 260_000),
     ],
     'inv-doc-2': [
-      { productName: 'Водка премиум', productCode: '00601', category: 'Крепкий алкоголь', unit: 'л', bookQty: 3.0, actualQty: 3.1, diffQty: 0.1, price: 280_000, sum: 868_000 },
-      { productName: 'Вино красное сухое', productCode: '00602', category: 'Вино', unit: 'бут', bookQty: 12.0, actualQty: 12.0, diffQty: 0, price: 220_000, sum: 2_640_000 },
-      { productName: 'Вино белое сухое', productCode: '00603', category: 'Вино', unit: 'бут', bookQty: 8.0, actualQty: 8.0, diffQty: 0, price: 195_000, sum: 1_560_000 },
-      { productName: 'Сок апельсиновый', productCode: '00701', category: 'Безалкогольное', unit: 'л', bookQty: 10.0, actualQty: 10.5, diffQty: 0.5, price: 22_000, sum: 231_000 },
-      { productName: 'Тоник Schweppes', productCode: '00702', category: 'Безалкогольное', unit: 'бут', bookQty: 24.0, actualQty: 24.0, diffQty: 0, price: 18_000, sum: 432_000 },
+      row('Водка премиум', '00601', 'Крепкий алкоголь', 'л', -0.85, 280_000),
+      row('Вино красное сухое', '00602', 'Вино', 'бут', -2, 220_000),
+      row('Сироп карамельный', '00710', 'Сиропы', 'л', 0.7, 95_000),
+      row('Сок апельсиновый', '00701', 'Безалкогольное', 'л', -3.5, 22_000),
+      row('Кофе в зёрнах', '00720', 'Кофе', 'кг', 1.4, 190_000),
+      row('Тоник Schweppes', '00702', 'Безалкогольное', 'бут', -4, 18_000),
     ],
     'inv-doc-3': [
-      { productName: 'Мука пшеничная в/с', productCode: '00801', category: 'Бакалея', unit: 'кг', bookQty: 50.0, actualQty: 50.5, diffQty: 0.5, price: 12_000, sum: 606_000 },
-      { productName: 'Сахар', productCode: '00802', category: 'Бакалея', unit: 'кг', bookQty: 25.0, actualQty: 25.0, diffQty: 0, price: 10_000, sum: 250_000 },
-      { productName: 'Рис круглозерный', productCode: '00803', category: 'Бакалея', unit: 'кг', bookQty: 40.0, actualQty: 40.5, diffQty: 0.5, price: 14_000, sum: 567_000 },
-      { productName: 'Оливковое масло', productCode: '00804', category: 'Масла', unit: 'л', bookQty: 6.0, actualQty: 6.5, diffQty: 0.5, price: 95_000, sum: 617_500 },
-      { productName: 'Соевый соус', productCode: '00805', category: 'Соусы', unit: 'л', bookQty: 4.0, actualQty: 4.0, diffQty: 0, price: 45_000, sum: 180_000 },
-      { productName: 'Пармезан', productCode: '00901', category: 'Сыры', unit: 'кг', bookQty: 3.0, actualQty: 3.1, diffQty: 0.1, price: 380_000, sum: 1_178_000 },
-    ],
-    'pd1': [
-      { productName: 'Говядина (вырезка)', productCode: '00142', category: 'Мясо', unit: 'кг', bookQty: 14.0, actualQty: 14.2, diffQty: 0.2, price: 180_000, sum: 2_556_000 },
-      { productName: 'Курица (филе)', productCode: '00143', category: 'Мясо', unit: 'кг', bookQty: 21.5, actualQty: 22.0, diffQty: 0.5, price: 85_000, sum: 1_870_000 },
-      { productName: 'Томаты', productCode: '00401', category: 'Овощи', unit: 'кг', bookQty: 18.0, actualQty: 18.6, diffQty: 0.6, price: 14_000, sum: 260_400 },
-    ],
-    'pd2': [
-      { productName: 'Пиво разливное', productCode: '00601', category: 'Крепкий алкоголь', unit: 'л', bookQty: 64.0, actualQty: 64.0, diffQty: 0, price: 18_000, sum: 1_152_000 },
-      { productName: 'Вино красное сухое', productCode: '00602', category: 'Вино', unit: 'бут', bookQty: 12.0, actualQty: 12.0, diffQty: 0, price: 220_000, sum: 2_640_000 },
+      row('Оливковое масло', '00804', 'Масла', 'л', -2.0, 95_000),
+      row('Мука пшеничная в/с', '00801', 'Бакалея', 'кг', 7.5, 12_000),
+      row('Рис круглозерный', '00803', 'Бакалея', 'кг', -4.5, 14_000),
+      row('Сахар', '00802', 'Бакалея', 'кг', 3.0, 10_000),
+      row('Соевый соус', '00805', 'Соусы', 'л', -0.8, 45_000),
     ],
   };
-  return sets[docId] ?? [];
+  return (sets[docId] ?? []).slice().sort((a, b) => Math.abs(b.sum) - Math.abs(a.sum));
 }
 
 function demoCashShiftDocs(): CashShiftDoc[] {
@@ -2134,7 +2140,16 @@ export interface FinancialInventoryDoc {
   storeCode: string;
   comment: string;
   itemCount: number;
+  /** Net effect: surplus minus shortage. */
   sum?: number;
+  /** iiko's stocktake totals — both positive numbers, at cost. */
+  surplusSum?: number;
+  shortageSum?: number;
+  surplusCount?: number;
+  shortageCount?: number;
+  /** Ledger accounts the differences were posted to. */
+  surplusAccount?: string;
+  shortageAccount?: string;
 }
 
 // Poster has no stocktaking-document concept like iiko's inventory tab —
@@ -2155,10 +2170,14 @@ export interface InventoryItem {
   productCode: string;
   category: string;
   unit: string;
-  bookQty: number;
-  actualQty: number;
+  kind?: 'surplus' | 'shortage';
+  /** Counted and book quantities are not exposed by iiko's public API. */
+  bookQty?: number;
+  actualQty?: number;
+  /** Signed: negative is a shortage, positive a surplus. */
   diffQty: number;
   price: number;
+  /** Signed, at cost. */
   sum: number;
 }
 

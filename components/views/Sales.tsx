@@ -18,7 +18,7 @@ import { traceApi, isDemoTenant, getTenantPlan, RevenueRow, HourlyRow, DishRow, 
 import { ComingSoon } from '../ui/ComingSoon';
 
 type AbcFilter = 'all' | 'A' | 'B' | 'C';
-type AbcSort = 'revenue' | 'qty' | 'avgPrice' | 'velocity' | 'share' | 'cost' | 'costPerUnit' | 'marginPct' | 'foodCostPct';
+type AbcSort = 'revenue' | 'qty' | 'avgPrice' | 'velocity' | 'share' | 'cost' | 'costPerUnit' | 'recipeCostPerUnit' | 'costGapPct' | 'marginPct' | 'foodCostPct';
 type AbcMetric = 'abcRevenue' | 'abcQty' | 'abcProfit';
 
 function abcBadgeCls(grade: string) {
@@ -478,8 +478,8 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
   const [detailItem, setDetailItem] = useState<AbcRow | null>(null);
 
   // Optional columns — toggleable, persisted so the choice sticks across visits
-  type OptCol = 'cat' | 'avgPrice' | 'cost' | 'costPerUnit' | 'foodCostPct' | 'marginPct' | 'velocity';
-  const OPT_COL_DEFAULTS: Record<OptCol, boolean> = { cat: true, avgPrice: true, cost: true, costPerUnit: true, foodCostPct: true, marginPct: true, velocity: true };
+  type OptCol = 'cat' | 'avgPrice' | 'cost' | 'costPerUnit' | 'recipeCost' | 'costGap' | 'foodCostPct' | 'marginPct' | 'velocity';
+  const OPT_COL_DEFAULTS: Record<OptCol, boolean> = { cat: true, avgPrice: true, cost: true, costPerUnit: true, recipeCost: true, costGap: true, foodCostPct: true, marginPct: true, velocity: true };
   const [visibleCols, setVisibleCols] = useState<Record<OptCol, boolean>>(() => {
     try {
       const saved = localStorage.getItem('trace_abc_cols');
@@ -568,6 +568,8 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
 
   const categories = useMemo(() => ['all', ...Array.from(new Set(items.map(i => i.cat))).sort()], [items]);
 
+  // Recipe cost comes from iikoOffice and is absent for Poster or when the server refuses it.
+  const hasRecipeCost = useMemo(() => items.some(i => i.recipeCostPerUnit != null), [items]);
   const filtered = useMemo(() => {
     let list = items;
     if (abcFilter !== 'all') list = list.filter(i => i[abcMetric] === abcFilter);
@@ -1024,6 +1026,8 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
                     { id: 'avgPrice' as const, ru: 'Ср. цена', en: 'Avg price', uz: "O'rt. narx" },
                     { id: 'cost' as const, ru: 'Себест.', en: 'Cost', uz: 'Tannarx' },
                     { id: 'costPerUnit' as const, ru: 'Себест/шт', en: 'Cost/unit', uz: 'Tannarx/dona' },
+                    { id: 'recipeCost' as const, ru: 'По техкарте/шт', en: 'Recipe cost/unit', uz: 'Texkarta/dona' },
+                    { id: 'costGap' as const, ru: 'Отклонение', en: 'Cost drift', uz: 'Farq' },
                     { id: 'foodCostPct' as const, ru: 'Фудкост %', en: 'Food cost %', uz: 'Food cost %' },
                     { id: 'marginPct' as const, ru: 'Маржа', en: 'Margin', uz: 'Marja' },
                     { id: 'velocity' as const, ru: 'В день', en: '/day', uz: 'Kuniga' },
@@ -1200,6 +1204,22 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
                 {visibleCols.avgPrice && <th className="pb-2.5 pr-4"><SortBtn col="avgPrice" label={ru ? 'Ср. цена' : isUz ? "O'rt. narx" : 'Avg price'} /></th>}
                 {visibleCols.cost && <th className="pb-2.5 pr-4"><SortBtn col="cost" label={ru ? 'Себест.' : isUz ? 'Tannarx' : 'Cost'} /></th>}
                 {visibleCols.costPerUnit && <th className="pb-2.5 pr-4"><SortBtn col="costPerUnit" label={ru ? 'Себест/шт' : isUz ? 'Tannarx/dona' : 'Cost/unit'} /></th>}
+                {visibleCols.recipeCost && hasRecipeCost && (
+                  <th className="pb-2.5 pr-4" title={tr(lang,
+                    'Сколько блюдо должно стоить по техкарте при текущих ценах на продукты. Не зависит от списаний и инвентаризаций.',
+                    'What the dish should cost by its recipe at current ingredient prices. Not affected by write-offs or stocktakes.',
+                    "Texnologik karta bo'yicha taom qancha turishi kerak. Hisobdan chiqarish va inventarizatsiyaga bog'liq emas.")}>
+                    <SortBtn col="recipeCostPerUnit" label={ru ? 'По техкарте' : isUz ? 'Texkarta' : 'Recipe'} />
+                  </th>
+                )}
+                {visibleCols.costGap && hasRecipeCost && (
+                  <th className="pb-2.5 pr-4" title={tr(lang,
+                    'Насколько фактическая себестоимость отличается от техкарты. Плюс — блюдо обходится дороже, чем должно.',
+                    'How far the actual cost is from the recipe. Plus means the dish costs more than it should.',
+                    "Haqiqiy tannarx texkartadan qanchalik farq qiladi. Plyus — taom kerakligidan qimmatroq.")}>
+                    <SortBtn col="costGapPct" label={ru ? 'Откл.' : isUz ? 'Farq' : 'Drift'} />
+                  </th>
+                )}
                 {visibleCols.foodCostPct && <th className="pb-2.5 pr-4"><SortBtn col="foodCostPct" label={ru ? 'Фудкост %' : 'Food cost %'} /></th>}
                 {visibleCols.marginPct && <th className="pb-2.5 pr-4"><SortBtn col="marginPct" label={ru ? 'Маржа' : isUz ? 'Marja' : 'Margin'} /></th>}
                 {visibleCols.velocity && <th className="pb-2.5 pr-4"><SortBtn col="velocity" label={ru ? 'В день' : isUz ? 'Kuniga' : '/day'} /></th>}
@@ -1232,6 +1252,14 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
                     {visibleCols.avgPrice && <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{item.avgPrice.toLocaleString('ru-RU')}</td>}
                     {visibleCols.cost && <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{(item.cost ?? 0) > 0 ? (item.cost ?? 0).toLocaleString('ru-RU') : '—'}</td>}
                     {visibleCols.costPerUnit && <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{item.costPerUnit != null ? item.costPerUnit.toLocaleString('ru-RU') : '—'}</td>}
+                    {visibleCols.recipeCost && hasRecipeCost && <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{item.recipeCostPerUnit != null ? item.recipeCostPerUnit.toLocaleString('ru-RU') : '—'}</td>}
+                    {visibleCols.costGap && hasRecipeCost && (
+                      <td className={`py-2.5 pr-4 text-[12px] font-semibold metric-number ${
+                        item.costGapPct == null || Math.abs(item.costGapPct) < 5 ? 'text-muted' : item.costGapPct > 0 ? 'text-danger' : 'text-success'
+                      }`}>
+                        {item.costGapPct != null ? `${item.costGapPct > 0 ? '+' : ''}${item.costGapPct}%` : '—'}
+                      </td>
+                    )}
                     {visibleCols.foodCostPct && (
                       <td className={`py-2.5 pr-4 text-[12px] font-semibold metric-number ${
                         item.foodCostPct == null ? 'text-muted' : item.foodCostPct <= 30 ? 'text-success' : item.foodCostPct <= 40 ? 'text-text' : 'text-danger'

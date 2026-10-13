@@ -704,10 +704,15 @@ function demoAbc(): AbcRow[] {
     const marginPct = Math.round(((revenue - cost) / revenue) * 1000) / 10;
     const costPerUnit = Math.round(d.price * costRatio);
     const foodCostPct = Math.round(costRatio * 1000) / 10;
+    // Demo: recipe cost sits a few percent either side of the actual one, steadily per dish.
+    const drift = ((d.name.length * 7) % 19 - 7) / 100;
+    const recipeCostPerUnit = Math.round(costPerUnit / (1 + drift));
+    const costGapPct = Math.round(((costPerUnit - recipeCostPerUnit) / recipeCostPerUnit) * 1000) / 10;
     return {
       name: d.name, cat: d.category, revenue, qty,
       avgPrice: d.price, velocity: Math.round(qty / 7 * 10) / 10, share,
       cost, grossProfit, marginPct, costPerUnit, foodCostPct,
+      recipeCostPerUnit, recipeFoodCostPct: Math.round((foodCostPct / (1 + drift)) * 10) / 10, costGapPct,
       abc: grade, abcRevenue: grade, abcQty,
       abcProfit: marginPct >= 65 ? 'A' : marginPct >= 60 ? 'B' : 'C',
     };
@@ -2503,6 +2508,12 @@ export interface AbcRow {
   // (cost ÷ revenue) × 100 — the inverse of marginPct, kept as its own field
   // since "food cost %" is the term kitchens actually think in (lower = better).
   foodCostPct?: number | null;
+  // By tech card at current ingredient prices — what the dish should cost.
+  // Unlike costPerUnit it does not move with write-offs or stocktakes. iiko only.
+  recipeCostPerUnit?: number | null;
+  recipeFoodCostPct?: number | null;
+  // (actual − recipe) ÷ recipe × 100. Positive: costs more than it should.
+  costGapPct?: number | null;
   abc: AbcGrade;        // = abcRevenue (backward compat)
   abcRevenue: AbcGrade;
   abcQty: AbcGrade;

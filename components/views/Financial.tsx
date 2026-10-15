@@ -351,6 +351,8 @@ export const Financial: React.FC<{
 
   // ── Render helpers ──
   const fmtN = (n: number) => Math.round(n).toLocaleString('ru-RU');
+  // Value + unit that stays readable for small sums (no "0 млн").
+  const amt = (n: number): [string, string] => Math.abs(n) >= 1e6 ? [mln(n), mlnUnit(lang)] : [fmtN(n), sum(lang)];
   const pctOf = (v: number, total: number) => total > 0 ? `${(Math.abs(v) / total * 100).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%` : '—';
   const Strip: React.FC<{ items: [string, React.ReactNode, string?, string?][]; four?: boolean }> = ({ items, four }) => (
     <section className={`strip${four ? ' four' : ''}`}>
@@ -537,9 +539,9 @@ export const Financial: React.FC<{
     return <>
       <Strip four items={[
         [tr(lang, 'Накладных', 'Invoices', 'Hisob-fakturalar'), String(invoices.length), '', periodSub],
-        [tr(lang, 'На сумму', 'Total', 'Jami'), mln(total), mlnUnit(lang)],
-        [tr(lang, 'Крупнейший поставщик', 'Largest supplier', "Eng yirik ta'minotchi"), top?.[0] ?? '—', '', top ? `${mln(top[1])} ${mlnUnit(lang)}` : undefined],
-        [tr(lang, 'Не проведены', 'Not posted', "O'tkazilmagan"), String(drafts.length), '', drafts.length ? `${tr(lang, 'на', 'worth', '')} ${mln(drafts.reduce((s, d) => s + d.amount, 0))} ${mlnUnit(lang)}` : undefined],
+        [tr(lang, 'На сумму', 'Total', 'Jami'), amt(total)[0], amt(total)[1]],
+        [tr(lang, 'Крупнейший поставщик', 'Largest supplier', "Eng yirik ta'minotchi"), top?.[0] ?? '—', '', top ? amt(top[1]).join(' ') : undefined],
+        [tr(lang, 'Не проведены', 'Not posted', "O'tkazilmagan"), String(drafts.length), '', drafts.length ? `${tr(lang, 'на', 'worth', '')} ${amt(drafts.reduce((s, d) => s + d.amount, 0)).join(' ')}` : undefined],
       ]} />
       <section className="block card-ph" style={{ marginTop: 36 }} aria-labelledby="h-inv">
         <div className="sec-head"><h2 id="h-inv">{tr(lang, 'Приходные накладные', 'Supply invoices', 'Kirim hisob-fakturalari')}</h2><span className="faint" style={{ fontSize: 13 }}>{isPoster ? 'Poster' : tr(lang, 'из iikoServer', 'from iikoServer', 'iikoServer dan')}</span></div>
@@ -569,11 +571,11 @@ export const Financial: React.FC<{
     const rows = writeoffs.filter(w => writeoffDept === '__all__' ? true : writeoffDept === FOOD_FILTER ? isRealFoodWaste(w) : w.category === writeoffDept);
     return <>
       <section className="waste" aria-label={tr(lang, 'Списания еды', 'Food write-offs', 'Oziq-ovqat chiqimlari')}>
-        <div><div className="s-l">{tr(lang, 'Списано еды', 'Food written off', 'Chiqarilgan oziq-ovqat')}</div><div className="s-v">{mln(foodTotal)}<small>{mlnUnit(lang)}</small></div><div className="s-d">{periodSub}</div></div>
+        <div><div className="s-l">{tr(lang, 'Списано еды', 'Food written off', 'Chiqarilgan oziq-ovqat')}</div><div className="s-v">{amt(foodTotal)[0]}<small>{amt(foodTotal)[1]}</small></div><div className="s-d">{periodSub}</div></div>
         <div><div className="s-l">{tr(lang, 'Доля от выручки', 'Share of revenue', 'Tushumdagi ulush')}</div><div className="s-v">{wpct != null ? wpct.toLocaleString('ru-RU', { maximumFractionDigits: 1 }) : '—'}<small>%</small></div><div className="s-d">{tr(lang, `норма ${WASTE_BENCHMARK}%`, `benchmark ${WASTE_BENCHMARK}%`, `meʼyor ${WASTE_BENCHMARK}%`)}</div>
           {wpct != null && <span className="bench" aria-hidden="true"><b style={{ width: `${Math.min(100, wpct / (WASTE_BENCHMARK * 2) * 100)}%` }} /><i style={{ left: '50%' }} /></span>}</div>
-        <div><div className="s-l">{tr(lang, 'Можно сэкономить', 'Could save', 'Tejash mumkin')}</div><div className="s-v">{save != null ? mln(save) : '0'}<small>{tr(lang, 'млн / мес', 'M / mo', 'mln / oy')}</small></div><div className="s-d">{save != null ? tr(lang, `если выйти на ${WASTE_BENCHMARK}%`, `at ${WASTE_BENCHMARK}%`, `${WASTE_BENCHMARK}% ga chiqilsa`) : tr(lang, 'списания в норме', 'within benchmark', "me'yorda")}</div></div>
-        <div><div className="s-l">{tr(lang, 'Больше всего списываем', 'Written off most', "Eng ko'p chiqariladi")}</div><ol>{topW.map(([n, c]) => <li key={n}>{n} <span>{mln(c)} {mlnUnit(lang)}</span></li>)}</ol></div>
+        <div><div className="s-l">{tr(lang, 'Можно сэкономить', 'Could save', 'Tejash mumkin')}</div><div className="s-v">{save != null ? amt(save)[0] : '0'}<small>{save != null ? amt(save)[1] : sum(lang)} / {tr(lang, 'мес', 'mo', 'oy')}</small></div><div className="s-d">{save != null ? tr(lang, `если выйти на ${WASTE_BENCHMARK}%`, `at ${WASTE_BENCHMARK}%`, `${WASTE_BENCHMARK}% ga chiqilsa`) : tr(lang, 'списания в норме', 'within benchmark', "me'yorda")}</div></div>
+        <div><div className="s-l">{tr(lang, 'Больше всего списываем', 'Written off most', "Eng ko'p chiqariladi")}</div><ol>{topW.map(([n, c]) => <li key={n}>{n} <span>{amt(c).join(' ')}</span></li>)}</ol></div>
       </section>
       <section className="block card-ph" aria-labelledby="h-acts">
         <div className="sec-head"><h2 id="h-acts">{tr(lang, 'Акты списания', 'Write-off documents', 'Hisobdan chiqarish hujjatlari')}</h2>

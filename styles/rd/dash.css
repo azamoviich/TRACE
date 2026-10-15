@@ -120,10 +120,13 @@
 .rd-dash footer.status { width: calc(100% - 2 * var(--pad)); max-width: calc(var(--maxw) - 2 * var(--pad)); margin: 0 auto; padding: 18px 0 40px; border-top: 1px solid var(--rule); display: flex; flex-wrap: wrap; gap: 8px 28px; font-size: 12.5px; color: var(--text-3); }
 .rd-dash footer.status b { font-weight: 500; color: var(--text-2); }
 .rd-dash .ok::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--pos); margin-right: 7px; vertical-align: 1px; }
-.rd-dash .rise { opacity: 0; transform: translateY(6px); animation: rise .5s cubic-bezier(.2,.7,.2,1) forwards; }
-@keyframes rise { to { opacity: 1; transform: none; } }
+/* Entrance only: `backwards` fill, so no transform/opacity stays on the section
+   afterwards — a lingering one makes a stacking context and buries popovers
+   (and traps position:fixed sheets) under the next section. */
+.rd-dash .rise { animation: rise .5s cubic-bezier(.2,.7,.2,1) backwards; }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 @media (prefers-reduced-motion: reduce) {
-  .rd-dash .rise { animation: none; opacity: 1; transform: none; }
+  .rd-dash .rise { animation: none; }
 }
 @media (max-width: 1080px) {
   .rd-dash .hero, .rd-dash .grid { grid-template-columns: 1fr; gap: 32px; }

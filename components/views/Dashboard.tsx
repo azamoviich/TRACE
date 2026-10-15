@@ -429,7 +429,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ lang, branch, onContextRea
               </Pop>
             )}
             {!demo && !poster && (
-              <Pop label={<span>{excluded.length ? `${tr(lang, 'Без', 'Excl.', 'Siz')}: ${excluded.map(s => s.name.toLowerCase()).join(', ')}` : tr(lang, 'Все гости', 'All guests', 'Barcha mehmonlar')}</span>}
+              <Pop label={<span>{excluded.length === 0 ? tr(lang, 'Все гости', 'All guests', 'Barcha mehmonlar')
+                  : excluded.length <= 2 ? `${tr(lang, 'Без', 'Excl.', 'Siz')}: ${excluded.map(s => s.name.toLowerCase()).join(', ')}`
+                  : tr(lang, `Без ${excluded.length} разделов`, `${excluded.length} sections excluded`, `${excluded.length} bo'limsiz`)}</span>}
+                title={excluded.length ? excluded.map(s => s.name).join(', ') : undefined}
                 on={excluded.length > 0} onOpen={loadSections}>
                 {close => <>
                   <div className="pop-title">{tr(lang, 'Реальные гости', 'Real guests', 'Haqiqiy mehmonlar')}</div>

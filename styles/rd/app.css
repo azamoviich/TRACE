@@ -64,3 +64,10 @@ input, textarea, select { font-size: max(16px, 1em); }
 /* Leaflet inside the mockup's .map box: undo the mockup's SVG sizing */
 .rd .rd-leaflet .leaflet-attribution-flag { display: none !important; }
 .rd-reviews .stars .ph-fill.ph-star { color: var(--text); }
+
+/* Whatever section holds an open popover sits above its siblings, so the
+   popover is never painted under the next card or chart. */
+.rd :is(section, .band, .block, .card, .card-ph, .rise):has(.pop:not([hidden])) { position: relative; z-index: 30; }
+.rd .pop-wrap > .chip { max-width: min(360px, calc(100vw - 32px)); }
+.rd .pop-wrap > .chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (min-width: 641px) { .rd .pop { max-height: min(70vh, 560px); overflow-y: auto; } }

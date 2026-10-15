@@ -78,10 +78,13 @@
 .rd .tabbar { display: none; }
 .rd .tb-ico svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .rd .tb-ico circle { fill: currentColor; stroke: none; }
-.rd .rise { opacity: 0; transform: translateY(6px); animation: rise .5s cubic-bezier(.2,.7,.2,1) forwards; }
-@keyframes rise { to { opacity: 1; transform: none; } }
+/* Entrance only: `backwards` fill, so no transform/opacity stays on the section
+   afterwards — a lingering one makes a stacking context and buries popovers
+   (and traps position:fixed sheets) under the next section. */
+.rd .rise { animation: rise .5s cubic-bezier(.2,.7,.2,1) backwards; }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 @media (prefers-reduced-motion: reduce) {
-  .rd .rise { animation: none; opacity: 1; transform: none; }
+  .rd .rise { animation: none; }
   .rd .panel, .rd .scrim { transition: none; }
 }
 @media (max-width: 1080px) {

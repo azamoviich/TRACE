@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ViewState, Language } from './types';
 import { TopNav } from './components/TopNav';
 import { RdHeader, RdFooter, RdTabbar } from './components/rd/Shell';
+import { RdSplash, RdLogin, RdDemoPosPicker, RdThemePicker } from './components/rd/Gate';
 import { AskAI } from './components/AskAI';
 import { ToastContainer, ToastMessage, ToastType } from './components/Toast';
 import { Dashboard } from './components/views/Dashboard';
@@ -20,9 +21,8 @@ import { Workforce } from './components/views/Workforce';
 import { Employees } from './components/views/Employees';
 import { Booking } from './components/views/Booking';
 import { GuestBooking } from './components/guest/GuestBooking';
-import { Globe, Sun, Moon } from 'lucide-react';
-import { TRANSLATIONS, nextLang, tr } from './constants';
-import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE, tenantAuth, desktopCrossTenantLogin, verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos, createQrSession, pollQrSession, QrSession, isTauriApp, consumeBootstrapToken, getTenantRole, isBookingHost, bookingApi, BookingApiError } from './services/traceApi';
+import { TRANSLATIONS, tr } from './constants';
+import { isAdminSubdomain, isDemoTenant, isManagerPortal, isChecklistManagerHost, LIVE_MODE,  verifyTenantToken, clearTenantToken, traceApi, getActiveBranchId, setActiveBranch, BranchSummary, ALL_BRANCHES_ID, parseEmployeeChecklistHost, setDemoPos, isTauriApp, consumeBootstrapToken, getTenantRole, isBookingHost, bookingApi, BookingApiError } from './services/traceApi';
 import { ManagerPortal } from './components/ManagerPortal';
 import { ChecklistManagerPortal } from './components/ChecklistManagerPortal';
 import { EmployeeChecklistPortal } from './components/EmployeeChecklistPortal';
@@ -33,297 +33,6 @@ import {
   NAV_ITEMS, EMPLOYEE_APP_PAGE_IDS, NavStyle, MobileNavStyle, NAV_STYLE_KEY, MOBILE_NAV_STYLE_KEY, HIDDEN_PAGES_KEY, DEFAULT_PAGE_KEY, ACCENT_KEY, LOGO_URL_KEY,
   loadNavStyle, loadMobileNavStyle, loadHiddenPages, loadDefaultPage, loadAccent, applyAccent, loadLogoUrl,
 } from './components/navConfig';
-
-const Login: React.FC<{ onLogin: (remember: boolean) => void; lang: Language; setLang: (l: Language) => void }> = ({ onLogin, lang, setLang }) => {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [loginVal, setLoginVal] = useState('');
-  const [passwordVal, setPasswordVal] = useState('');
-  const [rememberMe, setRememberMe] = useState(true);
-  const t = TRANSLATIONS[lang];
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    const trimmedLogin = loginVal.trim();
-    const ok = isDemoTenant()
-      ? (trimmedLogin === 'admin' && passwordVal === '123')
-      : await tenantAuth(trimmedLogin, passwordVal);
-    // Exe: credentials for a different restaurant redirect there instead.
-    if (!ok && await desktopCrossTenantLogin(trimmedLogin, passwordVal, rememberMe)) return;
-    setLoading(false);
-    if (ok) onLogin(rememberMe);
-    else setError(tr(lang, 'Неверный логин или пароль', 'Invalid login or password', 'Login yoki parol noto\'g\'ri'));
-  };
-
-  // QR login — exe only, real tenants only. Never runs in a plain browser
-  // tab (isTauriApp), so the website's tenant login is untouched by any of
-  // this: no extra requests, no extra UI.
-  const [qrSession, setQrSession] = useState<QrSession | null>(null);
-  const [qrStatus, setQrStatus] = useState<'pending' | 'expired' | 'confirmed'>('pending');
-  const rememberMeRef = React.useRef(rememberMe);
-  rememberMeRef.current = rememberMe;
-
-  useEffect(() => {
-    if (isDemoTenant() || !isTauriApp()) return;
-    let cancelled = false;
-    let pollId: ReturnType<typeof setInterval> | undefined;
-
-    const startSession = async () => {
-      const session = await createQrSession();
-      if (cancelled) return;
-      if (!session) { setTimeout(startSession, 3000); return; } // backend hiccup — keep retrying quietly
-      setQrSession(session);
-      setQrStatus('pending');
-      pollId = setInterval(async () => {
-        const status = await pollQrSession(session.sessionId);
-        if (cancelled) return;
-        if (status === 'confirmed') {
-          setQrStatus('confirmed');
-          clearInterval(pollId);
-          setTimeout(() => onLogin(rememberMeRef.current), 500);
-        } else if (status === 'expired') {
-          setQrStatus('expired');
-          clearInterval(pollId);
-          setTimeout(startSession, 1200);
-        }
-      }, 2000);
-    };
-    startSession();
-
-    return () => { cancelled = true; if (pollId) clearInterval(pollId); };
-  }, []);
-
-  // Plain website (any browser tab, including a tenant's own subdomain) —
-  // same visual language as the exe login below, minus the QR/TRACEMOB
-  // pairing card (web-only login is login/password, never QR).
-  if (!isTauriApp()) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4 relative">
-        <div className="absolute top-5 right-5 z-20">
-          <button
-            onClick={() => setLang(nextLang(lang))}
-            className="text-muted hover:text-text flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.15em] border border-border hover:border-primary/40 px-3 py-1.5 rounded-full transition-colors"
-          >
-            <Globe size={13} />
-            {lang.toUpperCase()}
-          </button>
-        </div>
-
-        <div className="w-full max-w-[320px] animate-fade-in">
-          <div className="mb-8 text-center">
-            <h1 className="font-display text-[24px] font-black text-text tracking-[0.25em] leading-none">TRACE</h1>
-            <p className="text-[9px] uppercase tracking-[0.3em] text-muted mt-2">Restaurant OS</p>
-          </div>
-
-          <div className="bg-card border border-border rounded-xl p-6">
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="block text-[9px] uppercase tracking-[0.18em] text-muted mb-1.5 font-medium">{t.login}</label>
-                <input type="text" value={loginVal} onChange={e => setLoginVal(e.target.value)} autoComplete="username"
-                  autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus
-                  className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-text text-[13px] focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all" />
-              </div>
-              <div>
-                <label className="block text-[9px] uppercase tracking-[0.18em] text-muted mb-1.5 font-medium">{t.password}</label>
-                <input type="password" value={passwordVal} onChange={e => setPasswordVal(e.target.value)} autoComplete="current-password"
-                  className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-text text-[13px] focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all" />
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded accent-primary cursor-pointer" />
-                <span className="text-[12px] text-muted">{t.remember_me}</span>
-              </label>
-              {error && <p className="text-[12px] text-danger">{error}</p>}
-              <button
-                type="submit" disabled={loading || !loginVal || !passwordVal}
-                className="w-full bg-primary hover:bg-primary-hover text-white font-semibold py-2.5 rounded-lg text-[13px] transition-colors flex items-center justify-center gap-2 disabled:opacity-70"
-              >
-                {loading
-                  ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  : t.enter_system}
-              </button>
-            </form>
-          </div>
-
-          <p className="text-center text-[11px] text-muted mt-4 leading-relaxed">
-            {t.legal_agree_prefix}{' '}
-            <a href="https://trace-os.uz/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-text">{t.legal_privacy}</a>
-            {' '}{t.legal_and}{' '}
-            <a href="https://trace-os.uz/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-text">{t.legal_terms}</a>
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Desktop app (exe) — redesigned login + QR pairing with TRACEMOB below.
-  return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative">
-      <div className="absolute top-5 right-5 z-20">
-        <button
-          onClick={() => setLang(nextLang(lang))}
-          className="text-muted hover:text-text flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.15em] border border-border hover:border-primary/40 px-3 py-1.5 rounded-full transition-colors"
-        >
-          <Globe size={13} />
-          {lang.toUpperCase()}
-        </button>
-      </div>
-
-      <div className={`w-full animate-fade-in ${isDemoTenant() ? 'max-w-[320px]' : 'max-w-[640px]'}`}>
-        <div className="mb-8 text-center">
-          <h1 className="font-display text-[24px] font-black text-text tracking-[0.25em] leading-none">TRACE</h1>
-          <p className="text-[9px] uppercase tracking-[0.3em] text-muted mt-2">Restaurant OS</p>
-        </div>
-
-        <div className="flex flex-wrap justify-center gap-6">
-          <div className="bg-card border border-border rounded-xl p-6 w-full max-w-[320px]">
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="block text-[9px] uppercase tracking-[0.18em] text-muted mb-1.5 font-medium">{t.login}</label>
-                <input type="text" value={loginVal} onChange={e => setLoginVal(e.target.value)} autoComplete="username"
-                  autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus
-                  className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-text text-[13px] focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all" />
-              </div>
-              <div>
-                <label className="block text-[9px] uppercase tracking-[0.18em] text-muted mb-1.5 font-medium">{t.password}</label>
-                <input type="password" value={passwordVal} onChange={e => setPasswordVal(e.target.value)} autoComplete="current-password"
-                  className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-text text-[13px] focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all" />
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded accent-primary cursor-pointer" />
-                <span className="text-[12px] text-muted">{t.remember_me}</span>
-              </label>
-              {error && <p className="text-[12px] text-danger">{error}</p>}
-              <button
-                type="submit" disabled={loading || !loginVal || !passwordVal}
-                className="w-full bg-primary hover:bg-primary-hover text-white font-semibold py-2.5 rounded-lg text-[13px] transition-colors flex items-center justify-center gap-2 disabled:opacity-70"
-              >
-                {loading
-                  ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  : t.enter_system}
-              </button>
-            </form>
-          </div>
-
-          {!isDemoTenant() && (
-            <div className="bg-card border border-border rounded-xl p-6 w-full max-w-[260px] flex flex-col items-center text-center">
-              <p className="text-[9px] uppercase tracking-[0.18em] text-muted mb-4 font-medium">{t.qr_login_title}</p>
-              <div className="w-[168px] h-[168px] rounded-lg bg-white flex items-center justify-center relative overflow-hidden shrink-0 border border-border">
-                {qrSession
-                  ? <img src={qrSession.qrDataUrl} alt="QR" className={`w-full h-full object-contain transition-opacity ${qrStatus === 'pending' ? 'opacity-100' : 'opacity-25'}`} />
-                  : <span className="w-6 h-6 border-2 border-black/10 border-t-black/40 rounded-full animate-spin" />}
-                {qrStatus === 'expired' && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-white/90">
-                    <span className="w-5 h-5 border-2 border-black/10 border-t-black/40 rounded-full animate-spin" />
-                  </div>
-                )}
-                {qrStatus === 'confirmed' && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-white/90">
-                    <span className="text-[12px] font-semibold text-success">✓</span>
-                  </div>
-                )}
-              </div>
-              <p className="text-[11px] text-muted mt-4 leading-relaxed">
-                {qrStatus === 'expired' ? t.qr_login_expired : qrStatus === 'confirmed' ? t.qr_login_confirmed : t.qr_login_hint}
-              </p>
-            </div>
-          )}
-        </div>
-
-        <p className="text-center text-[11px] text-muted mt-4 leading-relaxed">
-          {t.legal_agree_prefix}{' '}
-          <a href="https://trace-os.uz/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-text">{t.legal_privacy}</a>
-          {' '}{t.legal_and}{' '}
-          <a href="https://trace-os.uz/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-text">{t.legal_terms}</a>
-        </p>
-      </div>
-    </div>
-  );
-};
-
-const DemoPosPicker: React.FC<{ lang: Language; onChoose: (p: 'iiko' | 'poster') => void }> = ({ lang, onChoose }) => {
-  return (
-    <div className="min-h-screen bg-background text-text flex items-center justify-center p-4">
-      <div className="w-full max-w-[420px] text-center animate-fade-in">
-        <div className="flex w-14 h-14 mx-auto rounded-[18px] glass overflow-hidden mb-6 shadow-[0_8px_32px_rgba(0,0,0,0.15)]">
-          <img src="/trace-logo.png" alt="TRACE" className="w-full h-full object-cover invert dark:invert-0"
-            onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-        </div>
-        <span className="block w-fit mx-auto text-[11px] font-bold tracking-wide uppercase px-3 py-1 rounded-full mb-4" style={{ background: 'rgba(255,107,53,0.12)', color: '#ff6b35' }}>
-          {tr(lang, 'Это демо · вымышленные данные', 'This is a demo · fictional data', 'Bu demo · demonstrativ maʼlumotlar')}
-        </span>
-        <h1 className="text-[20px] font-bold mb-2">
-          {tr(lang, 'Какую POS-систему показать?', 'Which POS should we show?', "Qaysi POS ko'rsatilsin?")}
-        </h1>
-        <p className="text-[14px] text-muted mb-8">
-          {tr(lang, 'Демо адаптируется под вашу POS-систему', 'The demo adapts to match your POS', 'Demo sizning POS tizimingizga moslashadi')}
-        </p>
-        <div className="grid grid-cols-2 gap-4">
-          <button
-            onClick={() => onChoose('iiko')}
-            className="flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-border hover:border-primary bg-card transition-colors"
-          >
-            <div className="w-full h-16 rounded-xl flex items-center justify-center font-bold text-[15px]" style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', color: '#4ade80' }}>
-              iiko
-            </div>
-            <span className="text-[15px] font-semibold text-text">iiko</span>
-          </button>
-          <button
-            onClick={() => onChoose('poster')}
-            className="flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-border hover:border-primary bg-card transition-colors"
-          >
-            <div className="w-full h-16 rounded-xl flex items-center justify-center font-bold text-[15px]" style={{ background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.2)', color: '#F97316' }}>
-              Poster
-            </div>
-            <span className="text-[15px] font-semibold text-text">Poster POS</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const ThemePicker: React.FC<{ lang: Language; onChoose: (t: 'light' | 'dark') => void }> = ({ lang, onChoose }) => {
-  return (
-    <div className="min-h-screen bg-background text-text flex items-center justify-center p-4">
-      <div className="w-full max-w-[420px] text-center animate-fade-in">
-        <div className="inline-flex w-14 h-14 rounded-[18px] glass overflow-hidden mb-6 shadow-[0_8px_32px_rgba(0,0,0,0.15)]">
-          <img src="/trace-logo.png" alt="TRACE" className="w-full h-full object-cover invert dark:invert-0"
-            onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-        </div>
-        <h1 className="text-[20px] font-bold mb-2">
-          {tr(lang, 'Выберите тему оформления', 'Choose your appearance', "Ko'rinishni tanlang")}
-        </h1>
-        <p className="text-[14px] text-muted mb-8">
-          {tr(lang, 'Вы всегда сможете изменить это в настройках', 'You can change this anytime in Settings', "Buni istalgan vaqtda Sozlamalarda o'zgartirishingiz mumkin")}
-        </p>
-        <div className="grid grid-cols-2 gap-4">
-          <button
-            onClick={() => onChoose('light')}
-            className="flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-border hover:border-primary bg-card transition-colors"
-          >
-            <div className="w-full h-24 rounded-xl flex items-center justify-center" style={{ background: '#f7f5f2', border: '1px solid #e5e2dd' }}>
-              <Sun size={28} color="#ff6b35" />
-            </div>
-            <span className="text-[15px] font-semibold text-text">{tr(lang, 'Светлая', 'Light', "Yorug'")}</span>
-          </button>
-          <button
-            onClick={() => onChoose('dark')}
-            className="flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-border hover:border-primary bg-card transition-colors"
-          >
-            <div className="w-full h-24 rounded-xl flex items-center justify-center" style={{ background: '#1a1a1d', border: '1px solid #303036' }}>
-              <Moon size={28} color="#ff6b35" />
-            </div>
-            <span className="text-[15px] font-semibold text-text">{tr(lang, 'Тёмная', 'Dark', 'Qora')}</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 export default function App() {
   // Public guest booking page (book.trace-os.uz/{slug}, book.{slug}.trace-os.uz).
@@ -541,14 +250,10 @@ export default function App() {
 
   const removeToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
-  if (authChecking) {
-    return <div className="min-h-screen bg-background flex items-center justify-center">
-      <span className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-    </div>;
-  }
+  if (authChecking) return <RdSplash />;
 
   if (!isLoggedIn) {
-    return <Login
+    return <RdLogin
       onLogin={(remember) => {
         if (remember) {
           localStorage.setItem('trace_remember', '1');
@@ -568,11 +273,11 @@ export default function App() {
   }
 
   if (!demoPosChosen) {
-    return <DemoPosPicker lang={lang} onChoose={(p) => { setDemoPos(p); setDemoPosChosen(true); }} />;
+    return <RdDemoPosPicker lang={lang} onChoose={(p) => { setDemoPos(p); setDemoPosChosen(true); }} />;
   }
 
   if (!themeChosen) {
-    return <ThemePicker lang={lang} onChoose={setTheme} />;
+    return <RdThemePicker lang={lang} onChoose={setTheme} />;
   }
 
   const renderContent = () => {

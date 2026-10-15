@@ -1,0 +1,76 @@
+/* Screens before the dashboard (components/rd/Gate.tsx): splash, sign-in,
+   demo POS / theme pickers. From TRACE-mockups admin.html login and the
+   owner app launch screen. */
+.rd-gate { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 16px; position: relative; }
+.rd-gate .brand-mark.big { width: 64px; height: 64px; border-radius: 16px; }
+.rd-gate .gate-wrap { width: min(340px, 100%); animation: rise .45s cubic-bezier(.2,.7,.2,1) backwards; }
+.rd-gate .gate-wrap.wide { width: min(640px, 100%); }
+.rd-gate .gate-brand { display: flex; align-items: center; justify-content: center; gap: 9px; font-size: 18px; font-weight: 700; letter-spacing: -.01em; }
+.rd-gate .gate-sub { text-align: center; color: var(--text-3); font-size: 13.5px; margin: 6px 0 24px; }
+.rd-gate .gate-kicker { text-align: center; margin: 18px 0 0; font-size: 13px; color: var(--accent); font-weight: 500; }
+.rd-gate h1 { text-align: center; margin: 8px 0 0; font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
+.rd-gate .gate-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; }
+.rd-gate .gate-card { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 20px; width: min(340px, 100%); }
+.rd-gate .fld + .fld { margin-top: 14px; }
+.rd-gate .fld label { display: block; font-size: 13px; color: var(--text-2); font-weight: 500; margin-bottom: 6px; }
+.rd-gate .in { width: 100%; height: 40px; padding: 0 11px; border: 1px solid var(--rule-strong); border-radius: 8px; background: var(--bg); color: var(--text); font-family: inherit; font-size: max(16px, 1em); transition: border-color .2s; }
+.rd-gate .in:focus { outline: none; border-color: var(--accent); }
+.rd-gate .in[aria-invalid="true"] { border-color: var(--neg); }
+.rd-gate .pw { position: relative; display: block; }
+.rd-gate .pw .in { padding-right: 42px; }
+.rd-gate .pw-eye { position: absolute; right: 4px; top: 4px; width: 32px; height: 32px; border-radius: 6px; display: grid; place-items: center; color: var(--text-3); font-size: 17px; }
+.rd-gate .pw-eye:hover { color: var(--text); }
+.rd-gate .gate-check { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 14px; color: var(--text-2); cursor: pointer; user-select: none; }
+.rd-gate .gate-check input { width: 16px; height: 16px; accent-color: var(--text); cursor: pointer; }
+.rd-gate .ferr { font-size: 13px; color: var(--neg); margin: 10px 0 0; }
+.rd-gate .gate-go { width: 100%; justify-content: center; margin-top: 16px; height: 40px; }
+.rd-gate .gate-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--bg) 35%, transparent); border-top-color: var(--bg); animation: gspin .8s linear infinite; }
+.rd-gate .gate-spin.dark { width: 22px; height: 22px; border-color: rgba(0,0,0,.1); border-top-color: rgba(0,0,0,.45); }
+@keyframes gspin { to { transform: rotate(360deg); } }
+.rd-gate .gate-qr { width: min(260px, 100%); display: flex; flex-direction: column; align-items: center; text-align: center; }
+.rd-gate .qr-t { margin: 0 0 14px; font-size: 15px; font-weight: 500; }
+.rd-gate .qr-box { position: relative; width: 168px; height: 168px; border-radius: 8px; border: 1px solid var(--rule); background: #fff; display: grid; place-items: center; overflow: hidden; }
+.rd-gate .qr-box img { width: 100%; height: 100%; object-fit: contain; transition: opacity .2s; }
+.rd-gate .qr-box.expired img, .rd-gate .qr-box.confirmed img { opacity: .25; }
+.rd-gate .qr-over { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(255,255,255,.88); }
+.rd-gate .qr-over.ok { color: #2F7D4F; font-size: 28px; }
+.rd-gate .qr-hint { margin: 14px 0 0; font-size: 13.5px; color: var(--text-2); line-height: 1.5; }
+.rd-gate .gate-legal { text-align: center; font-size: 12.5px; color: var(--text-3); margin: 16px auto 0; max-width: 340px; line-height: 1.5; }
+.rd-gate .gate-legal a { color: inherit; text-decoration: underline; text-decoration-color: var(--rule-strong); text-underline-offset: 3px; }
+.rd-gate .gate-legal a:hover { color: var(--text); }
+.rd-gate .gate-lang { position: absolute; top: 18px; right: 18px; display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--rule); border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--text-2); transition: border-color .2s, color .2s; }
+.rd-gate .gate-lang:hover { border-color: var(--rule-strong); color: var(--text); }
+
+/* Splash */
+.rd-splash { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+.rd-splash .sp-mark { animation: spIn .7s cubic-bezier(.2,.8,.2,1) backwards; }
+.rd-splash .sp-mark .brand-mark::after { animation: spDot .35s .55s cubic-bezier(.3,1.6,.5,1) backwards; }
+.rd-splash .sp-word { font-weight: 700; letter-spacing: .14em; font-size: 15px; animation: rise .5s .3s cubic-bezier(.2,.7,.2,1) backwards; }
+.rd-splash .sp-bar { margin-top: 26px; width: 96px; height: 2px; border-radius: 1px; background: var(--rule); overflow: hidden; opacity: 0; animation: gfade .3s .9s forwards; }
+.rd-splash .sp-bar span { display: block; width: 40%; height: 100%; background: var(--text-2); animation: sweep 1.1s ease-in-out infinite alternate; }
+@keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@keyframes spIn { from { opacity: 0; transform: scale(.82); } }
+@keyframes spDot { from { transform: scale(0); } }
+@keyframes gfade { to { opacity: 1; } }
+
+/* Choice screens */
+.rd-choice .gate-wrap { width: min(440px, 100%); }
+.rd-choice .choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.rd-choice .choice { display: flex; flex-direction: column; gap: 10px; padding: 12px; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; text-align: center; transition: border-color .2s, transform .15s; }
+.rd-choice .choice:hover { border-color: var(--text-3); }
+.rd-choice .choice:active { transform: translateY(1px); }
+.rd-choice .choice-pv { height: 96px; border-radius: 8px; background: var(--sunken); display: grid; place-items: center; overflow: hidden; }
+.rd-choice .choice-l { font-size: 15px; font-weight: 500; }
+.rd-choice .pos-word { font-size: 20px; font-weight: 600; letter-spacing: -.02em; color: var(--text-2); }
+.rd-choice .theme-pv { width: 100%; height: 100%; display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; }
+.rd-choice .theme-pv.light { background: #F6F4F0; }
+.rd-choice .theme-pv.dark { background: #18171A; }
+.rd-choice .theme-pv i { display: block; height: 10px; border-radius: 3px; background: #E4E0D8; }
+.rd-choice .theme-pv.dark i { background: #2D2C30; }
+.rd-choice .theme-pv i:first-child { width: 45%; background: #1C1B19; }
+.rd-choice .theme-pv.dark i:first-child { background: #EDEAE4; }
+.rd-choice .theme-pv i:last-child { width: 30%; background: #E8642C; }
+@media (prefers-reduced-motion: reduce) {
+  .rd-gate *, .rd-gate { animation: none !important; }
+  .rd-splash .sp-bar { opacity: 1; }
+}

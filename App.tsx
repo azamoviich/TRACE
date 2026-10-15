@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ViewState, Language } from './types';
 import { TopNav } from './components/TopNav';
+import { RdHeader, RdFooter, RdTabbar } from './components/rd/Shell';
 import { AskAI } from './components/AskAI';
 import { ToastContainer, ToastMessage, ToastType } from './components/Toast';
 import { Dashboard } from './components/views/Dashboard';
@@ -594,59 +595,52 @@ export default function App() {
     }
   };
 
+  // Redesigned pages render their own markup under .rd; the rest still use
+  // Tailwind and sit in the same container with the new tokens.
+  const REDESIGNED: Partial<Record<ViewState, string>> = {};
+  const rdPage = REDESIGNED[currentView];
+
   return (
-    <div className="min-h-screen bg-background text-text font-sans selection:bg-primary/20">
+    <div className="rd-app">
       <ToastContainer toasts={toasts} removeToast={removeToast} />
 
-      {effectiveNavStyle === 'side' && (
-        <Sidebar
+      <div className="rd">
+        <RdHeader
           currentView={currentView}
           onNavigate={setCurrentView}
           onLogout={handleLogout}
           lang={lang}
+          setLang={setLang}
+          onOpenAI={isMarketing ? undefined : () => setAiOpen(true)}
+          branches={branches}
+          activeBranchId={activeBranchId}
+          onSwitchBranch={handleSwitchBranch}
+          showAllBranchesOption={showAllBranchesOption}
+          theme={theme}
+          setTheme={setTheme}
           hiddenPages={hiddenPages}
           logoUrl={logoUrl}
         />
-      )}
-
-      <TopNav
-        currentView={currentView}
-        onNavigate={setCurrentView}
-        onLogout={handleLogout}
-        lang={lang}
-        setLang={setLang}
-        onOpenAI={isMarketing ? undefined : () => setAiOpen(true)}
-        branches={branches}
-        activeBranchId={activeBranchId}
-        onSwitchBranch={handleSwitchBranch}
-        showAllBranchesOption={showAllBranchesOption}
-        theme={theme}
-        setTheme={setTheme}
-        navStyle={effectiveNavStyle}
-        mobileNavStyle={mobileNavStyle}
-        hiddenPages={hiddenPages}
-        logoUrl={logoUrl}
-      />
-
-      {demoBannerVisible && (
-        <div className={`fixed top-[52px] left-0 right-0 z-40 flex justify-center px-3 pt-2 ${effectiveNavStyle === 'side' ? 'lg:pl-56' : ''}`}>
-          <div className="flex items-center gap-2 px-4 py-2 rounded-2xl text-[11px] font-medium max-w-full glass"
-            style={{ borderColor: 'rgba(245,158,11,0.22)', background: 'rgba(245,158,11,0.08)' }}>
-            <span style={{ color: '#f59e0b' }}>⚠</span>
-            <span className="text-muted truncate">
-              {tr(lang, 'Демо-режим · Данные тестовые', 'Demo mode · Fictional data', 'Demo rejim · Sinov ma\'lumotlari')}
-            </span>
-            <button onClick={() => setDemoBannerVisible(false)}
-              className="ml-auto flex-shrink-0 text-muted hover:text-text transition-colors text-[13px] leading-none">✕</button>
+        {demoBannerVisible && (
+          <div className="rd-demo">
+            <b>{tr(lang, 'Демо', 'Demo', 'Demo')}</b>
+            <span>{tr(lang, 'Данные примерные, касса не подключена', 'Sample data, no POS connected', "Namuna ma'lumotlar, kassa ulanmagan")}</span>
+            <button onClick={() => setDemoBannerVisible(false)}>{tr(lang, 'Скрыть', 'Hide', 'Yashirish')}</button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      <main className={`min-h-screen ${mobileNavStyle === 'bottom' ? 'pb-[76px] md:pb-0' : ''} ${demoBannerVisible ? 'pt-[96px]' : 'pt-[52px]'} ${effectiveNavStyle === 'side' ? 'lg:pl-56' : ''}`}>
-        <div className={`px-4 md:px-10 py-5 md:py-8 mx-auto ${effectiveNavStyle === 'side' ? 'max-w-none' : 'max-w-[1400px]'}`}>
+      <main id="content" className="rd-main">
+        <div className={rdPage ? `rd-page rd rd-${rdPage}` : 'rd-page rd-legacy'}>
           {renderContent()}
         </div>
       </main>
+
+      <div className="rd">
+        <RdFooter lang={lang} />
+        <RdTabbar currentView={currentView} onNavigate={setCurrentView} lang={lang} hiddenPages={hiddenPages}
+          hasBranches={branches.length > 1} onOpenAI={isMarketing ? undefined : () => setAiOpen(true)} />
+      </div>
 
       {!isMarketing && <AskAI
         context={aiContext || (t[currentView as keyof typeof t] as string) || 'General'}

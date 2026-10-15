@@ -1,0 +1,50 @@
+/* App glue for the redesign: pieces the mockups only hinted at
+   ("Ещё" menu, branch select, phone sheet) and the page container. */
+
+/* Prevent Safari auto-zoom on input focus */
+input, textarea, select { font-size: max(16px, 1em); }
+
+.rd-app { min-height: 100vh; background: var(--bg); color: var(--text); font: 400 15px/1.5 "IBM Plex Sans", system-ui, sans-serif; font-feature-settings: "tnum" 1, "lnum" 1; -webkit-font-smoothing: antialiased; }
+.rd-app header.top { z-index: 40; }
+.rd-main { max-width: var(--maxw); margin: 0 auto; padding: 36px var(--pad) 64px; }
+.rd-main > .rd-page { min-width: 0; }
+@media (max-width: 640px) { .rd-main { padding-top: 18px; padding-bottom: 28px; } }
+
+/* Logo upload from Settings replaces the mark */
+.rd .rd-logo-img { height: 26px; width: auto; max-width: 120px; object-fit: contain; border-radius: 4px; }
+
+/* Branch picker: looks like the mockup button, real <select> on top */
+.rd .rd-branch { position: relative; cursor: pointer; white-space: nowrap; max-width: 260px; }
+.rd .rd-branch-txt { overflow: hidden; text-overflow: ellipsis; }
+.rd .rd-branch select { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+
+/* "Ещё" in the desktop nav */
+.rd nav.main .rd-more { position: relative; display: flex; align-items: center; height: 100%; }
+.rd nav.main .rd-more > button { display: flex; align-items: center; gap: 5px; height: 100%; color: var(--text-2); font-size: 14.5px; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color .2s; }
+.rd nav.main .rd-more > button:hover { color: var(--text); }
+.rd nav.main .rd-more > button[aria-current="page"] { color: var(--text); font-weight: 500; border-bottom-color: var(--accent); }
+.rd nav.main .rd-more-menu { left: 0; right: auto; top: calc(100% + 2px); }
+.rd .rd-more-menu button { display: flex !important; align-items: center; gap: 10px; }
+.rd .rd-more-menu button .ph { font-size: 16px; color: var(--text-3); }
+.rd .rd-more-menu button[aria-current="page"] { background: var(--sunken); font-weight: 500; }
+.rd nav.main a { white-space: nowrap; }
+@media (max-width: 1360px) { .rd .ask-bar { width: auto; } .rd .ask-bar .ask-txt { display: none; } }
+
+/* Footer problem dot */
+.rd .rd-bad::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--neg); margin-right: 7px; vertical-align: 1px; }
+
+/* Phone "Ещё" sheet */
+.rd .rd-sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; background: var(--surface); border-top: 1px solid var(--rule); border-radius: 16px 16px 0 0; padding: 8px 12px calc(16px + env(safe-area-inset-bottom)); max-height: 80dvh; overflow-y: auto; box-shadow: var(--shadow-lg); animation: rd-sheet-in .28s cubic-bezier(.2,.7,.2,1); }
+.rd .rd-sheet-grip { width: 36px; height: 4px; border-radius: 2px; background: var(--rule-strong); margin: 0 auto 10px; }
+.rd .rd-sheet button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 13px 10px; border-radius: 8px; font-size: 15.5px; color: var(--text); text-align: left; }
+.rd .rd-sheet button .ph { font-size: 19px; color: var(--text-2); }
+.rd .rd-sheet button[aria-current="page"] { background: var(--sunken); font-weight: 500; }
+.rd .rd-sheet button[aria-current="page"] .ph { color: var(--accent); }
+.rd .rd-sheet .rd-sheet-ask { border: 1px solid var(--rule); margin-bottom: 8px; color: var(--text-2); }
+@keyframes rd-sheet-in { from { transform: translateY(100%); } }
+@media (prefers-reduced-motion: reduce) { .rd .rd-sheet { animation: none; } }
+
+/* Demo notice under the top bar */
+.rd .rd-demo { max-width: var(--maxw); margin: 0 auto; padding: 10px var(--pad) 0; font-size: 13px; color: var(--text-3); display: flex; gap: 10px; align-items: center; }
+.rd .rd-demo b { color: var(--accent); font-weight: 500; }
+.rd .rd-demo button { margin-left: auto; color: var(--text-3); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--rule-strong); font-size: 13px; }

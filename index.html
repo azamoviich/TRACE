@@ -11,7 +11,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="TRACE" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <meta name="theme-color" content="#1a1a1d" />
+    <meta name="theme-color" content="#F6F4F0" />
     <script>
       // Apply saved (or system-preferred, if not chosen yet) theme before first
       // paint to avoid a flash of the wrong colors.
@@ -24,15 +24,16 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Epilogue:wght@400;500;600;700;800;900&family=Onest:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
       tailwind.config = {
         darkMode: 'class',
         theme: {
           extend: {
             fontFamily: {
-              sans: ['Onest', 'system-ui', 'sans-serif'],
-              display: ['Epilogue', 'system-ui', 'sans-serif'],
+              sans: ['IBM Plex Sans', 'system-ui', 'sans-serif'],
+              display: ['IBM Plex Sans', 'system-ui', 'sans-serif'],
+              mono: ['IBM Plex Mono', 'ui-monospace', 'monospace'],
             },
             colors: {
               background: 'rgb(var(--color-background) / <alpha-value>)',
@@ -49,10 +50,12 @@
               border: 'rgb(var(--color-border) / <alpha-value>)',
             },
             borderRadius: {
-              '2xl': '16px',
-              '3xl': '22px',
-              '4xl': '28px',
-              '5xl': '34px',
+              // Redesign radius scale: controls 8 · cards 12 · sheets 16
+              'xl': '10px',
+              '2xl': '12px',
+              '3xl': '12px',
+              '4xl': '14px',
+              '5xl': '16px',
             },
             animation: {
               'fade-in': 'fadeIn 0.45s cubic-bezier(0.16, 1, 0.3, 1)',
@@ -87,39 +90,41 @@
          Calm, high-contrast palettes for older eyes. Light is default;
          .dark overrides (toggled on <html> via Settings / TopNav). */
       :root {
-        --color-background: 247 245 242;
+        --color-background: 246 244 240;
         --color-surface: 255 255 255;
         --color-card: 255 255 255;
-        --color-card-hover: 241 239 236;
-        --color-text: 26 26 26;
-        --color-muted: 95 95 95;
-        --color-primary: 255 107 53;
-        --color-primary-hover: 232 90 31;
-        --color-secondary: 37 99 235;
-        --color-danger: 220 38 38;
-        --color-success: 22 163 74;
-        --color-border: 229 226 221;
+        --color-card-hover: 239 236 230;
+        --color-text: 28 27 25;
+        --color-muted: 94 91 85;
+        --color-primary: 232 100 44;
+        --color-primary-hover: 207 84 32;
+        --color-secondary: 94 91 85;
+        --color-danger: 180 68 46;
+        --color-success: 47 125 79;
+        --color-border: 228 224 216;
       }
       .dark {
-        --color-background: 26 26 29;
-        --color-surface: 28 28 32;
-        --color-card: 34 34 38;
-        --color-card-hover: 42 42 47;
-        --color-text: 240 238 233;
-        --color-muted: 154 154 154;
-        --color-primary: 255 107 53;
-        --color-primary-hover: 255 130 85;
-        --color-secondary: 91 141 239;
-        --color-danger: 248 113 113;
-        --color-success: 74 222 128;
-        --color-border: 48 48 54;
+        --color-background: 24 23 26;
+        --color-surface: 32 31 35;
+        --color-card: 32 31 35;
+        --color-card-hover: 45 44 48;
+        --color-text: 237 234 228;
+        --color-muted: 166 162 154;
+        --color-primary: 240 120 74;
+        --color-primary-hover: 246 146 106;
+        --color-secondary: 166 162 154;
+        --color-danger: 224 128 106;
+        --color-success: 107 191 138;
+        --color-border: 45 44 48;
       }
 
       body {
         background-color: rgb(var(--color-background));
         color: rgb(var(--color-text));
         overflow-x: hidden;
-        font-family: 'Onest', system-ui, sans-serif;
+        font-family: 'IBM Plex Sans', system-ui, sans-serif;
+        font-feature-settings: 'tnum' 1, 'lnum' 1;
+        -webkit-font-smoothing: antialiased;
       }
 
       /* Flat surfaces — no blur, no glow. Calmer for older eyes. */
@@ -188,7 +193,7 @@
 
       /* Metric number display */
       .metric-number {
-        font-family: 'Epilogue', system-ui, sans-serif;
+        font-family: 'IBM Plex Sans', system-ui, sans-serif;
         font-feature-settings: 'tnum' 1, 'lnum' 1;
         font-variant-numeric: tabular-nums;
       }
@@ -215,7 +220,8 @@
      needs a CDN link since it ships plain stylesheet + image assets.
      No Google Maps key required — OSM tiles are free and keyless. -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
 </head>
   <body>
     <div id="root"></div>

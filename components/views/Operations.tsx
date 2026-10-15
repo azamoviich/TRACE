@@ -1,3 +1,5 @@
+// Операции — redesigned per TRACE-mockups/operations.html (Oct 2026).
+// Styles: styles/rd/ops.css (scoped .rd-ops).
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { Card } from '../ui/Card';
 import { AIInsightCard } from '../ui/AIInsightCard';
@@ -11,9 +13,11 @@ import { DateRangePicker } from '../ui/DateRangePicker';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { traceApi, CashShift, OpsKpis, StaffRow, StopItem, HallPlan, HallElement, isDemoTenant, demoActiveOrders, OpsAlert, VoidEvent, getTenantPlan, ShiftScheduleDay, StaffAbcRow, BranchSummary, ActiveOrderRow, ReservationRow } from '../../services/traceApi';
+import { traceApi, CashShift, OpsKpis, StaffRow, StopItem, HallPlan, HallElement, isDemoTenant, demoActiveOrders, OpsAlert, VoidEvent, getTenantPlan, ShiftScheduleDay, StaffAbcRow, BranchSummary, ActiveOrderRow, ReservationRow, StaffProfitabilityRow } from '../../services/traceApi';
 import { HallEditor } from '../HallEditor';
 import { ProLock } from '../ui/ProLock';
+import { Skel, rangeLabel, nowHM, AiState } from '../rd/ui';
+import { Trio, TrioTile } from '../rd/Trio';
 import { SlotText } from '../ui/SlotNumber';
 
 // ── Hall floor plan ───────────────────────────────────────────────────────
@@ -312,7 +316,7 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
   const occupiedTableNumbers = useMemo(() => occupiedTables ?? new Set<number>(), [occupiedTables]);
 
   if (loading) {
-    return <div className="h-48 bg-zinc-900/40 rounded animate-pulse" />;
+    return <Skel lines={['w9', 'w9', 'w7', 'w9', 'w5']} />;
   }
 
   if (plans.length === 0) {
@@ -320,302 +324,87 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
   }
 
   const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');
+  const tablesInPlan = activePlan.elements.filter(e => e.iiko_table_number != null).length;
+  const stats: [string, React.ReactNode][] = mode === 'revenue' && revenueSummary ? [
+    [tr(lang, 'Выручка зала', 'Floor revenue', 'Zal tushumi'), <>{fmt(revenueSummary.total)}<small>{tr(lang, 'сум', 'UZS', "so'm")}</small></>],
+    [tr(lang, 'Лучший стол', 'Top table', 'Eng yaxshi stol'), <>{revenueSummary.top.table}<small>{fmt(revenueSummary.top.revenue)}</small></>],
+    [tr(lang, 'Средний чек', 'Avg check', "O'rtacha chek"), <>{fmt(revenueSummary.avgCheck)}</>],
+    [tr(lang, 'Столов с продажами', 'Tables with sales', 'Sotuvli stollar'), <>{revenueSummary.tablesCovered}<small>{tr(lang, `из ${tablesInPlan}`, `of ${tablesInPlan}`, `${tablesInPlan} dan`)}</small></>],
+  ] : mode === 'duration' && durationSummary ? [
+    [tr(lang, 'Зал занят', 'Floor occupied', 'Zal band'), <>{formatMinutes(durationSummary.totalMin, lang)}</>],
+    [tr(lang, 'Самый занятый', 'Busiest table', 'Eng band stol'), <>{durationSummary.top.table}<small>{formatMinutes(durationSummary.top.avgMin * durationSummary.top.visits, lang)}</small></>],
+    [tr(lang, 'Посадка в среднем', 'Avg visit', "O'rtacha o'tirish"), <>{formatMinutes(durationSummary.avgVisitMin, lang)}</>],
+    [tr(lang, 'Столов с данными', 'Tables with data', "Ma'lumotli stollar"), <>{durationSummary.tablesCovered}<small>{tr(lang, `из ${tablesInPlan}`, `of ${tablesInPlan}`, `${tablesInPlan} dan`)}</small></>],
+  ] : mode === 'now' ? (() => {
+    const occ = [...occupiedTableNumbers].filter(n => activePlanTableNumbers?.has(n) ?? true);
+    const mins = occ.map(n => tableInfo?.get(n)?.min ?? 0);
+    return [
+      [tr(lang, 'Занято', 'Occupied', 'Band'), <>{occ.length}<small>{tr(lang, `из ${tablesInPlan}`, `of ${tablesInPlan}`, `${tablesInPlan} dan`)}</small></>],
+      [tr(lang, 'Стол в среднем', 'Avg table', "O'rtacha stol"), <>{mins.length ? Math.round(mins.reduce((a, b) => a + b, 0) / mins.length) : '—'}<small>{tr(lang, 'мин', 'min', 'daq')}</small></>],
+      [tr(lang, 'Дольше 90 мин', 'Over 90 min', "90 daq.dan ko'p"), <>{mins.filter(m => m >= 90).length}</>],
+      [tr(lang, 'Свободно', 'Free', "Bo'sh"), <>{Math.max(0, tablesInPlan - occ.length)}<small>{tr(lang, 'столов', 'tables', 'stol')}</small></>],
+    ] as [string, React.ReactNode][];
+  })() : [];
+  const busy = (mode === 'revenue' && revenueLoading) || (mode === 'duration' && durationLoading);
 
   return (
     <div>
-      {/* ── Toolbar ── */}
-      <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
-        {plans.length > 1 ? (
-          <div className="flex gap-1 p-0.5 bg-background rounded-xl border border-border">
-            {plans.map((p, i) => (
-              <button
-                key={p.id}
-                onClick={() => setActiveTab(i)}
-                className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold tracking-[0.02em] transition-all
-                  ${activeTab === i ? 'bg-card text-text shadow-sm' : 'text-muted hover:text-text'}`}
-              >
-                {p.name}
+      <div className="map-tools">
+        {plans.length > 1 && (
+          <span className="seg small" role="group" aria-label={tr(lang, 'Зал', 'Floor', 'Zal')}>
+            {plans.map((p, i) => <button key={p.id} aria-pressed={activeTab === i} onClick={() => setActiveTab(i)}>{p.name}</button>)}
+          </span>
+        )}
+        <span className="seg small" role="group" aria-label={tr(lang, 'Что показать', 'What to show', "Nimani ko'rsatish")}>
+          {([['now', tr(lang, 'Сейчас', 'Now', 'Hozir')], ['revenue', tr(lang, 'Выручка', 'Revenue', 'Tushum')], ['duration', tr(lang, 'Загрузка', 'Occupancy', 'Bandlik')]] as const).map(([id, l]) => (
+            <button key={id} aria-pressed={mode === id} onClick={() => setMode(id)}>{l}</button>
+          ))}
+        </span>
+        {mode !== 'now' && (
+          <span className="seg small periods on" role="group" aria-label={tr(lang, 'Период', 'Period', 'Davr')}>
+            {HEAT_PERIODS.map(d => (
+              <button key={d} aria-pressed={!customRange && period === d} onClick={() => { setPeriod(d); setCustomRange(null); }}>
+                {d === 'today' ? tr(lang, 'Сегодня', 'Today', 'Bugun') : tr(lang, `${d} дней`, `${d} days`, `${d} kun`)}
               </button>
             ))}
-          </div>
-        ) : <div />}
-
-        <div className="flex items-center gap-2 flex-wrap ml-auto">
-          {(mode === 'revenue' || mode === 'duration') && (
-            <div className="relative flex items-center gap-0.5 p-0.5 bg-background rounded-xl border border-border">
-              {HEAT_PERIODS.map(d => (
-                <button
-                  key={d}
-                  onClick={() => { setPeriod(d); setCustomRange(null); }}
-                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all
-                    ${!customRange && period === d ? 'bg-card text-primary shadow-sm' : 'text-muted hover:text-text'}`}
-                >
-                  {d === 'today' ? tr(lang, 'Сегодня', 'Today', 'Bugun') : tr(lang, `${d}д`, `${d}d`, `${d}k`)}
-                </button>
-              ))}
-              <button
-                ref={calendarBtnRef}
-                onClick={() => setCalendarOpen(o => !o)}
-                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all
-                  ${calendarOpen || customRange ? 'bg-card text-primary shadow-sm' : 'text-muted hover:text-text'}`}
-                title={tr(lang, 'Выбрать период', 'Pick a range', 'Davrni tanlash')}
-              >
-                <CalendarIcon size={12} />
-                {customRange && <span className="whitespace-nowrap">{customRange.from.slice(5)}–{customRange.to.slice(5)}</span>}
-              </button>
-              <DateRangePicker
-                lang={lang}
-                value={customRange}
-                isOpen={calendarOpen}
-                onClose={() => setCalendarOpen(false)}
-                anchorRef={calendarBtnRef}
-                onApply={r => { setCustomRange(r); setCalendarOpen(false); }}
-                onClear={() => { setCustomRange(null); setCalendarOpen(false); }}
-              />
-            </div>
-          )}
-          <div className="flex gap-0.5 p-0.5 bg-background rounded-xl border border-border">
-            {([
-              { id: 'now' as const,      label: tr(lang, 'Сейчас', 'Now', 'Hozir'), icon: Radio },
-              { id: 'revenue' as const,  label: tr(lang, 'Выручка', 'Revenue', 'Tushum'), icon: TrendingUp },
-              { id: 'duration' as const, label: tr(lang, 'Загрузка', 'Occupancy', 'Band vaqti'), icon: Clock },
-            ]).map(m => (
-              <button
-                key={m.id}
-                onClick={() => setMode(m.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all
-                  ${mode === m.id ? 'bg-card text-primary shadow-sm' : 'text-muted hover:text-text'}`}
-              >
-                <m.icon size={11} />
-                {m.label}
-              </button>
-            ))}
-          </div>
-        </div>
+            <button ref={calendarBtnRef} aria-pressed={!!customRange} onClick={() => setCalendarOpen(o => !o)}>
+              {customRange ? rangeLabel(customRange.from, customRange.to, lang) : tr(lang, 'Период…', 'Range…', 'Davr…')}
+            </button>
+            <DateRangePicker lang={lang} value={customRange} isOpen={calendarOpen} onClose={() => setCalendarOpen(false)} anchorRef={calendarBtnRef}
+              onApply={r => { setCustomRange(r); setCalendarOpen(false); }} onClear={() => { setCustomRange(null); setCalendarOpen(false); }} />
+          </span>
+        )}
       </div>
 
-      {/* ── Revenue summary strip ── */}
-      {mode === 'revenue' && revenueLoading && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          {[0, 1, 2, 3].map(i => <div key={i} className="h-[68px] bg-zinc-800/40 rounded-xl animate-pulse" />)}
-        </div>
+      {mode !== 'now' && !busy && stats.length === 0 && (
+        <p className="rd-empty">{mode === 'revenue'
+          ? tr(lang, 'Нет закрытых заказов за период', 'No closed orders for this period', 'Bu davr uchun yopilgan buyurtmalar yoʻq')
+          : tr(lang, 'Нет данных о посадках за период', 'No visit data for this period', 'Bu davr uchun oʻtirish maʼlumotlari yoʻq')}</p>
       )}
 
-      {mode === 'revenue' && !revenueLoading && revenueSummary && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          {[
-            {
-              icon: Banknote, iconClass: 'bg-primary/10 text-primary',
-              label: tr(lang, 'Выручка зала', 'Hall revenue', 'Zal tushumi'),
-              value: fmt(revenueSummary.total), suffix: 'UZS',
-            },
-            {
-              icon: Crown, iconClass: 'bg-amber-500/10 text-amber-400',
-              label: tr(lang, 'Топ-стол', 'Top table', 'Eng yaxshi stol'),
-              value: tr(lang, `Стол ${revenueSummary.top.table}`, `Table ${revenueSummary.top.table}`, `Stol ${revenueSummary.top.table}`),
-              suffix: `${fmt(revenueSummary.top.revenue)} UZS`,
-            },
-            {
-              icon: Receipt, iconClass: 'bg-success/10 text-success',
-              label: tr(lang, 'Средний чек', 'Avg check', "O'rtacha chek"),
-              value: fmt(revenueSummary.avgCheck), suffix: 'UZS',
-            },
-            {
-              icon: Grid2x2, iconClass: 'bg-blue-500/10 text-blue-400',
-              label: tr(lang, 'Столов с продажами', 'Tables w/ sales', 'Sotuvli stollar'),
-              value: String(revenueSummary.tablesCovered),
-              suffix: `/ ${activePlan.elements.filter(e => e.iiko_table_number != null).length}`,
-            },
-          ].map((s, i) => (
-            <div key={i} className="flex items-center gap-2.5 bg-card border border-border rounded-xl px-3 py-2.5">
-              <div className={`p-2 rounded-lg flex-shrink-0 ${s.iconClass}`}><s.icon size={15} /></div>
-              <div className="min-w-0">
-                <p className="text-[9px] uppercase tracking-[0.12em] text-muted truncate">{s.label}</p>
-                <p className="text-[13px] font-bold text-text metric-number leading-tight mt-0.5 truncate">
-                  {s.value} <span className="text-[9px] text-muted font-normal">{s.suffix}</span>
-                </p>
-              </div>
-            </div>
-          ))}
+      <div className="rd-hall" style={busy ? { opacity: .5 } : undefined}>
+        <HallEditor
+          key={displayPlanKey}
+          plan={displayPlan}
+          occupiedTableNumbers={occupiedTableNumbers}
+          tableHeat={tableHeat}
+          tableInfo={mode === 'now' ? tableInfo : undefined}
+          revenueInfo={mode === 'revenue' ? revenueInfo : undefined}
+          durationInfo={mode === 'duration' ? durationInfo : undefined}
+          legendMode={mode === 'revenue' ? 'revenue' : mode === 'duration' ? 'duration' : 'occupancy'}
+          onSave={async () => {}}
+          onClose={() => {}}
+          readOnly
+          inline
+          lang={lang}
+        />
+      </div>
+      {stats.length > 0 && (
+        <div className="map-stats">
+          {stats.map(([l, v], i) => <div key={i}><div className="l">{l}</div><div className="v">{v}</div></div>)}
         </div>
       )}
-
-      {mode === 'revenue' && !revenueLoading && !revenueSummary && (
-        <div className="flex flex-col items-center justify-center gap-1.5 mb-4 py-6 text-muted bg-card border border-dashed border-border rounded-xl">
-          <TrendingUp size={18} className="opacity-40" />
-          <span className="text-[11px]">{tr(lang, 'Нет данных о закрытых заказах за период', 'No closed-order data for this period', 'Bu davr uchun yopilgan buyurtmalar yoʻq')}</span>
-        </div>
-      )}
-
-      {/* ── Occupancy (duration) summary strip ── */}
-      {mode === 'duration' && durationLoading && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          {[0, 1, 2, 3].map(i => <div key={i} className="h-[68px] bg-zinc-800/40 rounded-xl animate-pulse" />)}
-        </div>
-      )}
-
-      {mode === 'duration' && !durationLoading && durationSummary && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          {[
-            {
-              icon: Clock, iconClass: 'bg-primary/10 text-primary',
-              label: tr(lang, 'Занятость зала', 'Hall occupied time', 'Zal band vaqti'),
-              value: formatMinutes(durationSummary.totalMin, lang), suffix: '',
-            },
-            {
-              icon: Crown, iconClass: 'bg-amber-500/10 text-amber-400',
-              label: tr(lang, 'Самый занятый стол', 'Busiest table', 'Eng band stol'),
-              value: tr(lang, `Стол ${durationSummary.top.table}`, `Table ${durationSummary.top.table}`, `Stol ${durationSummary.top.table}`),
-              suffix: formatMinutes(durationSummary.top.avgMin * durationSummary.top.visits, lang),
-            },
-            {
-              icon: Timer, iconClass: 'bg-success/10 text-success',
-              label: tr(lang, 'Средняя посадка', 'Avg visit', "O'rtacha o'tirish"),
-              value: formatMinutes(durationSummary.avgVisitMin, lang), suffix: '',
-            },
-            {
-              icon: Grid2x2, iconClass: 'bg-blue-500/10 text-blue-400',
-              label: tr(lang, 'Столов с данными', 'Tables w/ data', "Ma'lumotli stollar"),
-              value: String(durationSummary.tablesCovered),
-              suffix: `/ ${activePlan.elements.filter(e => e.iiko_table_number != null).length}`,
-            },
-          ].map((s, i) => (
-            <div key={i} className="flex items-center gap-2.5 bg-card border border-border rounded-xl px-3 py-2.5">
-              <div className={`p-2 rounded-lg flex-shrink-0 ${s.iconClass}`}><s.icon size={15} /></div>
-              <div className="min-w-0">
-                <p className="text-[9px] uppercase tracking-[0.12em] text-muted truncate">{s.label}</p>
-                <p className="text-[13px] font-bold text-text metric-number leading-tight mt-0.5 truncate">
-                  {s.value} <span className="text-[9px] text-muted font-normal">{s.suffix}</span>
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {mode === 'duration' && !durationLoading && !durationSummary && (
-        <div className="flex flex-col items-center justify-center gap-1.5 mb-4 py-6 text-muted bg-card border border-dashed border-border rounded-xl">
-          <Clock size={18} className="opacity-40" />
-          <span className="text-[11px]">{tr(lang, 'Нет данных о посадках за период', 'No visit data for this period', 'Bu davr uchun oʻtirish maʼlumotlari yoʻq')}</span>
-        </div>
-      )}
-
-      <HallEditor
-        key={displayPlanKey}
-        plan={displayPlan}
-        occupiedTableNumbers={occupiedTableNumbers}
-        tableHeat={tableHeat}
-        tableInfo={mode === 'now' ? tableInfo : undefined}
-        revenueInfo={mode === 'revenue' ? revenueInfo : undefined}
-        durationInfo={mode === 'duration' ? durationInfo : undefined}
-        legendMode={mode === 'revenue' ? 'revenue' : mode === 'duration' ? 'duration' : 'occupancy'}
-        onSave={async () => {}}
-        onClose={() => {}}
-        readOnly
-        inline
-        lang={lang}
-      />
     </div>
-  );
-}
-
-
-
-// ── Smart Alerts ─────────────────────────────────────────────────────────
-
-const ALERT_ICONS: Record<string, React.ReactNode> = {
-  long_ticket:       <Timer size={13} />,
-  double_bill:       <CreditCard size={13} />,
-  dead_zone:         <Zap size={13} />,
-  void_spike:        <Trash2 size={13} />,
-  kitchen_overdue:   <ChefHat size={13} />,
-  revenue_pace_drop: <TrendingDown size={13} />,
-};
-
-function SmartAlerts({ lang, pluginConnected }: { lang: Language; pluginConnected: boolean }) {
-  const ru = lang === 'ru';
-  const isUz = lang === 'uz';
-  const [alerts, setAlerts] = useState<OpsAlert[]>([]);
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const load = useCallback(() => {
-    traceApi.operations.alerts(lang)
-      .then(setAlerts)
-      .catch(() => setAlerts([]))
-      .finally(() => setLoading(false));
-  }, [lang]);
-
-  useEffect(() => {
-    // Alerts are derived from realtime_events (TRACEPLUGIN-only) — always
-    // empty for Poster (pluginConnected is always false there), so skip
-    // polling for data that will never arrive rather than fetching only to
-    // have the early return below discard it.
-    if (!pluginConnected) { setLoading(false); return; }
-    load();
-    intervalRef.current = setInterval(load, 60_000);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [load, pluginConnected]);
-
-  const [open, setOpen] = useState(false);
-
-  const visible = alerts.filter(a => !dismissed.has(a.id));
-  if (!pluginConnected || loading || visible.length === 0) return null;
-
-  const hasCritical = visible.some(a => a.level === 'critical');
-
-  return (
-    <>
-      {/* Floating bell — bottom-right, badge shows count */}
-      <button
-        onClick={() => setOpen(o => !o)}
-        className={`fixed bottom-[calc(80px_+_env(safe-area-inset-bottom))] md:bottom-5 right-5 z-40 w-12 h-12 rounded-full border shadow-lg flex items-center justify-center transition-colors
-          ${hasCritical ? 'bg-danger/15 border-danger/40 text-danger' : 'bg-card border-border text-amber-400'} hover:scale-105`}
-        title={ru ? 'Оповещения' : isUz ? 'Ogohlantirishlar' : 'Alerts'}
-      >
-        <Bell size={18} className={hasCritical ? 'animate-pulse' : ''} />
-        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-danger text-white text-[10px] font-bold flex items-center justify-center">
-          {visible.length}
-        </span>
-      </button>
-
-      {/* Panel */}
-      {open && (
-        <div className="fixed bottom-[calc(140px_+_env(safe-area-inset-bottom))] md:bottom-20 right-5 z-40 w-[min(360px,calc(100vw-40px))] max-h-[60vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl p-3 space-y-1.5">
-          <div className="flex items-center gap-2 px-1 pb-1">
-            <Bell size={12} className="text-danger" />
-            <p className="text-[10px] uppercase tracking-[0.18em] text-muted font-semibold">
-              {ru ? 'Активные оповещения' : isUz ? 'Faol ogohlantirishlar' : 'Active Alerts'}
-            </p>
-          </div>
-          {visible.map(alert => (
-            <div
-              key={alert.id}
-              className={`flex items-start gap-3 px-3.5 py-3 rounded-xl border ${
-                alert.level === 'critical'
-                  ? 'bg-danger/8 border-danger/25 text-danger'
-                  : 'bg-amber-500/8 border-amber-500/25 text-amber-400'
-              }`}
-            >
-              <span className="mt-0.5 flex-shrink-0">
-                {ALERT_ICONS[alert.type] ?? <AlertTriangle size={13} />}
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-[12px] font-semibold leading-tight">{alert.title}</p>
-                <p className="text-[11px] opacity-70 mt-0.5 leading-snug">{alert.detail}</p>
-              </div>
-              <button
-                onClick={() => setDismissed(prev => new Set([...prev, alert.id]))}
-                className="opacity-40 hover:opacity-80 transition-opacity flex-shrink-0 mt-0.5"
-              >
-                <X size={12} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </>
   );
 }
 
@@ -689,118 +478,84 @@ function VoidDetailModal({ event, lang, onClose }: { event: VoidEvent; lang: Lan
   );
 }
 
-function VoidTrackerCard({ lang, pluginConnected }: { lang: Language; pluginConnected: boolean }) {
-  const ru = lang === 'ru';
-  const isUz = lang === 'uz';
-  const [events, setEvents] = useState<VoidEvent[]>([]);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [detail, setDetail] = useState<VoidEvent | null>(null);
+// ── What needs attention right now ───────────────────────────────────────
 
+const ALERT_ICONS: Record<string, string> = {
+  long_ticket: 'ph-timer', double_bill: 'ph-receipt', dead_zone: 'ph-lightning',
+  void_spike: 'ph-trash', kitchen_overdue: 'ph-cooking-pot', revenue_pace_drop: 'ph-trend-down',
+};
+
+function Alerts({ lang, pluginConnected, onGo }: { lang: Language; pluginConnected: boolean; onGo: (a: OpsAlert) => void }) {
+  const [alerts, setAlerts] = useState<OpsAlert[]>([]);
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const load = useCallback(() => {
+    traceApi.operations.alerts(lang).then(setAlerts).catch(() => setAlerts([]));
+  }, [lang]);
   useEffect(() => {
-    // Poster has no order-void data source (realtime_events is TRACEPLUGIN-only) —
-    // pluginConnected is always false for Poster, so the card never renders
-    // (see the early return below); skip the fetch entirely rather than
-    // polling for data that will always come back empty.
+    // Alerts come from plugin events only — nothing to poll without the plugin.
     if (!pluginConnected) return;
-    traceApi.operations.voidEvents().then(setEvents).catch(() => {});
-    const id = setInterval(() => traceApi.operations.voidEvents().then(setEvents).catch(() => {}), 120_000);
+    load();
+    const id = setInterval(load, 60_000);
     return () => clearInterval(id);
-  }, [pluginConnected]);
-
-  const byWaiter = useMemo(() => {
-    const m = new Map<string, VoidEvent[]>();
-    for (const e of events) {
-      const list = m.get(e.waiter) ?? [];
-      list.push(e);
-      m.set(e.waiter, list);
-    }
-    return Array.from(m.entries()).sort((a, b) => b[1].length - a[1].length);
-  }, [events]);
-
-  if (!pluginConnected || events.length === 0) return null;
-
+  }, [load, pluginConnected]);
+  const visible = alerts.filter(a => !hidden.has(a.id));
+  if (!pluginConnected || visible.length === 0) return null;
+  const goLabel = (a: OpsAlert) => a.type === 'void_spike' ? tr(lang, 'Смотреть удаления', 'See voids', "O'chirishlarni ko'rish")
+    : a.type === 'long_ticket' || a.type === 'double_bill' || a.type === 'dead_zone' ? tr(lang, 'Показать на схеме', 'Show on the plan', "Sxemada ko'rsatish")
+    : a.type === 'kitchen_overdue' ? tr(lang, 'Открытые заказы', 'Open orders', 'Ochiq buyurtmalar') : null;
   return (
-    <>
-      <Card title={
-        <div className="flex items-center gap-2">
-          <Trash2 size={14} className="text-danger" />
-          <span>{ru ? 'Удаления заказов' : isUz ? "Buyurtma o'chirishlari" : 'Order Voids'}</span>
-          <span className="text-[9px] px-1.5 py-0.5 rounded bg-danger/15 text-danger font-bold">
-            {events.length}
-          </span>
+    <section className="alerts rise" style={{ animationDelay: '.04s' }} aria-labelledby="h-alerts">
+      <div className="alerts-head"><h2 id="h-alerts">{tr(lang, 'Требует внимания', 'Needs attention', "E'tibor talab qiladi")}</h2><span className="faint">{visible.length}</span></div>
+      {visible.map(a => (
+        <div key={a.id} className={`alert${a.level === 'critical' ? ' hot' : ''}`}>
+          <span className="alert-ico"><i className={`ph ${ALERT_ICONS[a.type] ?? 'ph-warning'}`} aria-hidden="true" /></span>
+          <div><div className="alert-t">{a.title}</div><div className="alert-s">{a.detail}</div></div>
+          <div className="alert-acts">
+            {goLabel(a) && <button className="go" onClick={() => onGo(a)}>{goLabel(a)}</button>}
+            <button className="hide" onClick={() => setHidden(s => new Set(s).add(a.id))}>{tr(lang, 'Скрыть', 'Hide', 'Yashirish')}</button>
+          </div>
         </div>
-      }>
-        <div className="mt-1 space-y-1.5">
-          {byWaiter.map(([waiter, list]) => {
-            const isOpen = expanded.has(waiter);
-            return (
-              <div key={waiter} className={`rounded-xl border overflow-hidden ${
-                list.length >= 3 ? 'border-danger/30 bg-danger/5' : 'border-border bg-background'
-              }`}>
-                <button
-                  onClick={() => setExpanded(prev => { const s = new Set(prev); s.has(waiter) ? s.delete(waiter) : s.add(waiter); return s; })}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 text-left"
-                >
-                  <ChevronRight size={12} className={`text-muted flex-shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
-                  <span className="text-[12px] font-semibold text-text flex-1 min-w-0 truncate">{waiter}</span>
-                  <span className="text-[10px] text-muted">
-                    {ru ? 'с' : isUz ? 'dan' : 'since'} {new Date(list[list.length - 1].at).toLocaleTimeString(ru ? 'ru-RU' : 'en-US', { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                  <span className={`text-[15px] font-black metric-number ${list.length >= 3 ? 'text-danger' : 'text-text'}`}>
-                    {list.length}
-                  </span>
-                </button>
-                {isOpen && (
-                  <div className="border-t border-border/60">
-                    {list.map(ev => (
-                      <button
-                        key={ev.id}
-                        onClick={() => setDetail(ev)}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 text-left border-b border-border/40 last:border-0 hover:bg-card-hover transition-colors"
-                      >
-                        {ev.type === 'order_before_delete'
-                          ? <Trash2 size={11} className="text-danger flex-shrink-0" />
-                          : <AlertTriangle size={11} className="text-amber-400 flex-shrink-0" />}
-                        <span className="text-[11px] text-text flex-1 min-w-0 truncate">
-                          {ev.orderNum ? `#${ev.orderNum}` : tr(lang, 'Заказ', 'Order', 'Buyurtma')}
-                          {ev.table ? ` · ${ev.table}` : ''}
-                          {ev.items.length > 0 ? ` · ${ev.items.length} ${tr(lang, 'поз.', 'items', 'pozitsiya')}` : ''}
-                        </span>
-                        {ev.sum > 0 && <span className="text-[10px] text-danger metric-number flex-shrink-0">{ev.sum.toLocaleString('ru-RU')}</span>}
-                        <span className="text-[10px] text-muted font-mono flex-shrink-0">
-                          {new Date(ev.at).toLocaleTimeString(ru ? 'ru-RU' : 'en-US', { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          <p className="text-[10px] text-muted pt-1 border-t border-border">
-            {ru ? 'Нажмите на официанта, затем на заказ — детали · iikoFront' : isUz ? "Ofitsiantni, so'ng buyurtmani bosing — tafsilotlar · iikoFront" : 'Tap a waiter, then an order — details · iikoFront'}
-          </p>
-        </div>
-      </Card>
-      {detail && <VoidDetailModal event={detail} lang={lang} onClose={() => setDetail(null)} />}
-    </>
+      ))}
+    </section>
   );
 }
 
-// ── Staff Performance Card ────────────────────────────────────────────────
+// ── Voids ─────────────────────────────────────────────────────────────────
 
-type StaffSort = 'revenue' | 'orders' | 'avgCheck' | 'avgServiceMin';
+function Voids({ lang, events }: { lang: Language; events: VoidEvent[] }) {
+  const [detail, setDetail] = useState<VoidEvent | null>(null);
+  const [all, setAll] = useState(false);
+  const total = events.reduce((a, e) => a + e.sum, 0);
+  const shown = all ? events : events.slice(0, 6);
+  const hm = (iso: string) => new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' });
+  return (
+    <section className="card-ph" aria-labelledby="h-voids">
+      <div className="sec-head"><h2 id="h-voids">{tr(lang, 'Удаления', 'Voids', "O'chirishlar")}</h2>
+        {events.length > 0 && <span className="voids-sum">{tr(lang, `${events.length} за смену, −${Math.round(total).toLocaleString('ru-RU')}`, `${events.length} this shift, −${Math.round(total).toLocaleString('ru-RU')}`, `smenada ${events.length}, −${Math.round(total).toLocaleString('ru-RU')}`)}</span>}
+      </div>
+      {events.length === 0 ? <p className="rd-empty">{tr(lang, 'За смену ничего не удаляли', 'Nothing voided this shift', "Smenada hech narsa o'chirilmagan")}</p> : (
+        <div className="voids-list">
+          {shown.map(v => (
+            <button key={v.id} className="void" onClick={() => setDetail(v)}>
+              <span className="when">{hm(v.at)}</span>
+              <span className="what">
+                {v.table ? `${v.table}, ` : ''}{v.type === 'order_before_delete' ? tr(lang, 'заказ удалён', 'order deleted', "buyurtma o'chirildi") : v.items.map(i => i.name).join(', ') || tr(lang, 'позиции сняты', 'items voided', 'pozitsiyalar olindi')}
+                <span>{v.waiter}{v.orderNum ? `, ${tr(lang, 'заказ', 'order', 'buyurtma')} #${v.orderNum}` : ''}</span>
+              </span>
+              <span className="amt">{v.sum > 0 ? `−${Math.round(v.sum).toLocaleString('ru-RU')}` : ''}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {events.length > 6 && <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}><button className="link" onClick={() => setAll(a => !a)}>{all ? tr(lang, 'Свернуть', 'Collapse', "Yig'ish") : tr(lang, `Показать все ${events.length}`, `Show all ${events.length}`, `Hammasi ${events.length}`)}</button></div>}
+      {detail && <VoidDetailModal event={detail} lang={lang} onClose={() => setDetail(null)} />}
+    </section>
+  );
+}
 
-const RANK_CLS = ['text-amber-400', 'text-zinc-300', 'text-amber-600'];
+// ── Waiters table ─────────────────────────────────────────────────────────
 
-// ABC (Pareto) analysis of waiters by revenue — no cost/salary side since
-// iiko has no per-waiter rate data (verified: attendance paymentDetails and
-// the salary module both read back as 0 for every waiter on this tenant).
 // A ranks the top ~70% of revenue, B the next ~20%, C the long tail.
-const ABC_COLORS: Record<'A' | 'B' | 'C', string> = { A: '#22c55e', B: '#f59e0b', C: '#6b7280' };
-
-type StaffRangeMode = 'today' | '7days' | '30days' | 'custom';
-
 function paretoAbc<T>(items: T[], revenueOf: (it: T) => number): Map<T, 'A' | 'B' | 'C'> {
   const sorted = [...items].sort((a, b) => revenueOf(b) - revenueOf(a));
   const total = sorted.reduce((s, it) => s + revenueOf(it), 0);
@@ -814,376 +569,101 @@ function paretoAbc<T>(items: T[], revenueOf: (it: T) => number): Map<T, 'A' | 'B
   return map;
 }
 
-// Combined staff card: leaderboard (today = rich iiko/plugin data with table
-// time + top dishes; past ranges = ABC/Pareto revenue analysis, since that's
-// all iiko has for historical days) + the AI team narrative underneath —
-// these used to be three separate cards (Эффективность персонала, ABC-анализ
-// официантов, Нарратив по команде) covering overlapping ground.
-function StaffPerfCard({
-  staffRows, staffLoading, lang, t, isBasePlan, isPoster,
-  staffNarrative, staffNarrativeLoading, staffNarrativeError, fetchStaffNarrative,
-}: {
-  staffRows: import('../../services/traceApi').StaffRow[];
-  staffLoading: boolean;
-  lang: Language;
-  t: typeof import('../../constants').TRANSLATIONS['ru'];
-  isBasePlan: boolean;
-  isPoster: boolean;
-  staffNarrative: string | null;
-  staffNarrativeLoading: boolean;
-  staffNarrativeError: string | null;
-  fetchStaffNarrative: () => void;
-}) {
-  const ru = lang === 'ru';
-  const isUz = lang === 'uz';
-  const [sort, setSort] = useState<StaffSort>('revenue');
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [rangeMode, setRangeMode] = useState<StaffRangeMode>('today');
-  const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null);
-  const [calendarOpen, setCalendarOpen] = useState(false);
-  const calendarBtnRef = useRef<HTMLButtonElement>(null);
+type StaffRange = 'today' | '7days' | '30days';
+function StaffTable({ lang, staffRows, staffLoading, isPoster }: { lang: Language; staffRows: StaffRow[]; staffLoading: boolean; isPoster: boolean }) {
+  const [range, setRange] = useState<StaffRange>('today');
   const [abcRows, setAbcRows] = useState<StaffAbcRow[]>([]);
   const [abcLoading, setAbcLoading] = useState(false);
-  // Employee Hub Phase 8 (plan §11) — TRACE payroll accrual per employee,
-  // joined server-side by iiko_employee_id. Fetched separately from staffRows
-  // (a different endpoint, its own iiko cost basis) and merged in by name for
-  // display only — extends this card rather than adding a parallel one.
-  const [payrollByName, setPayrollByName] = useState<Map<string, import('../../services/traceApi').StaffProfitabilityRow>>(new Map());
-
+  const [open, setOpen] = useState<string | null>(null);
+  // TRACE payroll accrual per employee (Employee Hub), joined by name.
+  const [payroll, setPayroll] = useState<Map<string, StaffProfitabilityRow>>(new Map());
   useEffect(() => {
-    traceApi.operations.staffProfitability('today')
-      .then(r => setPayrollByName(new Map((r.rows ?? []).map(row => [row.name.trim().toLowerCase(), row]))))
-      .catch(() => setPayrollByName(new Map()));
-  }, []);
-
+    traceApi.operations.staffProfitability(range)
+      .then(r => setPayroll(new Map((r.rows ?? []).map(row => [row.name.trim().toLowerCase(), row]))))
+      .catch(() => setPayroll(new Map()));
+  }, [range]);
   useEffect(() => {
-    if (rangeMode === 'today') return;
-    if (rangeMode === 'custom' && !customRange) return;
+    if (range === 'today') return;
     setAbcLoading(true);
-    traceApi.operations.staffAbc(rangeMode, customRange?.from, customRange?.to)
-      .then(r => setAbcRows(r.rows ?? []))
-      .catch(() => setAbcRows([]))
-      .finally(() => setAbcLoading(false));
-  }, [rangeMode, customRange]);
-
-  // ABC grade for "today", computed locally from the same revenue figures
-  // already on staffRows — no need for a second fetch just for today.
-  const todayAbc = useMemo(() => paretoAbc(staffRows, s => s.revenue), [staffRows]);
-
-  const isToday = rangeMode === 'today';
-  const loading = isToday ? staffLoading : abcLoading;
-
-  const sorted = useMemo(() => {
-    if (isToday) {
-      return [...staffRows].sort((a, b) => {
-        if (sort === 'avgServiceMin') {
-          if (a.avgServiceMin == null && b.avgServiceMin == null) return 0;
-          if (a.avgServiceMin == null) return 1;
-          if (b.avgServiceMin == null) return -1;
-          return a.avgServiceMin - b.avgServiceMin;
-        }
-        return (b[sort] as number) - (a[sort] as number);
-      });
-    }
-    return [...abcRows].sort((a, b) => sort === 'avgServiceMin' ? 0 : (b[sort as 'revenue'|'orders'|'avgCheck'] as number) - (a[sort as 'revenue'|'orders'|'avgCheck'] as number));
-  }, [isToday, staffRows, abcRows, sort]);
-
-  const totalRevenue = (isToday ? staffRows : abcRows).reduce((s, r) => s + r.revenue, 0);
-  const totalOrders  = (isToday ? staffRows : abcRows).reduce((s, r) => s + r.orders, 0);
-  const avgCheckAll  = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
-  const maxRevenue   = sorted[0]?.revenue ?? 1;
-  const teamCount    = isToday ? staffRows.length : abcRows.length;
-
-  const SORT_OPTS: { id: StaffSort; ru: string; en: string; uz: string }[] = [
-    { id: 'revenue',       ru: 'Выручка',  en: 'Revenue', uz: 'Tushum'   },
-    { id: 'orders',        ru: 'Заказы',   en: 'Orders',  uz: 'Buyurtmalar' },
-    { id: 'avgCheck',      ru: 'Ср. чек',  en: 'Avg chk', uz: 'O\'rt. chek' },
-    ...(isToday ? [{ id: 'avgServiceMin' as StaffSort, ru: 'Ср. стол', en: 'Tbl time', uz: "O'rt. stol" }] : []),
-  ];
-
-  const empty = isToday ? staffRows.length === 0 : abcRows.length === 0;
-
+    traceApi.operations.staffAbc(range).then(r => setAbcRows(r.rows ?? [])).catch(() => setAbcRows([])).finally(() => setAbcLoading(false));
+  }, [range]);
+  const today = range === 'today';
+  const grades = useMemo(() => paretoAbc(staffRows, s => s.revenue), [staffRows]);
+  const totalRev = staffRows.reduce((a, s) => a + s.revenue, 0) || 1;
+  const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU');
+  const accrual = (name: string) => { const p = payroll.get(name.trim().toLowerCase()); return p?.traceEmployeeId && p.traceAccrual != null ? p.traceAccrual : null; };
+  const hasAccrual = [...payroll.values()].some(p => p.traceEmployeeId && p.traceAccrual != null);
+  const loading = today ? staffLoading : abcLoading;
+  const rows = today ? [...staffRows].sort((a, b) => b.revenue - a.revenue) : [...abcRows].sort((a, b) => b.revenue - a.revenue);
   return (
-    <Card title={t.staff_perf}>
-      {/* Range selector */}
-      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-        <p className="text-[10px] text-muted">
-          {isToday
-            ? (isPoster
-                ? tr(lang, 'Сегодня · Poster', 'Today · Poster', 'Bugun · Poster')
-                : tr(lang, 'Сегодня · iiko OLAP · время из плагина', 'Today · iiko OLAP · time from plugin', 'Bugun · iiko OLAP · plagindan vaqt'))
-            : tr(lang, 'ABC по выручке (Парето 70/90)', 'ABC by revenue (Pareto 70/90)', "Tushum bo'yicha ABC (Pareto 70/90)")}
-        </p>
-        <div className="relative flex items-center gap-1 bg-background border border-border rounded-lg p-0.5 flex-shrink-0">
-          {(['today', '7days', '30days'] as const).map(r => (
-            <button key={r} onClick={() => { setRangeMode(r); setCustomRange(null); }}
-              className={`px-2 py-1 text-[9px] font-medium rounded-[3px] transition-all ${rangeMode === r ? 'bg-card text-text shadow-sm' : 'text-muted hover:text-text'}`}>
-              {r === 'today' ? tr(lang, 'Сегодня', 'Today', 'Bugun') : r === '7days' ? '7д' : '30д'}
-            </button>
-          ))}
-          {rangeMode === 'custom' && customRange && (
-            <span className="px-2 py-1 text-[9px] font-medium rounded-[3px] bg-card text-text shadow-sm whitespace-nowrap">
-              {customRange.from.slice(5)}–{customRange.to.slice(5)}
-            </span>
-          )}
-          <button
-            ref={calendarBtnRef}
-            onClick={() => setCalendarOpen(o => !o)}
-            className={`px-1.5 py-1 rounded-[3px] transition-colors ${calendarOpen || rangeMode === 'custom' ? 'text-primary' : 'text-muted hover:text-text'}`}
-          >
-            <CalendarIcon size={11} />
-          </button>
-          <DateRangePicker
-            lang={lang}
-            value={customRange}
-            isOpen={calendarOpen}
-            onClose={() => setCalendarOpen(false)}
-            anchorRef={calendarBtnRef}
-            onApply={r => { setCustomRange(r); setRangeMode('custom'); setCalendarOpen(false); }}
-            onClear={() => { setCustomRange(null); setRangeMode('today'); setCalendarOpen(false); }}
-          />
-        </div>
+    <section className="band rise card-ph" style={{ animationDelay: '.24s' }} aria-labelledby="h-staff">
+      <div className="sec-head">
+        <h2 id="h-staff">{tr(lang, 'Официанты', 'Waiters', 'Ofitsiantlar')}</h2>
+        <span className="seg small" role="group" aria-label={tr(lang, 'Период', 'Period', 'Davr')}>
+          {(['today', '7days', '30days'] as const).map(r => <button key={r} aria-pressed={range === r} onClick={() => setRange(r)}>{r === 'today' ? tr(lang, 'Сегодня', 'Today', 'Bugun') : r === '7days' ? tr(lang, '7 дней', '7 days', '7 kun') : tr(lang, '30 дней', '30 days', '30 kun')}</button>)}
+        </span>
       </div>
-
-      {loading ? (
-        <div className="space-y-2 mt-2 animate-pulse">
-          {[0,1,2,3].map(i => <div key={i} className="h-16 bg-zinc-800/60 rounded" />)}
-        </div>
-      ) : empty ? (
-        <p className="text-[12px] text-muted py-4">{ru ? 'Нет данных за период' : isUz ? "Davr uchun ma'lumot yo'q" : 'No data for period'}</p>
-      ) : (
-        <div className="space-y-3 mt-1">
-
-          {/* Team summary row */}
-          <div className="grid grid-cols-3 gap-px bg-border rounded-xl overflow-hidden w-full">
-            {[
-              { label: ru ? 'Команда' : isUz ? 'Jamoa' : 'Team',     value: String(teamCount) },
-              { label: ru ? 'Заказов' : isUz ? 'Buyurtmalar' : 'Orders',   value: String(totalOrders) },
-              { label: ru ? 'Ср. чек' : isUz ? "O'rt. chek" : 'Avg chk',  value: avgCheckAll > 0 ? Math.round(avgCheckAll / 1000) + 'k' : '—' },
-            ].map(({ label, value }) => (
-              <div key={label} className="bg-card px-3 py-2 text-center">
-                <p className="text-[8px] uppercase tracking-[0.12em] text-muted">{label}</p>
-                <p className="text-[15px] font-bold metric-number text-text mt-0.5">{value}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Sort tabs */}
-          <div className="flex items-center gap-1 bg-background border border-border rounded-lg p-0.5 self-start">
-            {SORT_OPTS.map(o => (
-              <button key={o.id} onClick={() => setSort(o.id)}
-                className={`px-2.5 py-1 text-[9px] font-medium rounded-[3px] transition-all whitespace-nowrap ${
-                  sort === o.id ? 'bg-card text-text shadow-sm' : 'text-muted hover:text-text'
-                }`}>
-                {tr(lang, o.ru, o.en, o.uz)}
-              </button>
-            ))}
-          </div>
-
-          {/* Leaderboard */}
-          <div className="space-y-1.5">
-            {isToday ? (sorted as StaffRow[]).map((s, i) => {
-              const barW    = maxRevenue > 0 ? (s.revenue / maxRevenue) * 100 : 0;
-              const timeOk  = s.avgServiceMin == null || s.avgServiceMin <= 20;
-              const revPerGuest = s.guests > 0 ? Math.round(s.revenue / s.guests) : 0;
-              const isExpanded = expanded === s.name;
-              const grade = s.revenue > 0 ? (todayAbc.get(s) ?? 'C') : null;
-              const openTables = s.openTables ?? 0;
+      {loading ? <Skel lines={['w9', 'w9', 'w9', 'w7']} /> : rows.length === 0 ? <p className="rd-empty">{tr(lang, 'Нет данных за период', 'No data for the period', "Davr uchun ma'lumot yo'q")}</p> : (
+        <table className={`staff${today ? '' : ' week'}`}>
+          <thead><tr>
+            <th>{tr(lang, 'Официант', 'Waiter', 'Ofitsiant')}</th>
+            {today && <><th className="c-time">{tr(lang, 'Пришёл', 'In', 'Keldi')}</th><th className="c-time">{tr(lang, 'Ушёл', 'Out', 'Ketdi')}</th></>}
+            <th className="r">{tr(lang, 'Заказы', 'Orders', 'Buyurtmalar')}</th>
+            {today && <th className="r c-guests">{tr(lang, 'Гости', 'Guests', 'Mehmonlar')}</th>}
+            <th className="r">{tr(lang, 'Ср. чек', 'Avg check', "O'rt. chek")}</th>
+            {today && <th className="r c-pg">{tr(lang, 'На гостя', 'Per guest', 'Mehmonga')}</th>}
+            {today && <th className="r c-avgt">{tr(lang, 'Ср. стол', 'Avg table', "O'rt. stol")}</th>}
+            <th className="r c-share">{tr(lang, 'Доля', 'Share', 'Ulush')}</th>
+            {hasAccrual && <th className="r c-acc" title={tr(lang, 'По настройкам зарплаты в Сотрудниках', 'From pay settings in Employees', "Xodimlardagi ish haqi sozlamalari bo'yicha")}>{tr(lang, 'Начислено', 'Accrued', 'Hisoblangan')}</th>}
+            <th className="r" title={tr(lang, 'ABC по выручке: A даёт первые 70%, B следующие 20%', 'ABC by revenue: A brings the first 70%, B the next 20%', "Tushum bo'yicha ABC: A birinchi 70%, B keyingi 20%")}>ABC</th>
+          </tr></thead>
+          <tbody>
+            {today ? (rows as StaffRow[]).map(s => {
+              const isOpen = open === s.name;
+              const g = s.revenue > 0 ? grades.get(s) ?? 'C' : null;
+              const acc = accrual(s.name);
               return (
-                <div key={`${s.name}-${i}`} className="bg-background border border-border rounded-xl p-3 space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => setExpanded(o => o === s.name ? null : s.name)}
-                    className="flex items-center justify-between gap-2 w-full text-left"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className={`text-[13px] font-black w-5 text-center shrink-0 ${RANK_CLS[i] ?? 'text-zinc-600'}`}>
-                        {i + 1}
-                      </span>
-                      {grade ? (
-                        <span
-                          className="text-[9px] font-bold w-4 h-4 flex-shrink-0 rounded flex items-center justify-center text-white"
-                          style={{ backgroundColor: ABC_COLORS[grade] }}
-                        >{grade}</span>
-                      ) : (
-                        <span className="w-4 h-4 flex-shrink-0 rounded flex items-center justify-center" title={ru ? 'Ещё нет закрытых продаж' : isUz ? "Hali yopilgan sotuv yo'q" : 'No closed sales yet'}>
-                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                        </span>
-                      )}
-                      <span className="text-[13px] font-semibold text-text truncate">{s.name}</span>
-                      <ChevronRight size={12} className={`text-muted shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                    </div>
-                    {s.revenue > 0 ? (
-                      <span className="text-[12px] font-bold metric-number text-text shrink-0">
-                        {Math.round(s.revenue / 1000).toLocaleString('ru-RU')}k
-                      </span>
-                    ) : openTables > 0 ? (
-                      <span className="text-[10px] font-medium text-amber-400 shrink-0">
-                        {ru ? `${openTables} стол(а) открыто` : isUz ? `${openTables} stol ochiq` : `${openTables} table(s) open`}
-                      </span>
-                    ) : null}
-                  </button>
-
-                  {/* Revenue bar relative to #1 */}
-                  {grade && (
-                    <div className="h-[3px] bg-border rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${barW}%`, backgroundColor: ABC_COLORS[grade] }} />
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-4 gap-1">
-                    <div className="bg-card rounded-lg px-1.5 py-1.5 text-center">
-                      <p className="text-[8px] uppercase tracking-[0.1em] text-zinc-500 leading-none mb-0.5">{ru ? 'Заказы' : isUz ? 'Buyurtmalar' : 'Orders'}</p>
-                      <p className="text-[12px] font-bold metric-number text-text leading-none">{s.orders}</p>
-                    </div>
-                    <div className="bg-card rounded-lg px-1.5 py-1.5 text-center">
-                      <p className="text-[8px] uppercase tracking-[0.1em] text-zinc-500 leading-none mb-0.5">{ru ? 'Гости' : isUz ? 'Mehmonlar' : 'Guests'}</p>
-                      <p className="text-[12px] font-bold metric-number text-text leading-none">{s.guests > 0 ? s.guests : '—'}</p>
-                    </div>
-                    <div className="bg-card rounded-lg px-1.5 py-1.5 text-center">
-                      <p className="text-[8px] uppercase tracking-[0.1em] text-zinc-500 leading-none mb-0.5">{ru ? 'На гостя' : isUz ? 'Mehmonga' : 'Per guest'}</p>
-                      <p className="text-[12px] font-bold metric-number text-text leading-none">{revPerGuest > 0 ? Math.round(revPerGuest / 1000) + 'k' : '—'}</p>
-                    </div>
-                    <div className="bg-card rounded-lg px-1.5 py-1.5 text-center">
-                      <p className="text-[8px] uppercase tracking-[0.1em] text-zinc-500 leading-none mb-0.5">{ru ? 'Ср. стол' : isUz ? "O'rt. stol" : 'Tbl time'}</p>
-                      <p className={`text-[12px] font-bold metric-number leading-none ${s.avgServiceMin == null ? 'text-muted' : timeOk ? 'text-success' : 'text-danger'}`}>
-                        {s.avgServiceMin != null ? formatMinutesShort(s.avgServiceMin, lang) : '—'}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Attendance strip — shown when iiko attendance data is available */}
-                  {(s.enterTime || s.exitTime) && (
-                    <div className="flex items-center gap-1.5 pt-2 border-t border-border">
-                      <Clock className="w-3 h-3 text-muted shrink-0" />
-                      <span className="text-[10px] text-muted">
-                        {ru ? 'Пришёл' : isUz ? 'Keldi' : 'In'}
-                      </span>
-                      <span className="text-[11px] font-semibold text-text metric-number">{s.enterTime ?? '—'}</span>
-                      <span className="text-[10px] text-muted mx-0.5">→</span>
-                      <span className="text-[10px] text-muted">
-                        {ru ? 'Ушёл' : isUz ? 'Ketdi' : 'Out'}
-                      </span>
-                      <span className="text-[11px] font-semibold text-text metric-number">{s.exitTime ?? '...'}</span>
-                      {s.hoursWorked != null && (
-                        <span className="ml-auto text-[10px] text-muted">{s.hoursWorked}h</span>
-                      )}
-                    </div>
-                  )}
-
-                  {/* TRACE payroll accrual — Employee Hub Phase 8 (plan §11) */}
-                  {(() => {
-                    const payroll = payrollByName.get(s.name.trim().toLowerCase());
-                    if (!payroll?.traceEmployeeId || payroll.traceAccrual == null) return null;
-                    return (
-                      <div className="flex items-center gap-1.5 pt-2 border-t border-border">
-                        <Wallet className="w-3 h-3 text-muted shrink-0" />
-                        <span className="text-[10px] text-muted">
-                          {ru ? 'Начислено' : isUz ? 'Hisoblangan' : 'Accrued'}
-                        </span>
-                        <span className="text-[11px] font-semibold text-text metric-number">
-                          {Math.round(payroll.traceAccrual / 1000).toLocaleString('ru-RU')}k
-                        </span>
-                        {payroll.salaryType === 'percent_of_sales' && s.revenue > 0 && (
-                          <span className="ml-auto text-[10px] text-muted">
-                            {Math.round((payroll.traceAccrual / s.revenue) * 100)}% {ru ? 'от выручки' : isUz ? 'tushumdan' : 'of revenue'}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })()}
-
-                  {/* "What waiter sold what" drill-down */}
-                  {isExpanded && (
-                    <div className="pt-2 border-t border-border space-y-1">
-                      {s.topDishes.length === 0 ? (
-                        <p className="text-[10px] text-muted py-1">
-                          {ru ? 'Нет данных по блюдам' : isUz ? "Taomlar bo'yicha ma'lumot yo'q" : 'No dish-level data'}
-                        </p>
-                      ) : s.topDishes.map((d, di) => (
-                        <div key={di} className="flex items-center justify-between gap-2 text-[11px]">
-                          <span className="text-text truncate">{d.name}</span>
-                          <span className="text-muted shrink-0 metric-number">
-                            ×{d.qty} · {Math.round(d.revenue / 1000).toLocaleString('ru-RU')}k
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <React.Fragment key={s.name}>
+                  <tr className={`row${isOpen ? ' open' : ''}`} aria-expanded={isOpen} onClick={() => setOpen(o => o === s.name ? null : s.name)}>
+                    <td className="n"><i className="ph ph-caret-down" aria-hidden="true" />{s.name}</td>
+                    <td className="c-time">{s.enterTime ?? '—'}</td>
+                    <td className="c-time">{s.exitTime ?? (s.enterTime ? <span className="on-shift">{tr(lang, 'на смене', 'on shift', 'smenada')}</span> : '—')}</td>
+                    <td className="r">{fmt(s.orders)}</td>
+                    <td className="r c-guests">{s.guests > 0 ? fmt(s.guests) : '—'}</td>
+                    <td className="r">{s.avgCheck > 0 ? fmt(s.avgCheck) : '—'}</td>
+                    <td className="r c-pg">{s.guests > 0 ? fmt(s.revenue / s.guests) : '—'}</td>
+                    <td className="r c-avgt">{s.avgServiceMin != null ? `${Math.round(s.avgServiceMin)} ${tr(lang, 'мин', 'min', 'daq')}` : '—'}</td>
+                    <td className="r c-share">{(s.revenue / totalRev * 100).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%</td>
+                    {hasAccrual && <td className="r c-acc">{acc != null ? fmt(acc) : '—'}</td>}
+                    <td className="r">{g ? <span className={`grade ${g}`}>{g}</span> : (s.openTables ? <span className="faint">{tr(lang, `${s.openTables} стол.`, `${s.openTables} tbl`, `${s.openTables} stol`)}</span> : '—')}</td>
+                  </tr>
+                  <tr className="detail" hidden={!isOpen}><td colSpan={hasAccrual ? 11 : 10}><div className="det">
+                    <div><h4>{tr(lang, 'Что продаёт чаще всего', 'Sells most often', "Eng ko'p sotadi")}</h4>
+                      {s.topDishes.length ? <ol>{s.topDishes.slice(0, 5).map(d => <li key={d.name}>{d.name} <span className="faint">× {d.qty} · {fmt(d.revenue)}</span></li>)}</ol> : <p className="faint">{tr(lang, 'Нет данных по блюдам', 'No dish data', "Taomlar bo'yicha ma'lumot yo'q")}</p>}</div>
+                    <div><h4>{tr(lang, 'Смена', 'Shift', 'Smena')}</h4><p>{s.hoursWorked != null ? tr(lang, `${s.hoursWorked} ч на смене, `, `${s.hoursWorked} h on shift, `, `smenada ${s.hoursWorked} soat, `) : ''}{tr(lang, `${fmt(s.dishes)} позиций, выручка ${fmt(s.revenue)}`, `${fmt(s.dishes)} items, revenue ${fmt(s.revenue)}`, `${fmt(s.dishes)} pozitsiya, tushum ${fmt(s.revenue)}`)}.</p></div>
+                  </div></td></tr>
+                </React.Fragment>
               );
-            }) : (sorted as StaffAbcRow[]).map((s, i) => {
-              const barW = maxRevenue > 0 ? (s.revenue / maxRevenue) * 100 : 0;
+            }) : (rows as StaffAbcRow[]).map(s => {
+              const acc = accrual(s.name);
               return (
-                <div key={`${s.name}-${i}`} className="bg-background border border-border rounded-xl p-3 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className={`text-[13px] font-black w-5 text-center shrink-0 ${RANK_CLS[i] ?? 'text-zinc-600'}`}>
-                        {i + 1}
-                      </span>
-                      <span
-                        className="text-[9px] font-bold w-4 h-4 flex-shrink-0 rounded flex items-center justify-center text-white"
-                        style={{ backgroundColor: ABC_COLORS[s.abc] }}
-                      >{s.abc}</span>
-                      <span className="text-[13px] font-semibold text-text truncate">{s.name}</span>
-                    </div>
-                    <span className="text-[12px] font-bold metric-number text-text shrink-0">
-                      {Math.round(s.revenue / 1000).toLocaleString('ru-RU')}k
-                    </span>
-                  </div>
-                  <div className="h-[3px] bg-border rounded-full overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${barW}%`, backgroundColor: ABC_COLORS[s.abc] }} />
-                  </div>
-                  <div className="grid grid-cols-3 gap-1">
-                    <div className="bg-card rounded-lg px-1.5 py-1.5 text-center">
-                      <p className="text-[8px] uppercase tracking-[0.1em] text-zinc-500 leading-none mb-0.5">{ru ? 'Заказы' : isUz ? 'Buyurtmalar' : 'Orders'}</p>
-                      <p className="text-[12px] font-bold metric-number text-text leading-none">{s.orders}</p>
-                    </div>
-                    <div className="bg-card rounded-lg px-1.5 py-1.5 text-center">
-                      <p className="text-[8px] uppercase tracking-[0.1em] text-zinc-500 leading-none mb-0.5">{ru ? 'Ср. чек' : isUz ? "O'rt. chek" : 'Avg chk'}</p>
-                      <p className="text-[12px] font-bold metric-number text-text leading-none">{s.avgCheck > 0 ? Math.round(s.avgCheck / 1000) + 'k' : '—'}</p>
-                    </div>
-                    <div className="bg-card rounded-lg px-1.5 py-1.5 text-center">
-                      <p className="text-[8px] uppercase tracking-[0.1em] text-zinc-500 leading-none mb-0.5">{ru ? 'Доля' : isUz ? 'Ulush' : 'Share'}</p>
-                      <p className="text-[12px] font-bold metric-number text-text leading-none">{s.share}%</p>
-                    </div>
-                  </div>
-                </div>
+                <tr key={s.name} className="row">
+                  <td className="n">{s.name}</td>
+                  <td className="r">{fmt(s.orders)}</td>
+                  <td className="r">{fmt(s.avgCheck)}</td>
+                  <td className="r c-share">{s.share.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%</td>
+                  {hasAccrual && <td className="r c-acc">{acc != null ? fmt(acc) : '—'}</td>}
+                  <td className="r"><span className={`grade ${s.abc}`}>{s.abc}</span></td>
+                </tr>
               );
             })}
-          </div>
-        </div>
+          </tbody>
+        </table>
       )}
-
-      {/* AI team narrative — merged in from the old standalone card */}
-      {!isBasePlan && (
-        <div className="mt-4 pt-4 border-t border-border">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-1.5">
-              <Sparkles size={12} className="text-primary" />
-              <p className="text-[11px] font-medium text-text">{tr(lang, 'Нарратив по команде', 'Staff narrative', 'Jamoa tahlili')}</p>
-            </div>
-            {!staffNarrativeLoading && (
-              <button onClick={fetchStaffNarrative} className="text-[11px] text-primary hover:text-primary-hover transition-colors">
-                {staffNarrative ? tr(lang, 'Обновить', 'Refresh', 'Yangilash') : tr(lang, 'Получить анализ', 'Get analysis', 'Tahlil olish')}
-              </button>
-            )}
-          </div>
-          {staffNarrativeLoading ? (
-            <div className="space-y-2 animate-pulse">
-              <div className="h-2.5 bg-primary/10 rounded w-full" />
-              <div className="h-2.5 bg-primary/10 rounded w-4/5" />
-            </div>
-          ) : staffNarrativeError ? (
-            <p className="text-[12px] text-danger">{staffNarrativeError}</p>
-          ) : staffNarrative ? (
-            <p className="text-[12px] text-muted leading-relaxed">{staffNarrative}</p>
-          ) : (
-            <p className="text-[11px] text-muted/50">{tr(lang, 'AI-выводы по работе команды за 7 дней', 'AI read on the team over the last 7 days', "Jamoaning 7 kunlik ishi bo'yicha AI xulosasi")}</p>
-          )}
-        </div>
-      )}
-    </Card>
+      <p className="staff-note">{today
+        ? (isPoster ? tr(lang, 'Данные из Poster за сегодня.', "Today's data from Poster.", 'Bugungi Poster maʼlumotlari.') : tr(lang, 'Время прихода и ухода приходит с кассы iikoFront.', 'Clock-in and clock-out come from the iikoFront till.', 'Kelish va ketish vaqti iikoFront kassasidan keladi.'))
+        : tr(lang, 'ABC по выручке за период (Парето 70/90).', 'ABC by revenue for the period (Pareto 70/90).', "Davr tushumi bo'yicha ABC (Pareto 70/90).")}</p>
+    </section>
   );
 }
 
@@ -1526,693 +1006,278 @@ export const Operations: React.FC<{
   const [stopVisible, setStopVisible] = useState(5);
   const [activeOrdersVisible, setActiveOrdersVisible] = useState(5);
 
-  return (
-    <div className="space-y-5 animate-fade-in pb-24">
+  // Voids feed the "Удаления" block and the alert jump target.
+  const [voidEvents, setVoidEvents] = useState<VoidEvent[]>([]);
+  useEffect(() => {
+    if (!pluginConnected) return;
+    const load = () => traceApi.operations.voidEvents().then(setVoidEvents).catch(() => {});
+    load();
+    const id = setInterval(load, 120_000);
+    return () => clearInterval(id);
+  }, [pluginConnected]);
 
-      {/* ── SMART ALERTS ── */}
-      <SmartAlerts lang={lang} pluginConnected={pluginConnected} />
+  const [ordersAll, setOrdersAll] = useState(false);
+  const [cardOpen, setCardOpen] = useState(false);
+  const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const fmtN = (n: number) => Math.round(n).toLocaleString('ru-RU');
+  const hm = (iso: string | null) => iso ? new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' }) : '';
+  const nowLabel = new Date().toLocaleString(tr(lang, 'ru-RU', 'en-GB', 'uz-Latn-UZ'), { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' });
 
-      {/* ── TOP KPIs ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Avg Service Time — real for Poster too now (date_close - date_start on today's closed orders), just labeled differently below */}
-        <Card className="stagger-item">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-blue-500/10 text-blue-400 rounded-md flex-shrink-0"><Clock size={20} /></div>
-            <div className="flex-1">
-              <p className="text-[10px] uppercase tracking-[0.15em] text-muted">{t.avg_service_time}</p>
-              {kpisLoading
-                ? <div className="h-6 w-20 bg-zinc-800 rounded animate-pulse mt-1" />
-                : <p className="metric-number text-[22px] font-bold text-text leading-none mt-1">
-                    <SlotText text={kpis?.avgServiceMin != null ? formatMinutes(kpis.avgServiceMin, lang) : '—'} />
-                  </p>
-              }
-              <p className="text-[11px] mt-1 font-medium text-muted">
-                {kpis?.avgServiceMin != null
-                  ? (isPoster ? tr(lang, 'Сегодня · Poster', 'Today · Poster', 'Bugun · Poster') : tr(lang, 'Сегодня · iikoFront', 'Today · iikoFront', 'Bugun · iikoFront'))
-                  : tr(lang, 'Накапливаем данные по закрытым заказам', 'Collecting data from closed orders', "Yopilgan buyurtmalar bo'yicha ma'lumot yig'ilmoqda")}
-              </p>
-            </div>
-          </div>
-        </Card>
+  // ── AI tools ──
+  const [waste, setWaste] = useState<{ state: AiState; at: string | null; err?: string | null }>({ state: 'empty', at: null });
+  const runWaste = () => {
+    setWaste({ state: 'loading', at: null });
+    traceApi.ai.wasteRootCause(lang)
+      .then(r => { if (r.fromAI) { setWastePatterns(r); setWaste({ state: 'done', at: nowHM() }); } else setWaste({ state: 'empty', at: null, err: tr(lang, 'Не получилось: проверьте подключение кассы и попробуйте ещё раз.', "Didn't work: check the POS connection and try again.", "Bo'lmadi: kassa ulanishini tekshiring.") }); })
+      .catch(() => setWaste({ state: 'empty', at: null, err: tr(lang, 'Не получилось. Попробуйте ещё раз.', "Didn't work. Try again.", "Bo'lmadi. Qayta urinib ko'ring.") }));
+  };
+  const [shiftAi, setShiftAi] = useState<{ state: AiState; at: string | null; err?: string | null }>({ state: 'empty', at: null });
+  const runShift = () => {
+    setShiftAi({ state: 'loading', at: null });
+    traceApi.ai.shiftSchedule(lang)
+      .then(r => { if (r.fromAI) { setShiftSchedule(r); setShiftAi({ state: 'done', at: nowHM() }); } else setShiftAi({ state: 'empty', at: null, err: tr(lang, 'Не получилось: проверьте подключение кассы и попробуйте ещё раз.', "Didn't work: check the POS connection and try again.", "Bo'lmadi: kassa ulanishini tekshiring.") }); })
+      .catch(() => setShiftAi({ state: 'empty', at: null, err: tr(lang, 'Не получилось. Попробуйте ещё раз.', "Didn't work. Try again.", "Bo'lmadi. Qayta urinib ko'ring.") }));
+  };
+  const teamState: AiState = staffNarrativeLoading ? 'loading' : staffNarrative ? 'done' : 'empty';
+  const [teamAt, setTeamAt] = useState<string | null>(null);
+  useEffect(() => { if (staffNarrative) setTeamAt(nowHM()); }, [staffNarrative]);
 
-        {/* Kitchen Serve Time — Poster's processing_status has no timestamped history of transitions (see getServiceTiming comment), so avgKitchenMin stays null; hidden rather than shown permanently stuck */}
-        {!isPoster && (
-        <Card className="stagger-item">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-amber-500/10 text-amber-400 rounded-md flex-shrink-0"><ChefHat size={20} /></div>
-            <div className="flex-1">
-              <p className="text-[10px] uppercase tracking-[0.15em] text-muted">
-                {tr(lang, 'Время отдачи кухни', 'Kitchen Serve Time', 'Oshxona berish vaqti')}
-              </p>
-              {kpisLoading
-                ? <div className="h-6 w-20 bg-zinc-800 rounded animate-pulse mt-1" />
-                : <p className="metric-number text-[22px] font-bold text-text leading-none mt-1">
-                    <SlotText text={kpis?.avgKitchenMin != null ? formatMinutes(kpis.avgKitchenMin, lang) : '—'} />
-                  </p>
-              }
-              <p className="text-[11px] mt-1 font-medium text-muted">
-                {kpis?.avgKitchenMin != null
-                  ? tr(lang, 'Заказ → готово · сегодня', 'Order → ready · today', 'Buyurtma → tayyor · bugun')
-                  : tr(lang, 'Накапливаем данные кухни', 'Collecting kitchen data', "Oshxona ma'lumotlari yig'ilmoqda")}
-              </p>
-            </div>
-          </div>
-        </Card>
+  const shiftDownload = (kind: 'pdf' | 'xlsx' | 'tg') => {
+    const sch = shiftSchedule?.schedule; if (!sch?.length) return;
+    if (kind === 'xlsx') { downloadShiftScheduleExcel(sch, shiftSchedule!.summary, lang); return; }
+    if (kind === 'pdf') {
+      if (demo) { downloadShiftSchedulePdfClientSide(sch, shiftSchedule!.summary, lang); return; }
+      setShiftPdfLoading(true);
+      traceApi.ai.shiftScheduleExportPdf(sch, shiftSchedule!.summary, lang)
+        .then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `TRACE-shift-schedule-${new Date().toISOString().slice(0, 10)}.pdf`; a.click(); URL.revokeObjectURL(url); })
+        .catch(() => onShowToast?.(tr(lang, 'Не удалось скачать PDF', "Couldn't download PDF", "PDF yuklab bo'lmadi"), 'error'))
+        .finally(() => setShiftPdfLoading(false));
+      return;
+    }
+    if (demo) { onShowToast?.(tr(lang, 'Демо: отправлено в Telegram', 'Demo: sent to Telegram', 'Demo: Telegramga yuborildi'), 'success'); return; }
+    if (!telegramConnected) { onShowToast?.(tr(lang, 'Сначала подключите Telegram в Настройках → Отчёты', 'Connect Telegram first in Settings → Reports', "Avval Sozlamalar → Hisobotlar'da Telegram ulang"), 'info'); return; }
+    setShiftTgLoading(true);
+    traceApi.ai.shiftScheduleSendTelegram(sch, shiftSchedule!.summary, lang)
+      .then(r => onShowToast?.(r.ok ? tr(lang, 'Отправлено в Telegram', 'Sent to Telegram', 'Telegramga yuborildi') : (r.error ?? tr(lang, 'Не удалось отправить', "Couldn't send", "Yuborib bo'lmadi")), r.ok ? 'success' : 'error'))
+      .catch(() => onShowToast?.(tr(lang, 'Не удалось отправить', "Couldn't send", "Yuborib bo'lmadi"), 'error'))
+      .finally(() => setShiftTgLoading(false));
+  };
+
+  const proLock = isBasePlan ? tr(lang, 'Доступно в тарифе Pro', 'Available on the Pro plan', 'Pro tarifida mavjud') : null;
+  const scheduleTable = (() => {
+    const sch = shiftSchedule?.schedule; if (!sch?.length) return null;
+    const days = sch.map(d => d.day);
+    const waiters = [...new Set(sch.flatMap(d => d.assignments.map(a => a.waiter)))];
+    const cells = new Map<string, string>();
+    const hours = new Map<string, number>();
+    for (const d of sch) for (const a of d.assignments) {
+      const k = `${a.waiter}|${d.day}`;
+      cells.set(k, [cells.get(k), `${a.start}–${a.end}`].filter(Boolean).join(', '));
+      hours.set(a.waiter, (hours.get(a.waiter) ?? 0) + hoursBetween(a.start, a.end));
+    }
+    waiters.sort((a, b) => (hours.get(b) ?? 0) - (hours.get(a) ?? 0));
+    return (
+      <div className="sched"><table>
+        <thead><tr><th>{tr(lang, 'Официант', 'Waiter', 'Ofitsiant')}</th>{days.map(d => <th key={d}>{d}</th>)}<th>{tr(lang, 'Часов', 'Hours', 'Soat')}</th></tr></thead>
+        <tbody>{waiters.map(w => (
+          <tr key={w}><td>{w.replace(/\(официант\)/i, '').trim()}</td>
+            {days.map(d => { const c = cells.get(`${w}|${d}`); return <td key={d} className={c ? '' : 'down'}>{c ?? tr(lang, 'вых', 'off', 'dam')}</td>; })}
+            <td>{(hours.get(w) ?? 0).toFixed(1)}</td></tr>
+        ))}</tbody>
+      </table></div>
+    );
+  })();
+
+  const tiles: TrioTile[] = [
+    {
+      key: 'waste', icon: 'ph-trash', short: tr(lang, 'Списания', 'Waste', 'Chiqim'), title: tr(lang, 'Причины списаний', 'Why we write off', 'Hisobdan chiqarish sabablari'),
+      desc: tr(lang, 'В какие дни и на каких продуктах больше всего списаний и сколько закупать, чтобы их стало меньше.', 'Which days and products drive write-offs and how much to buy so there are fewer.', "Qaysi kunlar va mahsulotlarda ko'proq hisobdan chiqariladi va qancha xarid qilish kerak."),
+      runLabel: tr(lang, 'Найти причины', 'Find causes', 'Sabablarni topish'), wait: tr(lang, 'Сравниваем списания по дням недели с продажами и закупками…', 'Comparing write-offs by weekday with sales and purchases…', 'Hafta kunlari boʻyicha chiqimlarni savdo va xaridlar bilan solishtiryapmiz…'),
+      state: waste.state, when: waste.at, error: waste.err, onRun: runWaste, locked: proLock,
+      summary: wastePatterns?.summary ? <>{wastePatterns.summary.split(/(?<=\.)\s/)[0]}</> : <><b>{wastePatterns?.patterns?.length ?? 0}</b> {tr(lang, 'закономерностей', 'patterns', 'qonuniyat')}</>,
+      body: <>
+        {wastePatterns?.summary && <p className="ai-p">{wastePatterns.summary}</p>}
+        {!!wastePatterns?.patterns?.length && (
+          <table className="norms">
+            <thead><tr><th>{tr(lang, 'Продукт', 'Product', 'Mahsulot')}</th><th>{tr(lang, 'Когда', 'When', 'Qachon')}</th><th>{tr(lang, 'Почему', 'Why', 'Nega')}</th><th>{tr(lang, 'Что делать', 'What to do', 'Nima qilish')}</th></tr></thead>
+            <tbody>{wastePatterns.patterns.map((p, i) => <tr key={i}><td>{p.dish}</td><td>{p.peakDay}</td><td className="muted">{p.rootCause}</td><td>{p.advice}</td></tr>)}</tbody>
+          </table>
         )}
+      </>,
+    },
+    {
+      key: 'shift', icon: 'ph-calendar-blank', short: tr(lang, 'Смены', 'Shifts', 'Smenalar'), title: tr(lang, 'График смен', 'Shift schedule', 'Smena jadvali'),
+      desc: tr(lang, 'Сколько официантов ставить на следующую неделю по дням и часам. С учётом праздников и броней.', 'How many waiters to roster next week by day and hour. Accounts for holidays and bookings.', "Keyingi haftaga kunlar va soatlar bo'yicha qancha ofitsiant qo'yish kerak."),
+      runLabel: tr(lang, 'Составить график', 'Build the schedule', 'Jadval tuzish'), wait: tr(lang, 'Считаем гостей на официанта по часам за 8 недель…', 'Working out guests per waiter by hour over 8 weeks…', '8 hafta davomida soatlar boʻyicha ofitsiantga mehmonlarni hisoblayapmiz…'),
+      state: shiftAi.state, when: shiftAi.at, error: shiftAi.err, onRun: runShift, locked: proLock,
+      summary: shiftSchedule?.summary ? <>{shiftSchedule.summary.split(/(?<=\.)\s/)[0]}</> : null,
+      body: <>
+        {scheduleTable}
+        {shiftSchedule?.summary && <p className="ai-p">{shiftSchedule.summary}</p>}
+        <div className="exports">
+          <button className="btn" type="button" disabled={shiftPdfLoading} onClick={() => shiftDownload('pdf')}><i className="ph ph-file-pdf" aria-hidden="true" />{shiftPdfLoading ? tr(lang, 'Готовим…', 'Preparing…', 'Tayyorlanmoqda…') : tr(lang, 'Скачать PDF', 'Download PDF', 'PDF yuklab olish')}</button>
+          <button className="btn" type="button" onClick={() => shiftDownload('xlsx')}><i className="ph ph-file-xls" aria-hidden="true" />{tr(lang, 'Скачать Excel', 'Download Excel', 'Excel yuklab olish')}</button>
+          <button className="btn" type="button" disabled={shiftTgLoading} onClick={() => shiftDownload('tg')}><i className="ph ph-telegram-logo" aria-hidden="true" />{shiftTgLoading ? tr(lang, 'Отправка…', 'Sending…', 'Yuborilmoqda…') : tr(lang, 'В Telegram', 'To Telegram', 'Telegramga')}</button>
+        </div>
+      </>,
+    },
+    {
+      key: 'team', icon: 'ph-users-three', short: tr(lang, 'Команда', 'Team', 'Jamoa'), title: tr(lang, 'Разбор команды', 'Team review', 'Jamoa tahlili'),
+      desc: tr(lang, 'Как работал каждый официант за 7 дней: чек, допродажи, скорость. Банкеты не считаются.', 'How each waiter did over 7 days: check, upsells, speed. Banquets excluded.', "Har bir ofitsiant 7 kun ichida qanday ishladi: chek, qo'shimcha sotuv, tezlik."),
+      runLabel: tr(lang, 'Разобрать', 'Review', 'Tahlil qilish'), wait: tr(lang, 'Сравниваем официантов в одинаковые смены…', 'Comparing waiters on the same shifts…', 'Ofitsiantlarni bir xil smenalarda solishtiryapmiz…'),
+      state: teamState, when: teamAt, error: staffNarrativeError, onRun: () => fetchStaffNarrative(), locked: proLock,
+      summary: staffNarrative ? <>{staffNarrative.split(/(?<=\.)\s/)[0]}</> : null,
+      body: staffNarrative && <>{staffNarrative.split(/\n+/).filter(Boolean).map((p, i) => <p key={i} className="ai-p">{p.split(/\*\*(.+?)\*\*/g).map((s, j) => j % 2 ? <b key={j}>{s}</b> : s)}</p>)}</>,
+    },
+  ];
 
-        {/* Waste — iiko OLAP writeoffs, or Poster's storage.getWastes for Poster tenants */}
-        <Card className="stagger-item">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-danger/10 text-danger rounded-md flex-shrink-0"><Trash2 size={20} /></div>
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.15em] text-muted">{t.waste}</p>
-              {kpisLoading
-                ? <div className="h-6 w-28 bg-zinc-800 rounded animate-pulse mt-1" />
-                : <p className="metric-number text-[22px] font-bold text-text leading-none mt-1">
-                    <SlotText text={kpis?.wasteSum != null ? `${Math.round(kpis.wasteSum).toLocaleString('ru-RU')} UZS` : '—'} />
-                  </p>
-              }
-              <p className="text-[11px] mt-1 font-medium text-muted">
-                {tr(lang, 'Списания сегодня', 'Write-offs today', 'Bugungi hisobdan chiqarishlar')}
-              </p>
-            </div>
-          </div>
-        </Card>
+  const displayOrders: any[] = isAllBranches ? combinedActiveOrders : isPoster ? posterActiveOrders : mergedActiveOrders;
+  const ordersSorted = [...displayOrders].sort((a, b) => (b.ticketMin ?? 0) - (a.ticketMin ?? 0));
+  const ordersShown = ordersAll ? ordersSorted : ordersSorted.slice(0, 8);
+  const stLabel = (o: any): [string, string] => o.status === 'Bill' ? ['bill', tr(lang, 'Пречек', 'Pre-bill', 'Pre-chek')]
+    : o.kitchenStatus === 'ready' ? ['ready', tr(lang, 'Отдано', 'Served', 'Berildi')]
+    : ['prep', o.kitchenStatus === 'preparing' ? tr(lang, 'Готовится', 'Preparing', 'Tayyorlanmoqda') : tr(lang, 'Открыт', 'Open', 'Ochiq')];
+  const showHall = isAllBranches ? branches.some(b => branchHasHallPlan.get(b.id) === true) : hasHallPlan;
+  const strip: [string, React.ReactNode, string][] = [
+    [tr(lang, 'Среднее время стола', 'Average table time', "O'rtacha stol vaqti"), kpis?.avgServiceMin != null ? <>{Math.round(kpis.avgServiceMin)}<small>{tr(lang, 'мин', 'min', 'daq')}</small></> : '—',
+      kpis?.avgServiceMin != null ? (isPoster ? tr(lang, 'сегодня · Poster', 'today · Poster', 'bugun · Poster') : tr(lang, 'сегодня · iikoFront', 'today · iikoFront', 'bugun · iikoFront')) : tr(lang, 'копим данные по закрытым заказам', 'collecting closed orders', "yopilgan buyurtmalar yig'ilmoqda")],
+    ...(!isPoster ? [[tr(lang, 'Время отдачи кухни', 'Kitchen time', 'Oshxona vaqti'), kpis?.avgKitchenMin != null ? <>{Math.round(kpis.avgKitchenMin)}<small>{tr(lang, 'мин', 'min', 'daq')}</small></> : '—', tr(lang, 'от заказа до «готово»', 'from order to “ready”', 'buyurtmadan «tayyor»gacha')] as [string, React.ReactNode, string]] : []),
+    [tr(lang, 'Списания сегодня', 'Write-offs today', 'Bugungi chiqim'), kpis?.wasteSum != null ? <>{fmtN(kpis.wasteSum)}<small>{tr(lang, 'сум', 'UZS', "so'm")}</small></> : '—', isPoster ? 'Poster' : 'iiko'],
+    [tr(lang, 'На смене', 'On shift', 'Smenada'), kpis?.staffActive != null ? <>{kpis.staffActive}<small>{tr(lang, 'человек', 'people', 'kishi')}</small></> : '—', tr(lang, 'сотрудников сегодня', 'staff today', 'bugungi xodimlar')],
+  ];
 
-        {/* Staff Active — unique waiters from iiko OLAP today */}
-        <Card className="stagger-item">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-success/10 text-success rounded-md flex-shrink-0"><Users size={20} /></div>
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.15em] text-muted">{t.staff_active}</p>
-              {kpisLoading
-                ? <div className="h-6 w-16 bg-zinc-800 rounded animate-pulse mt-1" />
-                : <p className="metric-number text-[22px] font-bold text-text leading-none mt-1">
-                    <SlotText text={kpis?.staffActive != null ? String(kpis.staffActive) : '—'} />
-                  </p>
-              }
-              <p className="text-[11px] mt-1 font-medium text-muted">
-                {tr(lang, 'Сотрудников сегодня', 'Staff today', 'Bugungi xodimlar')}
-              </p>
-            </div>
+  return (
+    <>
+      <div className="page-head rise">
+        <div>
+          <h1>{tr(lang, 'Операции', 'Operations', 'Operatsiyalar')}</h1>
+          <div className="sub"><span>{nowLabel.replace(/^./, c => c.toUpperCase())}.</span>
+            <span className="faint">{isAllBranches ? tr(lang, `Все филиалы (${branches.length}), обновление раз в 30 секунд.`, `All branches (${branches.length}), refreshed every 30 seconds.`, `Barcha filiallar (${branches.length}), har 30 soniyada yangilanadi.`)
+              : pluginConnected ? tr(lang, 'Данные с кассы идут в реальном времени.', 'Till data arrives in real time.', 'Kassa maʼlumotlari real vaqtda keladi.')
+              : isPoster ? tr(lang, 'Poster, обновление раз в 30 секунд.', 'Poster, refreshed every 30 seconds.', 'Poster, har 30 soniyada yangilanadi.')
+              : tr(lang, 'Касса iikoFront не на связи: живые данные недоступны.', 'The iikoFront till is offline: no live data.', 'iikoFront kassasi ulanmagan.')}</span>
           </div>
-        </Card>
+        </div>
       </div>
 
-      {/* ── CASH SHIFT + STOP LIST ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card title={t.cash_shift}>
-          {cashShiftLoading ? (
-            <div className="space-y-3 mt-2 animate-pulse">
-              <div className="h-10 bg-zinc-800/60 rounded" />
-              <div className="grid grid-cols-2 gap-px">
-                {[0,1,2,3].map(i => <div key={i} className="h-14 bg-zinc-800/60 rounded" />)}
-              </div>
-              <div className="h-8 bg-zinc-800/60 rounded" />
-            </div>
-          ) : !cashShift ? (
-            <p className="text-[12px] text-muted py-4">{tr(lang, 'Не удалось загрузить данные смены', 'Could not load shift data', 'Smena ma\'lumotlarini yuklab bo\'lmadi')}</p>
-          ) : (
-          <div className="mt-2 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[10px] uppercase tracking-[0.15em] text-muted">{t.cashier}</p>
-                <p className="text-[15px] font-semibold text-text mt-0.5">
-                  {cashShift.cashier ?? tr(lang, 'Нет данных от плагина', 'No plugin data', 'Plagindan ma\'lumot yo\'q')}
-                </p>
-                {cashShift.openTime && (
-                  <p className="text-[10px] text-muted mt-0.5">
-                    {t.shift_open} {new Date(cashShift.openTime).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                  </p>
-                )}
-              </div>
-              <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-[0.1em] ${
-                cashShift.status === 'open' ? 'bg-success/10 text-success' : 'bg-muted/10 text-muted'
-              }`}>
-                {cashShift.status === 'open' ? t.shift_open : tr(lang, 'Закрыта', 'Closed', 'Yopiq')}
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-px bg-border rounded-xl overflow-hidden">
-              {[
-                { icon: Banknote,    label: tr(lang, 'Наличные', 'Cash', 'Naqd pul'), value: Math.round(cashShift.cash).toLocaleString('ru-RU'), onClick: undefined },
-                { icon: CreditCard, label: tr(lang, 'Безнал', 'Card', 'Karta'), value: Math.round(cashShift.card).toLocaleString('ru-RU'), onClick: cashShift.cardBreakdown?.length ? () => setShowCardBreakdown(true) : undefined },
-                { icon: Clock,      label: t.orders,                              value: cashShift.orders > 0 ? String(cashShift.orders) : '—', onClick: undefined },
-                { icon: Banknote,   label: tr(lang, 'Изъятия', 'Payouts', 'Inkassatsiya'), value: cashShift.payOut > 0 ? Math.round(cashShift.payOut).toLocaleString('ru-RU') : '—', onClick: undefined },
-              ].map(({ icon: Icon, label, value, onClick }, i) => (
-                <div
-                  key={i}
-                  onClick={onClick}
-                  className={`bg-card p-3 flex items-center gap-2.5 ${onClick ? 'cursor-pointer hover:bg-zinc-800/60 active:bg-zinc-700/60 transition-colors' : ''}`}
-                >
-                  <Icon size={14} className="text-muted flex-shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-[9px] uppercase tracking-[0.12em] text-muted flex items-center gap-1">
-                      {label}
-                      {onClick && <span className="text-[8px] text-zinc-500">▾</span>}
-                    </p>
-                    <p className="text-[14px] font-bold text-text metric-number leading-none mt-0.5">{value}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+      {/* 1. What needs attention right now */}
+      <Alerts lang={lang} pluginConnected={pluginConnected} onGo={a => jump(a.type === 'void_spike' ? 'h-voids' : a.type === 'kitchen_overdue' ? 'h-orders' : 'h-hall')} />
 
-            {/* Card breakdown modal */}
-            {showCardBreakdown && cashShift.cardBreakdown?.length > 0 && (
-              <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={() => setShowCardBreakdown(false)}>
-                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-                <div
-                  className="relative w-full max-w-sm bg-card border border-border rounded-t-2xl p-4 pb-8 space-y-1"
-                  onClick={e => e.stopPropagation()}
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-[11px] uppercase tracking-[0.15em] text-muted font-semibold">
-                      {tr(lang, 'Безналичные оплаты', 'Card payments', 'Karta orqali to\'lovlar')}
-                    </p>
-                    <button onClick={() => setShowCardBreakdown(false)} className="text-muted hover:text-text transition-colors">
-                      <X size={16} />
-                    </button>
-                  </div>
-                  {cashShift.cardBreakdown.map((item, i) => (
-                    <div key={i} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
-                      <span className="text-[13px] text-text">{item.type}</span>
-                      <span className="text-[13px] font-bold metric-number text-text">{Math.round(item.amount).toLocaleString('ru-RU')} UZS</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="pt-1">
-              <p className="text-[9px] uppercase tracking-[0.15em] text-muted mb-1">{t.shift_revenue}</p>
-              <p className="text-[28px] font-display font-black text-text leading-none">
-                {Math.round(cashShift.revenue).toLocaleString('ru-RU')}
-                <span className="text-[14px] text-muted font-medium ml-1.5">UZS</span>
-              </p>
-            </div>
-          </div>
-          )}
-        </Card>
+      {/* 2. Pace of the shift */}
+      <section className="strip rise" style={{ animationDelay: '.08s' }} aria-label={tr(lang, 'Показатели смены', 'Shift numbers', "Smena ko'rsatkichlari")}>
+        {strip.map(([l, v, d]) => <div key={l}><div className="s-l">{l}</div><div className="s-v">{kpisLoading ? <span className="faint">…</span> : v}</div><div className="s-d">{d}</div></div>)}
+      </section>
 
-        <Card title={t.stop_list}>
-          {stopLoading ? (
-            <div className="space-y-2 mt-2 animate-pulse">
-              {[0,1,2].map(i => <div key={i} className="h-10 bg-zinc-800/60 rounded" />)}
-            </div>
-          ) : (
-          <div className="mt-2 space-y-1">
-            {stopItems.length === 0 ? (
-              <div className="flex items-center gap-2 py-4 text-success">
-                <CheckCircle size={16} />
-                <span className="text-[13px]">{tr(lang, 'Стоп-лист пуст', 'Stop list is empty', 'Stop-list bo\'sh')}</span>
-              </div>
-            ) : stopItems.slice(0, stopVisible).map((item) => (
-              <div key={item.id} className="flex items-start justify-between py-2.5 border-b border-border last:border-0 group">
-                <div className="flex items-start gap-2.5">
-                  <AlertTriangle size={14} className="text-danger mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-[13px] font-medium text-text">{item.name}</p>
-                    {item.category && <p className="text-[10px] text-muted mt-0.5">{item.category}</p>}
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    setRemovedStopIds(prev => new Set([...prev, item.id]));
-                    onShowToast?.(tr(lang, `${item.name} — убрано из стоп-листа`, `${item.name} — removed from stop list`, `${item.name} — stop-listdan olib tashlandi`), 'success');
-                  }}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity text-muted hover:text-danger ml-4 mt-0.5 flex-shrink-0"
-                  title={tr(lang, 'Убрать из стоп-листа', 'Remove from stop list', 'Stop-listdan olib tashlash')}
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            ))}
-          </div>
-          )}
-          {!stopLoading && stopItems.length > stopVisible && (
-            <button
-              onClick={() => setStopVisible(stopItems.length)}
-              className="w-full mt-2 py-2 text-[11px] font-medium text-muted hover:text-text border border-border hover:border-primary/40 rounded-lg transition-all"
-            >
-              {tr(lang, `Показать все (${stopItems.length})`, `Show all (${stopItems.length})`, `Hammasini ko'rsatish (${stopItems.length})`)}
-            </button>
-          )}
-          {!stopLoading && stopVisible > 5 && stopItems.length > 5 && (
-            <button
-              onClick={() => setStopVisible(5)}
-              className="w-full mt-2 py-2 text-[11px] font-medium text-muted hover:text-text border border-border hover:border-primary/40 rounded-lg transition-all"
-            >
-              {tr(lang, 'Свернуть', 'Collapse', "Yig'ish")}
-            </button>
-          )}
-          {!stopLoading && stopItems.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-border">
-              <p className="text-[10px] text-muted">
-                {isPoster
-                  ? tr(lang, `${stopItems.length} позиц. · Poster`, `${stopItems.length} items · Poster`, `${stopItems.length} ta · Poster`)
-                  : tr(lang, `${stopItems.length} позиц. · iiko`, `${stopItems.length} items · iiko`, `${stopItems.length} ta · iiko`)}
-              </p>
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {/* ── HALL MAP ── */}
-      {isAllBranches ? (
-        branches.some(b => branchHasHallPlan.get(b.id) === true) && (
-        <Card title={
-          <div className="flex items-center gap-2">
-            <span>{t.hall_heatmap}</span>
-            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-[3px] bg-primary/10 text-primary text-[9px] font-semibold uppercase tracking-[0.12em]">
-              {tr(lang, `Все филиалы (${branches.length})`, `All branches (${branches.length})`, `Barcha filiallar (${branches.length})`)}
-            </span>
-          </div>
-        }>
-          <p className="text-[10px] text-muted -mt-1 mb-3">
-            {tr(lang, 'Каждый филиал показан отдельно — планировки залов разные, поэтому не объединяются в одну схему.',
-                     "Each branch shown separately — floor plans differ per branch, so they can't merge into one diagram.",
-                     "Har bir filial alohida ko'rsatilgan — zal tartiblari filiallar bo'yicha har xil, shuning uchun bitta sxemaga birlashtirilmaydi.")}
-          </p>
-          <div className="space-y-6">
-            {branches.filter(b => branchHasHallPlan.get(b.id) === true).map(b => {
+      {/* 3. Floor + cash + stop list */}
+      <div className="floor rise" style={{ animationDelay: '.12s', ...(showHall ? {} : { gridTemplateColumns: '1fr' }) }}>
+        {showHall && (
+          <section className="card-ph" aria-labelledby="h-hall">
+            <div className="sec-head"><h2 id="h-hall">{tr(lang, 'Зал', 'Floor', 'Zal')}</h2>{PLUGIN_ENABLED && pluginConnected && <span className="state">{tr(lang, 'Live', 'Live', 'Live')}</span>}</div>
+            {isAllBranches ? branches.filter(b => branchHasHallPlan.get(b.id) === true).map(b => {
               const occ = perBranchOccupancy.get(b.id);
               return (
-                <div key={b.id}>
-                  <p className="text-[11px] font-semibold text-text mb-2">{b.name}</p>
-                  <HallMap
-                    lang={lang}
-                    onToast={onShowToast}
-                    branchId={b.id}
-                    occupiedTables={occ && occ.tables.size > 0 ? occ.tables : undefined}
-                    tableInfo={occ?.info}
-                    isPoster={isPoster}
-                    onHasPlanChange={hasPlan => setBranchHasHallPlan(m => new Map(m).set(b.id, hasPlan))}
-                  />
+                <div key={b.id} style={{ marginBottom: 24 }}>
+                  <h3 className="sec-note" style={{ margin: '0 0 8px' }}>{b.name}</h3>
+                  <HallMap lang={lang} onToast={onShowToast} branchId={b.id} occupiedTables={occ && occ.tables.size > 0 ? occ.tables : undefined} tableInfo={occ?.info} isPoster={isPoster}
+                    onHasPlanChange={hasPlan => setBranchHasHallPlan(m => new Map(m).set(b.id, hasPlan))} />
                 </div>
               );
-            })}
-          </div>
-        </Card>
-        )
-      ) : hasHallPlan && (
-        <Card title={
-          <div className="flex items-center gap-2">
-            <span>{t.hall_heatmap}</span>
-            {PLUGIN_ENABLED && pluginConnected && (
-              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-[3px] bg-success/10 text-success text-[9px] font-semibold uppercase tracking-[0.12em]"><Radio size={8} className="animate-pulse" />{tr(lang, 'Live', 'Live', 'Live')}</span>
+            }) : (
+              <HallMap lang={lang} onToast={onShowToast} occupiedTables={(PLUGIN_ENABLED && pluginConnected || isPoster) && occupiedTables.size > 0 ? occupiedTables : undefined} tableInfo={tableInfo} isPoster={isPoster} onHasPlanChange={setHasHallPlan} />
             )}
-          </div>
-        }>
-          <HallMap lang={lang} onToast={onShowToast} occupiedTables={(PLUGIN_ENABLED && pluginConnected || isPoster) && occupiedTables.size > 0 ? occupiedTables : undefined} tableInfo={tableInfo} isPoster={isPoster} onHasPlanChange={setHasHallPlan} />
-        </Card>
-      )}
+          </section>
+        )}
 
-      {/* ── ACTIVE ORDERS ── */}
-      {/* Poster path is poll-based (dash.getTransactions?status=1, re-fetched every 30s), not TRACEPLUGIN's push feed — labeled accordingly below, not shown as "Live" */}
-      {(() => {
-        const displayOrders: any[] = isAllBranches ? combinedActiveOrders : isPoster ? posterActiveOrders : mergedActiveOrders;
-        return (
-      <Card title={
-        <div className="flex items-center gap-2">
-          <span>{t.active_orders}</span>
-          {isAllBranches ? (
-            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-[3px] bg-primary/10 text-primary text-[9px] font-semibold uppercase tracking-[0.12em]">
-              {tr(lang, `Все филиалы (${branches.length})`, `All branches (${branches.length})`, `Barcha filiallar (${branches.length})`)}
-            </span>
-          ) : PLUGIN_ENABLED && pluginConnected ? (
-            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-[3px] bg-success/10 text-success text-[9px] font-semibold uppercase tracking-[0.12em]"><Radio size={8} className="animate-pulse" />{tr(lang, 'Live', 'Live', 'Live')}</span>
-          ) : isPoster && (
-            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-[3px] bg-muted/10 text-muted text-[9px] font-semibold uppercase tracking-[0.12em]">{tr(lang, 'Опрос · 30с', 'Poll · 30s', "So'rov · 30s")}</span>
+        <div className="side">
+          <section className="card-ph" aria-labelledby="h-cash">
+            <div className="sec-head"><h2 id="h-cash">{tr(lang, 'Кассовая смена', 'Cash shift', 'Kassa smenasi')}</h2>
+              {cashShift && <span className="state" style={cashShift.status === 'open' ? undefined : { color: 'var(--text-3)', borderColor: 'var(--rule)' }}>{cashShift.status === 'open' ? tr(lang, 'Открыта', 'Open', 'Ochiq') : tr(lang, 'Закрыта', 'Closed', 'Yopiq')}</span>}</div>
+            {cashShiftLoading ? <Skel lines={['w7', 'w9', 'w9', 'w9']} /> : !cashShift ? <p className="rd-empty">{tr(lang, 'Не удалось загрузить смену', "Couldn't load the shift", "Smenani yuklab bo'lmadi")}</p> : <>
+              <div className="cash-who"><span>{tr(lang, 'Кассир', 'Cashier', 'Kassir')} <b>{cashShift.cashier ?? '—'}</b></span>{cashShift.openTime && <span>{tr(lang, 'с', 'since', '')} {hm(cashShift.openTime)}</span>}</div>
+              <div className="cash-rows">
+                <div className="cash-row"><span>{tr(lang, 'Наличные', 'Cash', 'Naqd')}</span><b>{fmtN(cashShift.cash)}</b></div>
+                {cashShift.cardBreakdown?.length ? (
+                  <button className="cash-row" aria-expanded={cardOpen} onClick={() => setCardOpen(o => !o)}><span>{tr(lang, 'Безнал', 'Card', 'Karta')}<i className="ph ph-caret-down" aria-hidden="true" /></span><b>{fmtN(cashShift.card)}</b></button>
+                ) : <div className="cash-row"><span>{tr(lang, 'Безнал', 'Card', 'Karta')}</span><b>{fmtN(cashShift.card)}</b></div>}
+                {cardOpen && <div className="card-split">{cashShift.cardBreakdown.map(c => <div key={c.type}><span>{c.type}</span><span>{fmtN(c.amount)}</span></div>)}</div>}
+                {cashShift.orders > 0 && <div className="cash-row"><span>{tr(lang, 'Заказы', 'Orders', 'Buyurtmalar')}</span><b>{cashShift.orders}</b></div>}
+                <div className="cash-row"><span>{tr(lang, 'Изъятия', 'Payouts', 'Inkassatsiya')}</span><b>{cashShift.payOut > 0 ? fmtN(cashShift.payOut) : '—'}</b></div>
+              </div>
+              <div className="cash-total"><span className="muted">{tr(lang, 'Выручка смены', 'Shift revenue', 'Smena tushumi')}</span><b>{fmtN(cashShift.revenue)}</b></div>
+            </>}
+          </section>
+
+          <section className="card-ph stop" aria-labelledby="h-stop">
+            <div className="sec-head"><h2 id="h-stop">{tr(lang, 'Стоп-лист', 'Stop list', 'Stop-list')}{stopItems.length > 0 && <span className="count">{stopItems.length}</span>}</h2></div>
+            {stopLoading ? <Skel lines={['w9', 'w7', 'w9']} /> : stopItems.length === 0 ? <p className="rd-empty">{tr(lang, 'Стоп-лист пуст', 'The stop list is empty', "Stop-list bo'sh")}</p> : (
+              <ul>
+                {stopItems.slice(0, stopVisible).map(item => (
+                  <li key={item.id}>
+                    <span>{item.name}</span>
+                    <span className="since">{item.stoppedAt ? `${tr(lang, 'с', 'since', '')} ${hm(item.stoppedAt)}` : item.category}</span>
+                    <button className="back" onClick={() => { setRemovedStopIds(p => new Set([...p, item.id])); onShowToast?.(tr(lang, `${item.name}: скрыто до обновления`, `${item.name}: hidden until refresh`, `${item.name}: yangilanguncha yashirildi`), 'info'); }}>{tr(lang, 'Скрыть', 'Hide', 'Yashirish')}</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {stopItems.length > 5 && <button className="link" style={{ marginTop: 10 }} onClick={() => setStopVisible(v => v > 5 ? 5 : stopItems.length)}>{stopVisible > 5 ? tr(lang, 'Свернуть', 'Collapse', "Yig'ish") : tr(lang, `Показать все ${stopItems.length}`, `Show all ${stopItems.length}`, `Hammasi ${stopItems.length}`)}</button>}
+          </section>
+        </div>
+      </div>
+
+      {/* 4. Open orders */}
+      <section className="band rise card-ph" style={{ animationDelay: '.16s' }} aria-labelledby="h-orders">
+        <div className="sec-head"><h2 id="h-orders">{tr(lang, 'Открытые заказы', 'Open orders', 'Ochiq buyurtmalar')}{displayOrders.length > 0 && <span className="count">{displayOrders.length}</span>}</h2></div>
+        {displayOrders.length === 0 ? <p className="rd-empty">{tr(lang, 'Открытых заказов нет', 'No open orders', "Ochiq buyurtmalar yo'q")}</p> : (
+          <table className="orders">
+            <thead><tr>
+              {isAllBranches && <th>{tr(lang, 'Филиал', 'Branch', 'Filial')}</th>}
+              <th>{tr(lang, 'Стол', 'Table', 'Stol')}</th><th>{tr(lang, 'Официант', 'Waiter', 'Ofitsiant')}</th>
+              <th className="r c-items">{tr(lang, 'Позиций', 'Items', 'Pozitsiya')}</th><th className="r c-guests">{tr(lang, 'Гости', 'Guests', 'Mehmonlar')}</th>
+              <th className="r">{tr(lang, 'Открыт', 'Open for', 'Ochiq')}</th><th className="r">{tr(lang, 'Сумма', 'Total', 'Summa')}</th><th className="c-status">{tr(lang, 'Статус', 'Status', 'Holat')}</th>
+            </tr></thead>
+            <tbody>{ordersShown.map(o => { const [cls, l] = stLabel(o); return (
+              <tr key={`${o.branchName ?? ''}-${o.id}`}>
+                {isAllBranches && <td>{o.branchName}</td>}
+                <td className="t">{String(o.table).replace(/^(Стол|Table|Stol)\s*/, '')}</td><td>{o.waiter}</td>
+                <td className="r c-items">{o.items}</td><td className="r c-guests">{o.guests ?? '—'}</td>
+                <td className={`r nw ${(o.ticketMin ?? 0) >= 90 ? 'min-long' : ''}`}>{o.ticketMin ?? 0} {tr(lang, 'мин', 'min', 'daq')}</td>
+                <td className="r">{o.sum ? fmtN(o.sum) : '—'}</td>
+                <td className="c-status"><span className={`st ${cls}`}>{l}</span></td>
+              </tr>); })}</tbody>
+          </table>
+        )}
+        {displayOrders.length > 8 && <div className="table-foot" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}><button className="link" onClick={() => setOrdersAll(a => !a)}>{ordersAll ? tr(lang, 'Свернуть', 'Collapse', "Yig'ish") : tr(lang, `Показать все ${displayOrders.length}`, `Show all ${displayOrders.length}`, `Hammasi ${displayOrders.length}`)}</button></div>}
+      </section>
+
+      {/* 5. Voids + bookings */}
+      {(pluginConnected || (isPoster && reservations.length > 0)) && (
+        <div className="band-2 band rise" style={{ animationDelay: '.2s', ...(pluginConnected && isPoster && reservations.length > 0 ? {} : { gridTemplateColumns: '1fr' }) }}>
+          {pluginConnected && <Voids lang={lang} events={voidEvents} />}
+          {isPoster && !isAllBranches && reservations.length > 0 && (
+            <section className="card-ph" aria-labelledby="h-bk">
+              <div className="sec-head"><h2 id="h-bk">{tr(lang, 'Бронирования', 'Bookings', 'Bronlar')}</h2></div>
+              <table className="bk">
+                <thead><tr><th>{tr(lang, 'Гость', 'Guest', 'Mehmon')}</th><th className="c-phone">{tr(lang, 'Телефон', 'Phone', 'Telefon')}</th><th>{tr(lang, 'Когда', 'When', 'Qachon')}</th><th className="c-dur">{tr(lang, 'На сколько', 'Duration', 'Davomiyligi')}</th><th>{tr(lang, 'Статус', 'Status', 'Holat')}</th></tr></thead>
+                <tbody>{reservations.map(r => (
+                  <tr key={r.id}>
+                    <td>{r.guestName}{r.partySize ? `, ${r.partySize} ${tr(lang, 'чел.', 'ppl', 'kishi')}` : ''}</td>
+                    <td className="c-phone"><span className="phone">{r.phone ?? '—'}</span></td>
+                    <td>{r.date}</td><td className="c-dur">{formatMinutesShort(r.durationMin, lang)}</td>
+                    <td><span className={`bk-st ${r.status === 'accepted' ? 'ok2' : r.status === 'canceled' ? 'cx' : 'new'}`}>{r.status === 'accepted' ? tr(lang, 'Подтверждено', 'Confirmed', 'Tasdiqlangan') : r.status === 'canceled' ? tr(lang, 'Отменено', 'Cancelled', 'Bekor qilingan') : tr(lang, 'Новое', 'New', 'Yangi')}</span></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </section>
           )}
         </div>
-      }>
-        {isAllBranches && (
-          <p className="text-[10px] text-muted -mt-1 mb-2">
-            {tr(lang, 'Обновляется каждые 30с по всем филиалам (не мгновенно, как в режиме одного филиала).',
-                     'Refreshes every 30s across all branches (not instant like single-branch live mode).',
-                     "Har 30s da barcha filiallar bo'yicha yangilanadi (bitta filial rejimidagidek darhol emas).")}
-          </p>
-        )}
-        {displayOrders.length === 0 ? (
-          <div className="flex items-center gap-2 py-6 text-muted">
-            <CheckCircle size={15} className="text-success flex-shrink-0" />
-            <span className="text-[12px]">{tr(lang, 'Нет активных заказов', 'No active orders', 'Faol buyurtmalar yo\'q')}</span>
-          </div>
-        ) : (
-        <>
-        <div className="mt-1 overflow-x-auto">
-          <table className="w-full text-left min-w-[520px]">
-            <thead>
-              <tr className="border-b border-border">
-                {[
-                  tr(lang, '№', '#', '№'),
-                  ...(isAllBranches ? [tr(lang, 'Филиал', 'Branch', 'Filial')] : []),
-                  tr(lang, 'Стол', 'Table', 'Stol'), tr(lang, 'Официант', 'Waiter', 'Ofitsiant'),
-                  tr(lang, 'Позиций', 'Items', 'Pozitsiyalar'), tr(lang, 'Гости', 'Guests', 'Mehmonlar'), t.ticket_time, tr(lang, 'Статус', 'Status', 'Holat'),
-                ].map(h => (
-                  <th key={h} className="py-2 pr-4 text-[10px] uppercase tracking-[0.15em] text-muted font-medium whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {[...displayOrders].sort((a: any, b: any) => (b.ticketMin ?? 0) - (a.ticketMin ?? 0)).slice(0, activeOrdersVisible).map((o: any) => (
-                <tr key={`${o.branchName ?? ''}-${o.id}`} className="border-b border-border last:border-0 hover:bg-card-hover transition-colors">
-                  <td className="py-2.5 pr-4 text-[11px] text-muted font-mono">{o.number ?? '—'}</td>
-                  {isAllBranches && <td className="py-2.5 pr-4 text-[12px] text-text">{o.branchName}</td>}
-                  <td className="py-2.5 pr-4 text-[13px] font-medium text-text">{o.table}</td>
-                  <td className="py-2.5 pr-4 text-[12px] text-muted">{o.waiter}</td>
-                  <td className="py-2.5 pr-4 text-[13px] text-text metric-number">{o.items}</td>
-                  <td className="py-2.5 pr-4 text-[13px] text-muted metric-number">{o.guests ?? '—'}</td>
-                  <td className="py-2.5 pr-4">
-                    <div className="flex items-center gap-1.5">
-                      <Timer size={12} className={(o.ticketMin ?? 0) > 15 ? 'text-danger' : (o.ticketMin ?? 0) > 8 ? 'text-amber-400' : 'text-success'} />
-                      <span className={`text-[13px] font-bold metric-number ${(o.ticketMin ?? 0) > 15 ? 'text-danger' : (o.ticketMin ?? 0) > 8 ? 'text-amber-400' : 'text-success'}`}>
-                        {formatMinutesShort(o.ticketMin ?? 0, lang)}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="py-2.5">
-                    <span className={`px-2 py-0.5 rounded-[3px] text-[10px] font-semibold uppercase tracking-[0.08em] ${
-                      o.status === 'Bill'
-                        ? 'text-amber-400 bg-amber-400/10'
-                        : o.kitchenStatus === 'ready'
-                        ? 'text-success bg-success/10'
-                        : o.kitchenStatus === 'preparing'
-                        ? 'text-amber-400 bg-amber-400/10'
-                        : 'text-primary bg-primary/10'
-                    }`}>
-                      {o.status === 'Bill' ? tr(lang, 'Счёт', 'Bill', 'Hisob')
-                        : o.kitchenStatus === 'ready' ? tr(lang, 'Готово', 'Ready', 'Tayyor')
-                        : o.kitchenStatus === 'preparing' ? tr(lang, 'Готовится', 'Preparing', 'Tayyorlanmoqda')
-                        : o.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {displayOrders.length > activeOrdersVisible && (
-          <button
-            onClick={() => setActiveOrdersVisible(displayOrders.length)}
-            className="w-full mt-2 py-2 text-[11px] font-medium text-muted hover:text-text border border-border hover:border-primary/40 rounded-lg transition-all"
-          >
-            {tr(lang, `Показать все (${displayOrders.length})`, `Show all (${displayOrders.length})`, `Hammasini ko'rsatish (${displayOrders.length})`)}
-          </button>
-        )}
-        {activeOrdersVisible > 5 && displayOrders.length > 5 && (
-          <button
-            onClick={() => setActiveOrdersVisible(5)}
-            className="w-full mt-2 py-2 text-[11px] font-medium text-muted hover:text-text border border-border hover:border-primary/40 rounded-lg transition-all"
-          >
-            {tr(lang, 'Свернуть', 'Collapse', "Yig'ish")}
-          </button>
-        )}
-        <p className="text-[10px] text-muted mt-3 pt-3 border-t border-border">
-          {isAllBranches
-            ? tr(lang, `${displayOrders.length} активных · ${combinedOccupiedCount} столов занято · все филиалы`,
-                        `${displayOrders.length} active · ${combinedOccupiedCount} tables occupied · all branches`,
-                        `${displayOrders.length} ta faol · ${combinedOccupiedCount} stol band · barcha filiallar`)
-            : isPoster
-              ? tr(lang, `${displayOrders.length} активных · Poster`, `${displayOrders.length} active · Poster`, `${displayOrders.length} ta faol · Poster`)
-              : tr(lang, `${displayOrders.length} активных · Live · iikoFront`, `${displayOrders.length} active · Live · iikoFront`, `${displayOrders.length} ta faol · Live · iikoFront`)}
-        </p>
-        </>
-        )}
-      </Card>
-        );
-      })()}
-
-      {/* ── RESERVATIONS ── */}
-      {/* Poster only — incomingOrders.getReservations, no iiko-side equivalent anywhere in TRACE.
-          Hidden entirely (not an empty state) once loaded with zero upcoming reservations —
-          a permanent "nothing here" card is clutter, not information. */}
-      {isPoster && !isAllBranches && !reservationsLoading && reservations.length > 0 && (
-        <Card title={
-          <div className="flex items-center gap-2">
-            <CalendarClock size={14} />
-            <span>{tr(lang, 'Бронирования', 'Reservations', 'Bronlar')}</span>
-          </div>
-        }>
-          <div className="overflow-x-auto">
-              <table className="w-full text-left min-w-[480px]">
-                <thead>
-                  <tr className="border-b border-border">
-                    {[
-                      tr(lang, 'Гость', 'Guest', 'Mehmon'),
-                      tr(lang, 'Телефон', 'Phone', 'Telefon'),
-                      tr(lang, 'Дата и время', 'Date & time', 'Sana va vaqt'),
-                      tr(lang, 'Длительность', 'Duration', 'Davomiyligi'),
-                      tr(lang, 'Статус', 'Status', 'Holat'),
-                    ].map(h => (
-                      <th key={h} className="py-2 pr-4 text-[10px] uppercase tracking-[0.15em] text-muted font-medium whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {reservations.map(r => (
-                    <tr key={r.id} className="border-b border-border last:border-0 hover:bg-card-hover transition-colors">
-                      <td className="py-2.5 pr-4 text-[13px] font-medium text-text">{r.guestName}</td>
-                      <td className="py-2.5 pr-4 text-[12px] text-muted">{r.phone ?? '—'}</td>
-                      <td className="py-2.5 pr-4 text-[12px] text-muted">{r.date}</td>
-                      <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{formatMinutesShort(r.durationMin, lang)}</td>
-                      <td className="py-2.5">
-                        <span className={`px-2 py-0.5 rounded-[3px] text-[10px] font-semibold uppercase tracking-[0.08em] ${
-                          r.status === 'accepted' ? 'text-success bg-success/10'
-                          : r.status === 'canceled' ? 'text-muted bg-muted/10'
-                          : 'text-amber-400 bg-amber-400/10'
-                        }`}>
-                          {r.status === 'accepted' ? tr(lang, 'Подтверждено', 'Accepted', 'Tasdiqlangan')
-                            : r.status === 'canceled' ? tr(lang, 'Отменено', 'Canceled', 'Bekor qilingan')
-                            : tr(lang, 'Новое', 'New', 'Yangi')}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-        </Card>
       )}
 
-      {/* ── STAFF (perf + ABC + narrative, merged) ── */}
-      <StaffPerfCard
-        staffRows={staffRows} staffLoading={staffLoading} lang={lang} t={t}
-        isBasePlan={isBasePlan} isPoster={isPoster}
-        staffNarrative={staffNarrative}
-        staffNarrativeLoading={staffNarrativeLoading}
-        staffNarrativeError={staffNarrativeError}
-        fetchStaffNarrative={fetchStaffNarrative}
-      />
+      {/* 6. Team */}
+      <StaffTable lang={lang} staffRows={staffRows} staffLoading={staffLoading} isPoster={isPoster} />
 
-      {/* ── VOID TRACKER ── */}
-      <VoidTrackerCard lang={lang} pluginConnected={pluginConnected} />
-
-      {/* ── AI INSIGHTS ── */}
-      {isBasePlan ? (
-        <>
-          <ProLock
-            lang={lang}
-            title={tr(lang, 'Причины списаний', 'Waste root cause', 'Hisobdan chiqarish sabablari')}
-            description={tr(lang, 'AI находит паттерны списаний по дням недели и рекомендует нормы закупки', 'AI finds waste patterns by weekday and recommends order quantities', 'AI hafta kunlari bo\'yicha hisobdan chiqarish naqshlarini topadi va xarid normalarini tavsiya qiladi')}
-          />
-          <ProLock
-            lang={lang}
-            title={tr(lang, 'Рекомендации по сменам', 'Shift schedule recommendations', 'Smenalar bo\'yicha tavsiyalar')}
-            description={tr(lang, 'AI рекомендует количество официантов по дням и часам на следующую неделю', 'AI recommends waiter counts by day and hour for next week', 'AI keyingi hafta uchun kunlar va soatlar bo\'yicha ofitsiantlar sonini tavsiya qiladi')}
-          />
-        </>
-      ) : (
-      <>
-      <div className="flex items-center gap-2 pt-2">
-        <Sparkles size={13} className="text-primary" />
-        <p className="text-[10px] uppercase tracking-[0.2em] text-muted font-medium">
-          {tr(lang, 'AI-аналитика операций', 'Operations AI insights', 'Operatsiyalar AI tahlili')}
-        </p>
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-      <AIInsightCard
-        lang={lang}
-        icon={<Trash2 size={15} />}
-        title={tr(lang, 'Причины списаний', 'Waste root cause', 'Hisobdan chiqarish sabablari')}
-        description={tr(lang, 'Паттерны списаний по дням недели и нормы закупки', 'Waste patterns by weekday and order quantities', "Hafta kunlari bo'yicha naqshlar va xarid normalari")}
-        loading={wasteLoading}
-        hasResult={!!wastePatterns}
-        error={wasteError}
-        onGenerate={() => {
-          setWasteLoading(true);
-          setWasteError(null);
-          traceApi.ai.wasteRootCause(lang)
-            .then(r => {
-              if (r.fromAI) setWastePatterns(r);
-              else setWasteError(tr(lang, 'Не удалось получить анализ. Проверьте настройки подключения POS и попробуйте ещё раз.', 'Couldn\'t generate analysis. Check your POS connection settings and try again.', 'Tahlil olinmadi. POS ulanish sozlamalarini tekshirib, qayta urinib ko\'ring.'));
-            })
-            .catch(() => setWasteError(tr(lang, 'Не удалось получить анализ. Попробуйте ещё раз.', 'Couldn\'t generate analysis. Try again.', 'Tahlil olinmadi. Qayta urinib ko\'ring.')))
-            .finally(() => setWasteLoading(false));
-        }}
-        actionLabel={tr(lang, 'Анализировать', 'Analyze', 'Tahlil qilish')}
-      >
-        {wastePatterns && (
-          <div className="space-y-3">
-            {wastePatterns.summary && <p className="text-[12px] text-muted leading-relaxed mb-3">{wastePatterns.summary}</p>}
-            {wastePatterns.patterns?.map((p, i) => (
-              <div key={i} className="rounded-xl border border-border bg-[#111] px-3 py-2.5">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-[12px] font-semibold text-text">{p.dish}</p>
-                  <span className="text-[9px] uppercase tracking-widest text-amber-400 border border-amber-500/30 rounded px-1.5 py-0.5">{p.peakDay}</span>
-                </div>
-                <p className="text-[11px] text-muted">{p.rootCause}</p>
-                <p className="text-[11px] text-primary mt-1">→ {p.advice}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </AIInsightCard>
-
-      <AIInsightCard
-        lang={lang}
-        icon={<CalendarClock size={15} />}
-        title={tr(lang, 'Рекомендации по сменам', 'Shift schedule', 'Smenalar bo\'yicha tavsiyalar')}
-        description={tr(lang, 'Сколько официантов нужно по дням и часам на следующую неделю', 'Waiter counts by day and hour for next week', "Keyingi hafta uchun ofitsiantlar soni")}
-        loading={shiftLoading}
-        hasResult={!!shiftSchedule}
-        error={shiftError}
-        onGenerate={() => {
-          setShiftLoading(true);
-          setShiftError(null);
-          traceApi.ai.shiftSchedule(lang)
-            .then(r => {
-              if (r.fromAI) setShiftSchedule(r);
-              else setShiftError(tr(lang, 'Не удалось получить рекомендации. Проверьте настройки подключения POS и попробуйте ещё раз.', 'Couldn\'t generate recommendations. Check your POS connection settings and try again.', 'Tavsiyalar olinmadi. POS ulanish sozlamalarini tekshirib, qayta urinib ko\'ring.'));
-            })
-            .catch(() => setShiftError(tr(lang, 'Не удалось получить рекомендации. Попробуйте ещё раз.', 'Couldn\'t generate recommendations. Try again.', 'Tavsiyalar olinmadi. Qayta urinib ko\'ring.')))
-            .finally(() => setShiftLoading(false));
-        }}
-      >
-        {shiftSchedule && (
-          <div>
-            {shiftSchedule.summary && <p className="text-[12px] text-muted leading-relaxed mb-3">{shiftSchedule.summary}</p>}
-            {shiftSchedule.schedule && shiftSchedule.schedule.length > 0 && (() => {
-              const days = shiftSchedule.schedule.map(d => d.day);
-              const waiters = [...new Set(shiftSchedule.schedule.flatMap(d => d.assignments.map(a => a.waiter)))];
-              const cellShifts = new Map<string, { start: string; end: string }[]>();
-              const totalHours = new Map<string, number>();
-              for (const d of shiftSchedule.schedule) {
-                for (const a of d.assignments) {
-                  const key = `${a.waiter}|${d.day}`;
-                  if (!cellShifts.has(key)) cellShifts.set(key, []);
-                  cellShifts.get(key)!.push({ start: a.start, end: a.end });
-                  totalHours.set(a.waiter, (totalHours.get(a.waiter) ?? 0) + hoursBetween(a.start, a.end));
-                }
-              }
-              waiters.sort((a, b) => (totalHours.get(b) ?? 0) - (totalHours.get(a) ?? 0));
-              return (
-                <div className="overflow-x-auto -mx-1">
-                  <table className="text-[10px] border-collapse w-full min-w-[560px]">
-                    <thead>
-                      <tr>
-                        <th className="text-left px-2 py-1.5 text-muted font-medium sticky left-0 bg-card">{tr(lang,'Официант','Waiter','Ofitsiant')}</th>
-                        {days.map(d => <th key={d} className="px-2 py-1.5 text-muted font-medium whitespace-nowrap text-center">{d}</th>)}
-                        <th className="px-2 py-1.5 text-primary font-semibold whitespace-nowrap">{tr(lang,'Итого','Total','Jami')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {waiters.map((name, i) => (
-                        <tr key={name} className={i % 2 === 0 ? 'bg-[#111]' : ''}>
-                          <td className="px-2 py-1.5 font-semibold text-text whitespace-nowrap sticky left-0" style={{ background: i % 2 === 0 ? '#111' : 'var(--card)' }}>
-                            {name.replace(/\(официант\)/i,'').trim()}
-                          </td>
-                          {days.map(d => {
-                            const shifts = cellShifts.get(`${name}|${d}`);
-                            return (
-                              <td key={d} className={`px-2 py-1.5 text-center whitespace-nowrap ${shifts ? 'text-emerald-400' : 'text-red-400/70'}`}>
-                                {shifts ? shifts.map(s => `${s.start}–${s.end}`).join(', ') : tr(lang,'вых','off','dam')}
-                              </td>
-                            );
-                          })}
-                          <td className="px-2 py-1.5 text-center font-semibold text-primary whitespace-nowrap">
-                            {(totalHours.get(name) ?? 0).toFixed(1)}{tr(lang,'ч','h','s')}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })()}
-            {shiftSchedule.schedule && shiftSchedule.schedule.length > 0 && (
-              <div className="flex gap-2 mt-4 pt-3 border-t border-border">
-                <button
-                  disabled={shiftPdfLoading}
-                  onClick={() => {
-                    if (demo) {
-                      downloadShiftSchedulePdfClientSide(shiftSchedule.schedule!, shiftSchedule.summary, lang);
-                      return;
-                    }
-                    setShiftPdfLoading(true);
-                    traceApi.ai.shiftScheduleExportPdf(shiftSchedule.schedule!, shiftSchedule.summary, lang)
-                      .then(blob => {
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `TRACE-shift-schedule-${new Date().toISOString().slice(0,10)}.pdf`;
-                        a.click();
-                        URL.revokeObjectURL(url);
-                      })
-                      .catch(() => onShowToast?.(tr(lang, 'Не удалось скачать PDF', 'Couldn\'t download PDF', 'PDF yuklab bo\'lmadi'), 'error'))
-                      .finally(() => setShiftPdfLoading(false));
-                  }}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-border hover:border-primary/40 text-[11px] font-medium text-muted hover:text-text transition-all disabled:opacity-50"
-                >
-                  <FileDown size={13} />
-                  {shiftPdfLoading ? tr(lang, 'Готовим…', 'Preparing…', 'Tayyorlanmoqda…') : tr(lang, 'Скачать PDF', 'Download PDF', 'PDF yuklab olish')}
-                </button>
-                <button
-                  onClick={() => downloadShiftScheduleExcel(shiftSchedule.schedule!, shiftSchedule.summary, lang)}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-border hover:border-primary/40 text-[11px] font-medium text-muted hover:text-text transition-all"
-                >
-                  <FileSpreadsheet size={13} />
-                  {tr(lang, 'Скачать Excel', 'Download Excel', 'Excel yuklab olish')}
-                </button>
-                <button
-                  disabled={shiftTgLoading}
-                  title={!demo && !telegramConnected ? tr(lang, 'Подключите Telegram в Настройках', 'Connect Telegram in Settings', 'Sozlamalarda Telegram ulang') : undefined}
-                  onClick={() => {
-                    if (demo) {
-                      setShiftTgLoading(true);
-                      setTimeout(() => {
-                        setShiftTgLoading(false);
-                        onShowToast?.(tr(lang, 'Демо: сообщение "отправлено" в Telegram', 'Demo: message "sent" to Telegram', 'Demo: Telegramga "yuborildi"'), 'success');
-                      }, 700);
-                      return;
-                    }
-                    if (!telegramConnected) {
-                      onShowToast?.(tr(lang, 'Сначала подключите Telegram в Настройках → Отчёты', 'Connect Telegram first in Settings → Reports', "Avval Sozlamalar → Hisobotlar'da Telegram ulang"), 'info');
-                      return;
-                    }
-                    setShiftTgLoading(true);
-                    traceApi.ai.shiftScheduleSendTelegram(shiftSchedule.schedule!, shiftSchedule.summary, lang)
-                      .then(r => {
-                        if (r.ok) onShowToast?.(tr(lang, 'Отправлено в Telegram', 'Sent to Telegram', 'Telegramga yuborildi'), 'success');
-                        else onShowToast?.(r.error ?? tr(lang, 'Не удалось отправить', "Couldn't send", "Yuborib bo'lmadi"), 'error');
-                      })
-                      .catch(() => onShowToast?.(tr(lang, 'Не удалось отправить', "Couldn't send", "Yuborib bo'lmadi"), 'error'))
-                      .finally(() => setShiftTgLoading(false));
-                  }}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-border hover:border-primary/40 text-[11px] font-medium text-muted hover:text-text transition-all disabled:opacity-50"
-                >
-                  <Send size={13} />
-                  {shiftTgLoading ? tr(lang, 'Отправка…', 'Sending…', 'Yuborilmoqda…') : tr(lang, 'В Telegram', 'To Telegram', 'Telegramga')}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </AIInsightCard>
-
-      </div>
-      </>
-      )}
-
-    </div>
+      {/* 7. AI tools */}
+      <Trio lang={lang} tiles={tiles} />
+    </>
   );
 };

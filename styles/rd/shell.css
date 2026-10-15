@@ -1,10 +1,10 @@
 /* Generated from TRACE-mockups/mock-base.css + mock-common.css — scoped under .rd. Redesign Oct 2026. */
-.rd * { box-sizing: border-box; }
+:where(.rd) * { box-sizing: border-box; }
 .rd { -webkit-text-size-adjust: 100%; }
 .rd { margin: 0; background: var(--bg); color: var(--text); font: 400 15px/1.5 "IBM Plex Sans", system-ui, sans-serif; font-feature-settings: "tnum" 1, "lnum" 1; -webkit-font-smoothing: antialiased; transition: background .25s, color .25s; }
-.rd input, .rd textarea, .rd select { font-size: max(16px, 1em); }
-.rd button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
-.rd :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+:where(.rd) input, :where(.rd) textarea, :where(.rd) select { font-size: max(16px, 1em); }
+:where(.rd) button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+:where(.rd) :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .rd .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .86em; }
 .rd .muted { color: var(--text-2); }
 .rd .faint { color: var(--text-3); }
@@ -44,7 +44,7 @@
 .rd .acct-menu a:hover, .rd .acct-menu button:hover { background: var(--sunken); }
 .rd .acct-menu hr { border: 0; border-top: 1px solid var(--rule); margin: 4px 0; }
 .rd .acct-out { color: var(--neg) !important; }
-.rd main { max-width: var(--maxw); margin: 0 auto; padding: 36px var(--pad) 64px; }
+:where(.rd) main { max-width: var(--maxw); margin: 0 auto; padding: 36px var(--pad) 64px; }
 .rd .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 26px; }
 .rd .page-head h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.02em; line-height: 1.15; }
 .rd .sub { margin-top: 8px; font-size: 14px; color: var(--text-2); display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
@@ -59,16 +59,16 @@
 .rd .cmp select { -webkit-appearance: none; appearance: none; font: inherit; font-size: max(16px, 1em); color: var(--text); font-weight: 500; background: var(--surface); border: 1px solid var(--rule-strong); border-radius: 8px; padding: 3px 28px 3px 10px; cursor: pointer; transition: border-color .2s; }
 .rd .cmp select:hover { border-color: var(--text-3); }
 .rd .cmp .chev { position: absolute; right: 9px; pointer-events: none; color: var(--text-2); }
-.rd section h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+:where(.rd) section h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
 .rd .sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
 .rd .sec-note { font-size: 13px; color: var(--text-3); }
 .rd .band { margin-top: 48px; padding-top: 30px; border-top: 1px solid var(--rule); }
-.rd table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.rd th { text-align: left; font-weight: 500; color: var(--text-3); font-size: 12.5px; padding: 0 0 8px; border-bottom: 1px solid var(--rule-strong); white-space: nowrap; }
-.rd td { padding: 10px 0; border-bottom: 1px solid var(--rule); vertical-align: middle; }
+:where(.rd) table { width: 100%; border-collapse: collapse; font-size: 14px; }
+:where(.rd) th { text-align: left; font-weight: 500; color: var(--text-3); font-size: 12.5px; padding: 0 0 8px; border-bottom: 1px solid var(--rule-strong); white-space: nowrap; }
+:where(.rd) td { padding: 10px 0; border-bottom: 1px solid var(--rule); vertical-align: middle; }
 .rd th.r, .rd td.r { text-align: right; }
-.rd th + th, .rd td + td { padding-left: 16px; }
-.rd tbody tr:last-child td { border-bottom: 0; }
+:where(.rd) th + th, :where(.rd) td + td { padding-left: 16px; }
+:where(.rd) tbody tr:last-child td { border-bottom: 0; }
 .rd footer.status { max-width: calc(var(--maxw) - 2 * var(--pad)); width: calc(100% - 2 * var(--pad)); margin: 0 auto; padding: 18px 0 40px; border-top: 1px solid var(--rule); display: flex; flex-wrap: wrap; gap: 8px 28px; font-size: 12.5px; color: var(--text-3); }
 .rd footer.status b { font-weight: 500; color: var(--text-2); }
 .rd .ok::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--pos); margin-right: 7px; vertical-align: 1px; }
@@ -95,7 +95,7 @@
   .rd .acct-btn { padding: 3px 6px 3px 3px; gap: 4px; border-color: var(--rule); }
   .rd .acct-menu { position: fixed; left: 12px; right: 12px; top: 58px; min-width: 0; }
   .rd .acct-menu a, .rd .acct-menu button { padding: 12px 10px; font-size: 15px; }
-  .rd main { padding-top: 18px; padding-bottom: 28px; }
+  :where(.rd) main { padding-top: 18px; padding-bottom: 28px; }
   .rd .page-head { display: contents; }
   .rd .page-head > div:first-child { margin-bottom: 12px; }
   .rd .page-head h1 { font-size: 24px; }
@@ -105,7 +105,7 @@
   .rd .seg-wrap .seg button { flex: 1; padding: 7px 4px; }
   .rd .card-ph { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 16px; }
   .rd .band { margin-top: 10px; padding-top: 0; border-top: 0; }
-  .rd section h2 { font-size: 15.5px; }
+  :where(.rd) section h2 { font-size: 15.5px; }
   .rd .sec-head { margin-bottom: 12px; }
   .rd footer.status { margin: 0 var(--pad); width: auto; border-top: 0; flex-direction: column; gap: 9px; padding: 6px 0 calc(96px + env(safe-area-inset-bottom)); font-size: 13px; }
   .rd footer.status > .ok:not(.sys-ph) { display: none; }

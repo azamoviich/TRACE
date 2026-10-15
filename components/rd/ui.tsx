@@ -114,7 +114,8 @@ export interface PeriodValue { range: TimeRange; custom: { from: string; to: str
 export const PeriodSeg: React.FC<{
   lang: Language; value: PeriodValue; onChange: (v: PeriodValue) => void;
   options?: { key: TimeRange; label: string }[];
-}> = ({ lang, value, onChange, options }) => {
+  allowCustom?: boolean;
+}> = ({ lang, value, onChange, options, allowCustom = true }) => {
   const today = tashkentDateStr();
   const opts = options ?? [
     { key: 'today' as TimeRange, label: tr(lang, 'Сегодня', 'Today', 'Bugun') },
@@ -142,9 +143,9 @@ export const PeriodSeg: React.FC<{
         {opts.map(o => (
           <button key={o.key} aria-pressed={value.range === o.key} onClick={() => { setOpen(false); onChange({ range: o.key, custom: null }); }}>{o.label}</button>
         ))}
-        <button aria-pressed={customOn} aria-haspopup="true" aria-expanded={open} onClick={() => setOpen(o => !o)}>
+        {allowCustom && <button aria-pressed={customOn} aria-haspopup="true" aria-expanded={open} onClick={() => setOpen(o => !o)}>
           {customOn && value.custom ? rangeLabel(value.custom.from, value.custom.to, lang) : tr(lang, 'Период…', 'Range…', 'Davr…')}
-        </button>
+        </button>}
       </div>
       {open && (
         <div className="pop right">
@@ -192,8 +193,10 @@ export interface LineChartProps {
   tip?: (v: number) => string;
   height?: number;
   bars?: boolean;
+  /** bars: highlight the last bar (forecast) in the accent colour */
+  accentLast?: boolean;
 }
-export const LineChart: React.FC<LineChartProps> = ({ labels, cur, base = [], curName, baseName, axis, tip, height, bars }) => {
+export const LineChart: React.FC<LineChartProps> = ({ labels, cur, base = [], curName, baseName, axis, tip, height, bars, accentLast }) => {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(800);
   const [hover, setHover] = useState<number | null>(null);
@@ -236,7 +239,7 @@ export const LineChart: React.FC<LineChartProps> = ({ labels, cur, base = [], cu
         {bars ? (
           <>
             {base.map((v, i) => v == null ? null : <rect key={'b' + i} x={x(i) - bw / 2 - 2} y={y(v)} width={bw / 2} height={Math.max(0, y(0) - y(v))} rx="2" fill="var(--rule-strong)" />)}
-            {cur.map((v, i) => v == null ? null : <rect key={'c' + i} x={x(i) - (base.length ? 0 : bw / 2)} y={y(v)} width={base.length ? bw / 2 : bw} height={Math.max(0, y(0) - y(v))} rx="2" fill={hover === i ? 'var(--accent)' : 'var(--text)'} opacity={hover === i ? 1 : .85} />)}
+            {cur.map((v, i) => v == null ? null : <rect key={'c' + i} x={x(i) - (base.length ? 0 : bw / 2)} y={y(v)} width={base.length ? bw / 2 : bw} height={Math.max(0, y(0) - y(v))} rx="2" fill={(accentLast && i === n - 1) || hover === i ? 'var(--accent)' : 'var(--rule-strong)'} opacity={hover === i && !(accentLast && i === n - 1) ? .8 : 1} />)}
           </>
         ) : (
           <>

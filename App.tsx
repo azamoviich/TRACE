@@ -561,7 +561,7 @@ export default function App() {
       case 'dashboard':   return <Dashboard key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} onOpenPlan={planAvailable && !hiddenPages.includes('plan') ? () => setCurrentView('plan') : undefined} onNavigate={setCurrentView} />;
       case 'sales':       return <Sales key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} />;
       case 'operations':  return <Operations key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} branches={branches} isAllBranches={activeBranchId === ALL_BRANCHES_ID} />;
-      case 'financial':   return <Financial key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} />;
+      case 'financial':   return <Financial key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} onNavigate={setCurrentView} />;
       case 'plan':        return <Plan key={branchKey} lang={lang} onShowToast={showToast} onContextReady={setAiContext} />;
       case 'reviews':     return <Reviews key={branchKey} lang={lang} onContextReady={setAiContext} />;
       case 'loyalty':     return <Loyalty key={branchKey} lang={lang} />;
@@ -597,7 +597,7 @@ export default function App() {
 
   // Redesigned pages render their own markup under .rd; the rest still use
   // Tailwind and sit in the same container with the new tokens.
-  const REDESIGNED: Partial<Record<ViewState, string>> = { dashboard: 'dash', sales: 'sales', operations: 'ops' };
+  const REDESIGNED: Partial<Record<ViewState, string>> = { dashboard: 'dash', sales: 'sales', operations: 'ops', financial: 'fin' };
   const rdPage = REDESIGNED[currentView];
 
   return (

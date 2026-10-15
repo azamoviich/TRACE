@@ -1,3 +1,4 @@
+// Отзывы — redesigned per TRACE-mockups/reviews.html (styles/rd/reviews.css).
 import React, { useState, useEffect, useRef } from 'react';
 import { Star, MessageSquare, RefreshCw, Sparkles, TrendingUp, Copy, Check, ClipboardList, QrCode, Calendar as CalendarIcon, X, ChevronDown, SlidersHorizontal } from 'lucide-react';
 import { Card } from '../ui/Card';
@@ -7,6 +8,7 @@ import { ShiftReports } from './ShiftReports';
 import { Waiters } from './Waiters';
 import { ProLock } from '../ui/ProLock';
 import { DateRangePicker } from '../ui/DateRangePicker';
+import { Skel, AiMeta, Pop, Opt } from '../rd/ui';
 
 const BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -222,378 +224,172 @@ export const Reviews: React.FC<{ lang: Language; onContextReady?: (ctx: string) 
   const hasActiveFilters = filter !== 'all' || sentimentFilter !== 'all' || dateRange !== null || sortMode !== 'newest';
   const resetFilters = () => { setFilter('all'); setSentimentFilter('all'); setDateRange(null); setSortMode('newest'); };
 
+  const negCount = reviews.filter(r => r.sentiment === 'negative').length;
+  const ratingDist = [5, 4, 3, 2, 1].map(s => [s, allReviews.filter(r => r.rating === s).length] as const);
+  const maxDist = Math.max(1, ...ratingDist.map(d => d[1]));
+  const platStats = platforms.map(p => {
+    const list = allReviews.filter(r => r.platform === p);
+    const rated = list.filter(r => r.rating != null);
+    return { p, n: list.length, avg: rated.length ? rated.reduce((s, r) => s + (r.rating ?? 0), 0) / rated.length : null };
+  }).sort((a, b) => b.n - a.n);
+  const maxPlat = Math.max(1, ...platStats.map(p => p.n));
+  const sentCount = (k: 'all' | 'positive' | 'negative' | 'neutral') => reviews.filter(r => k === 'all' || r.sentiment === k).length;
+  const lastDays = dateRange ? Math.round((Date.now() - Date.parse(dateRange.from)) / 86400000) : 0;
+  const setDays = (d: number) => {
+    if (!d) { setDateRange(null); return; }
+    const to = new Date().toISOString().slice(0, 10);
+    const from = new Date(Date.now() - (d - 1) * 86400000).toISOString().slice(0, 10);
+    setDateRange({ from, to });
+  };
+  const ago = (iso: string) => {
+    const d = Math.floor((Date.now() - Date.parse(iso)) / 86400000);
+    if (!isFinite(d)) return iso;
+    return d <= 0 ? (ru ? 'сегодня' : isUz ? 'bugun' : 'today') : d === 1 ? (ru ? 'вчера' : isUz ? 'kecha' : 'yesterday') : d < 30 ? (ru ? `${d} дн. назад` : isUz ? `${d} kun oldin` : `${d} days ago`) : new Date(iso).toLocaleDateString(ru ? 'ru-RU' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+  const Stars = ({ r }: { r: number | null }) => r ? (
+    <span className="stars" aria-label={`${r} / 5`}>{[1, 2, 3, 4, 5].map(i => <i key={i} className={`${i <= r ? 'ph-fill' : 'ph'} ph-star`} aria-hidden="true" />)}<b>{r}</b></span>
+  ) : <span className="stars faint">—</span>;
+  const tabs: { id: typeof mainTab; label: string; n?: string }[] = [
+    { id: 'reviews', label: ru ? 'Отзывы гостей' : isUz ? 'Mehmonlar sharhlari' : 'Guest reviews', n: negCount ? (ru ? `${negCount} негативных` : isUz ? `${negCount} salbiy` : `${negCount} negative`) : undefined },
+    { id: 'shifts', label: ru ? 'Отчёты смен' : isUz ? 'Smena hisobotlari' : 'Shift reports' },
+    { id: 'waiters', label: ru ? 'QR официантов' : isUz ? 'Ofitsiant QR' : 'Waiter QR' },
+  ];
+  const T = (a: string, b: string, c: string) => ru ? a : isUz ? c : b;
+  const trendsState = trendsLoading ? 'loading' : trends ? 'done' : 'empty';
+
   return (
-    <div className="space-y-5 pb-24 animate-fade-in">
+    <>
+      <div className="page-head rise">
+        <div>
+          <h1>{T('Отзывы', 'Reviews', 'Sharhlar')}</h1>
+          <div className="sub">{T('Google, Яндекс Карты, 2ГИС и TripAdvisor, собираем каждый день.', 'Google, Yandex Maps, 2GIS and TripAdvisor, collected daily.', "Google, Yandex Xaritalar, 2GIS va TripAdvisor, har kuni yig'iladi.")}
+            {' '}<button className="link" type="button" onClick={load}>{loading ? T('Обновляем…', 'Refreshing…', 'Yangilanmoqda…') : T('Обновить', 'Refresh', 'Yangilash')}</button></div>
+        </div>
+      </div>
 
-      {/* Benedict: tab switcher */}
       {isBenedict && (
-        <div className="flex gap-2">
-          <button
-            onClick={() => setMainTab('reviews')}
-            className={`px-3 py-2 text-[13px] rounded-lg transition-colors font-medium flex items-center gap-1.5 ${mainTab === 'reviews' ? 'bg-primary text-white' : 'bg-card border border-border text-muted hover:text-text'}`}
-          >
-            <MessageSquare size={13} />
-            {ru ? 'Отзывы гостей' : isUz ? 'Mehmonlar sharhlari' : 'Guest Reviews'}
-          </button>
-          <button
-            onClick={() => setMainTab('shifts')}
-            className={`px-3 py-2 text-[13px] rounded-lg transition-colors font-medium flex items-center gap-1.5 ${mainTab === 'shifts' ? 'bg-primary text-white' : 'bg-card border border-border text-muted hover:text-text'}`}
-          >
-            <ClipboardList size={13} />
-            {ru ? 'Отчёты смен' : isUz ? 'Smena hisobotlari' : 'Shift Reports'}
-          </button>
-          <button
-            onClick={() => setMainTab('waiters')}
-            className={`px-3 py-2 text-[13px] rounded-lg transition-colors font-medium flex items-center gap-1.5 ${mainTab === 'waiters' ? 'bg-primary text-white' : 'bg-card border border-border text-muted hover:text-text'}`}
-          >
-            <QrCode size={13} />
-            {ru ? 'QR официантов' : isUz ? 'Ofitsiant QR' : 'Waiter QR'}
-          </button>
-        </div>
+        <nav className="tabs rise" role="tablist" aria-label={T('Разделы', 'Sections', "Bo'limlar")} style={{ animationDelay: '.04s' }}>
+          {tabs.map(t => <button key={t.id} role="tab" aria-selected={mainTab === t.id} onClick={() => setMainTab(t.id)}>{t.label}{t.n && <span className="n">{t.n}</span>}</button>)}
+        </nav>
       )}
 
-      {/* Shift reports panel (Benedict only) */}
-      {isBenedict && mainTab === 'shifts' && <ShiftReports lang={lang} />}
+      {isBenedict && mainTab === 'shifts' && <div className="pane rise rd-legacy-pane"><ShiftReports lang={lang} /></div>}
+      {isBenedict && mainTab === 'waiters' && <div className="pane rise rd-legacy-pane"><Waiters lang={lang} /></div>}
 
-      {/* Waiter QR codes panel (Benedict only) */}
-      {isBenedict && mainTab === 'waiters' && <Waiters lang={lang} />}
-
-      {/* Guest reviews — hidden when shift/waiters tab active */}
-      {(!isBenedict || mainTab === 'reviews') && <>
-
-      {/* ── REVIEW TREND ANALYSIS ── */}
-      {getTenantPlan() === 'base' ? (
-        <ProLock
-          lang={lang}
-          title={ru ? 'Тренды отзывов' : isUz ? 'Sharhlar tendensiyasi' : 'Review trends'}
-          description={ru ? 'AI-анализ динамики отзывов, тональности и ключевых жалоб' : isUz ? 'Sharhlar dinamikasi, tonal\'ligi va asosiy shikoyatlarning AI tahlili' : 'AI analysis of review dynamics, sentiment, and top complaints'}
-        />
-      ) : (
-      <Card>
-        <div className="flex items-center justify-between mb-1">
-          <div className="flex items-center gap-2">
-            <TrendingUp size={13} className="text-primary" />
-            <p className="text-[13px] text-muted font-medium">
-              {ru ? 'Тренды отзывов' : isUz ? 'Sharhlar tendensiyasi' : 'Review trends'}
-            </p>
-          </div>
-          <button onClick={loadTrends} disabled={trendsLoading} className="text-[13px] font-medium text-primary border border-primary/30 rounded-lg px-3 py-2 hover:bg-primary/10 transition-colors disabled:opacity-50">
-            {trendsLoading ? (ru ? 'Анализ...' : isUz ? 'Tahlil...' : 'Analyzing...') : trends ? (ru ? 'Обновить' : isUz ? 'Yangilash' : 'Refresh') : (ru ? 'Анализировать' : isUz ? 'Tahlil qilish' : 'Analyze')}
-          </button>
-        </div>
-        {!trends && !trendsLoading && !trendsError && <p className="text-[13px] text-muted/50 mt-2">{ru ? 'Находит изменения в тональности и темах за 8 недель.' : isUz ? "8 hafta ichidagi kayfiyat va mavzu o'zgarishlarini topadi." : 'Finds sentiment and topic shifts over 8 weeks.'}</p>}
-        {trendsError && !trendsLoading && <p className="text-[13px] text-danger mt-2">{ru ? 'Не удалось получить анализ. Попробуйте позже.' : isUz ? "Tahlil olib bo'lmadi. Keyinroq urining." : 'Could not load analysis. Try again later.'}</p>}
-        {trendsLoading && <div className="mt-3 space-y-2">{[70,50,60].map(w=><div key={w} className="h-3 bg-border/60 rounded animate-pulse" style={{width:`${w}%`}}/>)}</div>}
-        {trends && !trendsLoading && (
-          <div className="mt-3">
-            {trends.alertLevel === 'high' && <p className="text-[13px] text-danger font-semibold mb-2">{ru ? 'Тревожный сигнал' : isUz ? 'Ogohlantirish signali' : 'Alert signal'}</p>}
-            {trends.summary && <p className="text-[13px] text-muted leading-relaxed mb-3">{trends.summary}</p>}
-            <div className="space-y-1.5">
-              {trends.trends?.map((t, i) => (
-                <div key={i} className="flex items-center justify-between gap-3">
-                  <p className="text-[13px] text-text">{t.topic}</p>
-                  <div className="flex items-center gap-2">
-                    <span className={`text-[12px] font-semibold ${t.pctChange > 0 ? 'text-danger' : 'text-success'}`}>
-                      {t.pctChange > 0 ? '+' : ''}{t.pctChange}%
-                    </span>
-                    <span className="text-[12px] text-muted/60">{t.change}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </Card>
-      )}
-
-      {/* Stats strip — clickable, each card filters/sorts the list below */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-border rounded-md overflow-hidden">
-        {[
-          {
-            value: stats?.avg_rating ? stats.avg_rating.toFixed(1) : '—',
-            label: ru ? 'Средняя оценка' : isUz ? "O'rtacha baho" : 'Avg rating',
-            sub: stats?.avg_rating ? '★★★★★'.slice(0, Math.round(stats.avg_rating)) : '',
-            subClass: 'text-yellow-400 text-[13px]',
-            active: sortMode === 'rating_desc',
-            onClick: () => setSortMode(m => m === 'rating_desc' ? 'newest' : 'rating_desc'),
-          },
-          {
-            value: stats ? stats.total.toLocaleString() : '—',
-            label: ru ? 'Всего отзывов' : isUz ? 'Jami sharhlar' : 'Total reviews',
-            sub: stats ? `+${stats.this_week} ${ru ? 'эта неделя' : isUz ? 'shu hafta' : 'this week'}` : '',
-            subClass: 'text-primary text-[13px]',
-            active: hasActiveFilters,
-            onClick: resetFilters,
-          },
-          {
-            value: stats ? `${stats.positive_pct}%` : '—',
-            label: ru ? 'Позитивных' : isUz ? 'Ijobiy' : 'Positive',
-            sub: ru ? 'настроение' : isUz ? 'kayfiyat' : 'sentiment',
-            subClass: 'text-success text-[13px]',
-            active: sentimentFilter === 'positive',
-            onClick: () => setSentimentFilter(f => f === 'positive' ? 'all' : 'positive'),
-          },
-          {
-            value: reviews.filter(r => r.sentiment === 'negative').length.toString(),
-            label: ru ? 'Негативных' : isUz ? 'Salbiy' : 'Negative',
-            sub: ru ? 'требуют ответа' : isUz ? 'javob talab qiladi' : 'need reply',
-            subClass: 'text-danger text-[13px]',
-            active: sentimentFilter === 'negative',
-            onClick: () => setSentimentFilter(f => f === 'negative' ? 'all' : 'negative'),
-          },
-        ].map((s, i) => (
-          <button
-            key={i}
-            onClick={s.onClick}
-            className={`text-left bg-card p-5 stagger-item transition-colors hover:bg-card-hover ${s.active ? 'ring-1 ring-inset ring-primary bg-primary/5' : ''}`}
-            style={{ animationDelay: `${i * 55}ms` }}
-          >
-            <p className="metric-number text-[28px] font-bold text-text leading-none">{s.value}</p>
-            <p className="text-[13px] text-muted mt-2 mb-1">{s.label}</p>
-            <p className={s.subClass}>{s.sub}</p>
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-[13px] font-semibold text-text">
-              {ru ? 'Отзывы' : isUz ? 'Sharhlar' : 'Reviews'}
-              {filtered.length > 0 && <span className="text-muted font-normal ml-2">({filtered.length})</span>}
-            </h3>
-            <button onClick={load} className="text-muted hover:text-text transition-colors p-1.5 -mr-1.5 rounded-md hover:bg-card-hover">
-              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+      {(!isBenedict || mainTab === 'reviews') && (
+        <div className="pane rise" role="tabpanel" style={{ animationDelay: '.08s' }}>
+          <section className="strip" aria-label={T('Итоги отзывов', 'Review totals', 'Sharhlar yakuni')}>
+            <button type="button" aria-pressed={sortMode === 'rating_asc'} onClick={() => setSortMode(m => m === 'rating_asc' ? 'newest' : 'rating_asc')}>
+              <div className="s-l">{T('Средняя оценка', 'Average rating', "O'rtacha baho")}<span className="hint">{T('сначала низкие', 'lowest first', 'avval past')}</span></div>
+              <div className="s-v">{stats?.avg_rating ? stats.avg_rating.toFixed(1).replace('.', ',') : '—'}<small>{T('из 5', 'of 5', '5 dan')}</small></div>
+              <div className="s-d">{T('по всем площадкам', 'across all platforms', 'barcha platformalar')}</div>
             </button>
+            <button type="button" aria-pressed={false} onClick={resetFilters}>
+              <div className="s-l">{T('Всего отзывов', 'Total reviews', 'Jami sharhlar')}{hasActiveFilters && <span className="hint">{T('сбросить', 'reset', 'tozalash')}</span>}</div>
+              <div className="s-v">{stats ? stats.total.toLocaleString('ru-RU') : '—'}</div>
+              <div className="s-d">{stats ? T(`+${stats.this_week} за эту неделю`, `+${stats.this_week} this week`, `shu hafta +${stats.this_week}`) : ''}</div>
+            </button>
+            <button type="button" aria-pressed={sentimentFilter === 'positive'} onClick={() => setSentimentFilter(f => f === 'positive' ? 'all' : 'positive')}>
+              <div className="s-l">{T('Позитивных', 'Positive', 'Ijobiy')}<span className="hint">{T('показать', 'show', "ko'rsatish")}</span></div>
+              <div className="s-v">{stats ? stats.positive_pct : '—'}<small>%</small></div>
+              <div className="s-d">{T('по тону текста', 'by the tone of text', 'matn ohangi')}</div>
+            </button>
+            <button type="button" aria-pressed={sentimentFilter === 'negative'} onClick={() => setSentimentFilter(f => f === 'negative' ? 'all' : 'negative')}>
+              <div className="s-l">{T('Негативных', 'Negative', 'Salbiy')}<span className="hint">{T('показать', 'show', "ko'rsatish")}</span></div>
+              <div className="s-v neg">{negCount}</div>
+              <div className="s-d">{T('стоит ответить', 'worth replying to', 'javob berish kerak')}</div>
+            </button>
+          </section>
+
+          {getTenantPlan() === 'base' ? (
+            <section className="ai"><div className="ai-head"><h2>{T('Тренды отзывов', 'Review trends', 'Sharhlar tendensiyasi')}</h2></div>
+              <p className="ai-desc"><i className="ph ph-lock-simple" aria-hidden="true" /> {T('Доступно в тарифе Pro: что изменилось в тоне и темах отзывов за 8 недель.', 'Available on Pro: what changed in review tone and topics over 8 weeks.', "Pro tarifida: 8 haftadagi o'zgarishlar.")}</p></section>
+          ) : (
+            <section className="ai" data-state={trendsState} aria-labelledby="h-tr">
+              <div className="ai-head"><h2 id="h-tr">{T('Тренды отзывов', 'Review trends', 'Sharhlar tendensiyasi')}</h2>{trendsState === 'done' && <AiMeta lang={lang} onRerun={loadTrends} />}</div>
+              {trendsState === 'empty' && <div className="st-empty"><p className="ai-desc">{T('Что изменилось в тоне и темах отзывов за 8 недель: о чём стали писать чаще, что ушло.', 'What changed in review tone and topics over 8 weeks: what people write about more, what faded.', "8 hafta ichida sharhlar ohangi va mavzularida nima o'zgardi.")}{trendsError && <span className="rd-err" style={{ display: 'block' }}>{T('Не получилось. Попробуйте позже.', "Didn't work. Try later.", "Bo'lmadi. Keyinroq urinib ko'ring.")}</span>}</p>
+                <button className="btn solid" type="button" onClick={loadTrends}><i className="ph ph-sparkle" aria-hidden="true" />{T('Найти тренды', 'Find trends', 'Tendensiyalarni topish')}</button></div>}
+              {trendsState === 'loading' && <div className="st-loading" aria-live="polite"><p className="ai-wait">{T(`Читаем отзывы за 8 недель…`, 'Reading 8 weeks of reviews…', "8 haftalik sharhlarni o'qiyapmiz…")}</p><Skel lines={['w9', 'w7', 'w5']} /></div>}
+              {trendsState === 'done' && trends && <div className="st-done">
+                {trends.alertLevel === 'high' && <p className="alarm"><i className="ph ph-warning" aria-hidden="true" />{T('Тревожный сигнал', 'Warning sign', 'Ogohlantirish')}</p>}
+                {trends.summary && <p className="sum">{trends.summary}</p>}
+                {!!trends.trends?.length && <ul className="topics">{trends.trends.map((t, i) => (
+                  <li key={i}><span>{t.topic}</span><span className={`ch ${t.pctChange > 0 ? 'neg' : 'pos'}`}>{t.pctChange > 0 ? '+' : ''}{t.pctChange}%</span><small>{t.change}</small></li>
+                ))}</ul>}
+              </div>}
+            </section>
+          )}
+
+          <div className="rv-grid">
+            <section aria-labelledby="h-rv">
+              <div className="sec-head" style={{ marginBottom: 12 }}><h2 id="h-rv">{T('Отзывы', 'Reviews', 'Sharhlar')}</h2><span className="sec-note">{T(`Показано ${filtered.length}`, `Showing ${filtered.length}`, `${filtered.length} ta`)}{filter !== 'all' ? `, ${filter}` : ''}</span></div>
+              <div className="tools">
+                <div className="seg-scroll"><div className="seg small" role="group" aria-label={T('Тон', 'Tone', 'Ohang')}>
+                  {([['all', T('Все', 'All', 'Barchasi')], ['positive', T('Позитивные', 'Positive', 'Ijobiy')], ['negative', T('Негативные', 'Negative', 'Salbiy')], ['neutral', T('Нейтральные', 'Neutral', 'Neytral')]] as const).map(([k, l]) => (
+                    <button key={k} aria-pressed={sentimentFilter === k} onClick={() => setSentimentFilter(k)}>{l}<span className="n">{sentCount(k)}</span></button>
+                  ))}
+                </div></div>
+                <span className="spacer" />
+                <span className="sel"><select value={sortMode} onChange={e => setSortMode(e.target.value as typeof sortMode)} aria-label={T('Сортировка', 'Sort', 'Saralash')}>
+                  <option value="newest">{T('Сначала новые', 'Newest first', 'Avval yangi')}</option>
+                  <option value="oldest">{T('Сначала старые', 'Oldest first', 'Avval eski')}</option>
+                  <option value="rating_desc">{T('Сначала высокие оценки', 'Highest rating first', 'Avval yuqori baho')}</option>
+                  <option value="rating_asc">{T('Сначала низкие оценки', 'Lowest rating first', 'Avval past baho')}</option>
+                </select><i className="ph ph-caret-down chev" aria-hidden="true" /></span>
+                <Pop right btnClass="btn" label={<><i className="ph ph-calendar-blank" aria-hidden="true" /><span>{!dateRange ? T('Любая дата', 'Any date', 'Istalgan sana') : lastDays <= 8 ? T('За 7 дней', 'Last 7 days', '7 kun') : lastDays <= 31 ? T('За 30 дней', 'Last 30 days', '30 kun') : T('За 3 месяца', 'Last 3 months', '3 oy')}</span></>}>
+                  {close => <>
+                    <div className="pop-title">{T('Показать отзывы', 'Show reviews', "Sharhlarni ko'rsatish")}</div>
+                    {([[0, T('За всё время', 'All time', 'Butun vaqt')], [7, T('За 7 дней', 'Last 7 days', '7 kun')], [30, T('За 30 дней', 'Last 30 days', '30 kun')], [90, T('За 3 месяца', 'Last 3 months', '3 oy')]] as const).map(([d, l]) => (
+                      <Opt key={d} checked={d === 0 ? !dateRange : !!dateRange && Math.abs(lastDays - (d - 1)) <= 1} onClick={() => { setDays(d); close(); }}>{l}</Opt>
+                    ))}
+                  </>}
+                </Pop>
+              </div>
+              {loading && <Skel lines={['w9', 'w7', 'w9', 'w5', 'w9', 'w7']} />}
+              {!loading && error && <p className="rd-err">{error}</p>}
+              {!loading && !error && filtered.length === 0 && <p className="empty">{T('Нет отзывов под эти фильтры', 'No reviews match these filters', "Bu filtrlarga sharh yo'q")}</p>}
+              {!loading && filtered.map(review => {
+                const rep = replyMap[review.id];
+                const st = rep?.loading ? 'loading' : rep?.text ? 'done' : 'empty';
+                return (
+                  <article className="rv" key={review.id}>
+                    <div className="rv-top"><span className="ava" aria-hidden="true">{review.author[0]?.toUpperCase()}</span>
+                      <div className="rv-who"><b>{review.author}</b><div className="meta">{[review.platform, ago(review.date || review.created_at), review.branch].filter(Boolean).join(', ')}</div></div>
+                      <Stars r={review.rating} /></div>
+                    <p className="txt">{review.text}</p>
+                    <div className="reply" data-state={st}>
+                      <div className="rv-foot" style={{ marginLeft: 0 }}>
+                        <span className={`sent ${review.sentiment === 'positive' ? 'p' : review.sentiment === 'negative' ? 'n' : ''}`}>{review.sentiment === 'positive' ? T('Позитивный', 'Positive', 'Ijobiy') : review.sentiment === 'negative' ? T('Негативный', 'Negative', 'Salbiy') : T('Нейтральный', 'Neutral', 'Neytral')}</span>
+                        {st === 'empty' && <button className="tlink" type="button" style={{ margin: 0 }} onClick={() => generateReply(review)}><i className="ph ph-sparkle" aria-hidden="true" />{T('Написать ответ', 'Draft a reply', 'Javob yozish')}</button>}
+                      </div>
+                      {st === 'loading' && <div className="st-loading"><p className="ai-wait">{T('Пишем ответ от имени ресторана…', 'Writing a reply on behalf of the restaurant…', 'Restoran nomidan javob yozyapmiz…')}</p><Skel lines={['w9', 'w7']} /></div>}
+                      {st === 'done' && <div className="st-done"><p>{rep!.text}</p>
+                        <div className="r-acts"><span className="faint">{T('Черновик, проверьте перед отправкой', 'Draft, check before sending', 'Qoralama, yuborishdan oldin tekshiring')}</span>
+                          <button className="tlink" type="button" onClick={() => copyReply(review.id, rep!.text)}><i className={`ph ${rep!.copied ? 'ph-check' : 'ph-copy'}`} aria-hidden="true" />{rep!.copied ? T('Скопировано', 'Copied', 'Nusxalandi') : T('Копировать', 'Copy', 'Nusxalash')}</button>
+                          <button className="tlink" type="button" onClick={() => generateReply(review)}>{T('Другой вариант', 'Another version', 'Boshqa variant')}</button></div></div>}
+                    </div>
+                  </article>
+                );
+              })}
+            </section>
+            <aside className="side">
+              <section className="card-ph" aria-labelledby="h-pl"><h3 id="h-pl">{T('По площадкам', 'By platform', "Platformalar bo'yicha")}</h3>
+                {platStats.length === 0 ? <p className="rd-empty">{T('Нет данных', 'No data', "Ma'lumot yo'q")}</p> : <ul className="plat">
+                  <li><button type="button" aria-pressed={filter === 'all'} onClick={() => setFilter('all')}><span className="nm">{T('Все площадки', 'All platforms', 'Barcha platformalar')}</span><span>{stats?.avg_rating ? stats.avg_rating.toFixed(1).replace('.', ',') : ''}</span><span className="sub2">{allReviews.length} {T('отзывов', 'reviews', 'sharh')}</span><span /></button></li>
+                  {platStats.map(p => (
+                    <li key={p.p}><button type="button" aria-pressed={filter === p.p} onClick={() => setFilter(p.p)}><span className="nm">{p.p}</span><span>{p.avg != null ? p.avg.toFixed(1).replace('.', ',') : ''}</span><span className="sub2">{p.n} {T('отзывов', 'reviews', 'sharh')}</span><span /><span className="bar"><i style={{ width: `${p.n / maxPlat * 100}%` }} /></span></button></li>
+                  ))}
+                </ul>}
+              </section>
+              <section className="card-ph" aria-labelledby="h-ds"><h3 id="h-ds">{T('Оценки', 'Ratings', 'Baholar')}</h3>
+                <ul className="dist">{ratingDist.map(([s, n]) => (
+                  <li key={s}><span>{s}<i className="ph-fill ph-star" style={{ fontSize: 11, marginLeft: 2 }} aria-hidden="true" /></span><span className="bar"><i style={{ width: `${n / maxDist * 100}%` }} /></span><span className="c">{n}</span></li>
+                ))}</ul>
+              </section>
+            </aside>
           </div>
-
-          {/* Filter toolbar */}
-          <Card className="!p-3 space-y-2.5">
-            {/* Platform segmented control */}
-            <div className="flex gap-1 p-0.5 bg-background rounded-lg overflow-x-auto">
-              <button
-                onClick={() => setFilter('all')}
-                className={`px-3 h-7 text-[12px] font-medium rounded-md transition-colors whitespace-nowrap ${filter === 'all' ? 'bg-primary text-white shadow-sm' : 'text-muted hover:text-text hover:bg-card-hover'}`}
-              >
-                {ru ? 'Все платформы' : isUz ? 'Barcha platformalar' : 'All platforms'}
-              </button>
-              {platforms.map(p => (
-                <button
-                  key={p}
-                  onClick={() => setFilter(p)}
-                  className={`px-3 h-7 text-[12px] font-medium rounded-md transition-colors whitespace-nowrap ${filter === p ? 'bg-primary text-white shadow-sm' : 'text-muted hover:text-text hover:bg-card-hover'}`}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-
-            {/* Sentiment + sort + date row */}
-            <div className="flex items-center gap-2 flex-wrap pt-0.5 border-t border-border/60">
-              <div className="flex items-center gap-1.5 text-muted/60 pl-0.5 pt-2.5">
-                <SlidersHorizontal size={11} />
-              </div>
-              <div className="flex gap-1 p-0.5 bg-background rounded-lg mt-2.5">
-                {([
-                  ['all', ru ? 'Все' : isUz ? 'Barchasi' : 'All'],
-                  ['positive', ru ? 'Позитивные' : isUz ? 'Ijobiy' : 'Positive'],
-                  ['negative', ru ? 'Негативные' : isUz ? 'Salbiy' : 'Negative'],
-                  ['neutral', ru ? 'Нейтральные' : isUz ? 'Neytral' : 'Neutral'],
-                ] as const).map(([key, label]) => (
-                  <button
-                    key={key}
-                    onClick={() => setSentimentFilter(key)}
-                    className={`px-2.5 h-7 text-[12px] font-medium rounded-md transition-colors whitespace-nowrap ${
-                      sentimentFilter === key
-                        ? key === 'positive' ? 'bg-success/15 text-success' : key === 'negative' ? 'bg-danger/15 text-danger' : 'bg-primary text-white'
-                        : 'text-muted hover:text-text hover:bg-card-hover'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="w-px h-6 bg-border mt-2.5" />
-
-              <div className="relative mt-2.5">
-                <select
-                  value={sortMode}
-                  onChange={e => setSortMode(e.target.value as typeof sortMode)}
-                  className="appearance-none pl-2.5 pr-7 h-7 text-[12px] font-medium rounded-md bg-background text-muted hover:text-text border border-transparent hover:border-border transition-colors cursor-pointer focus:outline-none focus:border-primary/40"
-                >
-                  <option value="newest">{ru ? 'Сначала новые' : isUz ? 'Avval yangi' : 'Newest first'}</option>
-                  <option value="oldest">{ru ? 'Сначала старые' : isUz ? 'Avval eski' : 'Oldest first'}</option>
-                  <option value="rating_desc">{ru ? 'Рейтинг ↓' : isUz ? 'Reyting ↓' : 'Rating ↓'}</option>
-                  <option value="rating_asc">{ru ? 'Рейтинг ↑' : isUz ? 'Reyting ↑' : 'Rating ↑'}</option>
-                </select>
-                <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted/60" />
-              </div>
-
-              <button
-                ref={calendarBtnRef}
-                onClick={() => setCalendarOpen(o => !o)}
-                className={`flex items-center gap-1.5 px-2.5 h-7 text-[12px] font-medium rounded-md border transition-colors mt-2.5 ${
-                  dateRange ? 'border-primary/40 text-primary bg-primary/5' : 'border-transparent text-muted hover:text-text hover:border-border bg-background'
-                }`}
-              >
-                <CalendarIcon size={12} />
-                {dateRange ? `${dateRange.from.slice(5)} – ${dateRange.to.slice(5)}` : (ru ? 'Дата' : isUz ? 'Sana' : 'Date')}
-              </button>
-              <DateRangePicker
-                lang={lang}
-                value={dateRange}
-                isOpen={calendarOpen}
-                onClose={() => setCalendarOpen(false)}
-                anchorRef={calendarBtnRef}
-                onApply={r => { setDateRange(r); setCalendarOpen(false); }}
-                onClear={() => { setDateRange(null); setCalendarOpen(false); }}
-              />
-
-              {hasActiveFilters && (
-                <button
-                  onClick={resetFilters}
-                  className="flex items-center gap-1 px-2 h-7 text-[12px] font-medium rounded-md text-muted hover:text-danger hover:bg-danger/10 transition-colors mt-2.5 ml-auto"
-                >
-                  <X size={12} />
-                  {ru ? 'Сбросить' : isUz ? 'Tozalash' : 'Clear'}
-                </button>
-              )}
-            </div>
-          </Card>
-
-          {loading && (
-            <div className="space-y-3">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="glass rounded-3xl p-5 animate-pulse">
-                  <div className="flex gap-3 mb-3">
-                    <div className="w-8 h-8 rounded-full bg-card-hover" />
-                    <div className="flex-1">
-                      <div className="h-3 bg-card-hover rounded w-32 mb-2" />
-                      <div className="h-2.5 bg-card-hover rounded w-20" />
-                    </div>
-                  </div>
-                  <div className="h-3 bg-card-hover rounded w-full mb-1.5" />
-                  <div className="h-3 bg-card-hover rounded w-3/4" />
-                </div>
-              ))}
-            </div>
-          )}
-
-          {!loading && error && (
-            <div className="bg-danger/5 border border-danger/20 rounded-md p-5 text-[13px] text-danger">{error}</div>
-          )}
-
-          {!loading && !error && filtered.length === 0 && (
-            <div className="glass rounded-3xl p-10 text-center text-muted text-[13px]">
-              {ru ? 'Отзывов пока нет' : isUz ? "Hozircha sharhlar yo'q" : 'No reviews yet'}
-            </div>
-          )}
-
-          {!loading && filtered.map((review, i) => (
-            <Card
-              key={review.id}
-              className="stagger-item hover:border-primary/20 transition-colors"
-              style={{ animationDelay: `${i * 40 + 100}ms` } as React.CSSProperties}
-            >
-              <div className="flex justify-between items-start mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-card-hover border border-border flex items-center justify-center font-semibold text-[13px] text-text flex-shrink-0">
-                    {review.author[0]?.toUpperCase()}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h4 className="text-[14px] font-semibold text-text">{review.author}</h4>
-                      <span className={`text-[12px] font-bold ${PLATFORM_COLORS[review.platform] ?? 'text-muted'}`}>
-                        {review.platform}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <p className="text-[12px] text-muted">{review.date}</p>
-                      {review.branch && (
-                        <p className="text-[12px] text-muted">· {review.branch}</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 bg-card-hover border border-border px-2 py-1 rounded-lg">
-                  <StarRating rating={review.rating} />
-                  {review.rating && (
-                    <span className="metric-number text-[13px] font-bold text-text ml-0.5">{review.rating}</span>
-                  )}
-                </div>
-              </div>
-
-              <p className="text-[14px] text-text leading-relaxed mb-3">{review.text}</p>
-
-              <div className="flex justify-between items-center pt-3 border-t border-border">
-                <span className={`text-[12px] font-medium px-2 py-0.5 rounded-[3px] ${
-                  review.sentiment === 'positive' ? 'text-success bg-success/10'
-                  : review.sentiment === 'negative' ? 'text-danger bg-danger/10'
-                  : 'text-muted bg-card-hover'
-                }`}>
-                  {review.sentiment === 'positive' ? (ru ? 'Позитивный' : isUz ? 'Ijobiy' : 'Positive')
-                  : review.sentiment === 'negative' ? (ru ? 'Негативный' : isUz ? 'Salbiy' : 'Negative')
-                  : (ru ? 'Нейтральный' : isUz ? "Neytral" : 'Neutral')}
-                </span>
-                <button
-                  onClick={() => generateReply(review)}
-                  disabled={replyMap[review.id]?.loading}
-                  className="text-[12px] text-primary hover:text-primary-hover font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
-                >
-                  <Sparkles size={12} />
-                  {replyMap[review.id]?.loading ? (ru ? 'Генерация...' : isUz ? 'Yaratilmoqda...' : 'Generating...') : (ru ? 'AI ответ' : isUz ? 'AI javob' : 'AI reply')}
-                </button>
-              </div>
-              {replyMap[review.id]?.text && (
-                <div className="mt-2 pt-3 border-t border-border">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-[12px] text-muted leading-relaxed flex-1">{replyMap[review.id].text}</p>
-                    <button
-                      onClick={() => copyReply(review.id, replyMap[review.id].text)}
-                      className="text-muted hover:text-primary transition-colors flex-shrink-0 mt-0.5"
-                    >
-                      {replyMap[review.id].copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </Card>
-          ))}
         </div>
-
-        {/* Sidebar: platform breakdown */}
-        <div className="space-y-3">
-          <h3 className="text-[13px] font-semibold text-text">{ru ? 'По платформам' : isUz ? 'Platformalar bo\'yicha' : 'By platform'}</h3>
-          <Card>
-            {platforms.length === 0 && !loading && (
-              <p className="text-muted text-[13px]">{ru ? 'Нет данных' : isUz ? "Ma'lumot yo'q" : 'No data'}</p>
-            )}
-            {platforms.map(p => {
-              const count = allReviews.filter(r => r.platform === p).length;
-              const pct = allReviews.length > 0 ? Math.round(count / allReviews.length * 100) : 0;
-              const ratedForP = allReviews.filter(r => r.platform === p && r.rating != null);
-              const avgR = ratedForP.length > 0 ? ratedForP.reduce((s, r) => s + (r.rating ?? 0), 0) / ratedForP.length : null;
-              return (
-                <div key={p} className="flex items-center justify-between py-2.5 border-b border-border last:border-0">
-                  <div>
-                    <p className={`text-[13px] font-semibold ${PLATFORM_COLORS[p] ?? 'text-text'}`}>{p}</p>
-                    <p className="text-[12px] text-muted">{count} {ru ? 'отзывов' : isUz ? 'sharh' : 'reviews'}{avgR != null ? ` · ${avgR.toFixed(1)}` : ''}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[13px] font-bold text-text">{pct}%</p>
-                    <div className="w-16 h-1 bg-border rounded-full mt-1">
-                      <div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </Card>
-        </div>
-      </div>
-
-      </> /* end guest reviews fragment */}
-    </div>
+      )}
+    </>
   );
 };

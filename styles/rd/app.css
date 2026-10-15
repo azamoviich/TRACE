@@ -63,3 +63,4 @@ input, textarea, select { font-size: max(16px, 1em); }
 
 /* Leaflet inside the mockup's .map box: undo the mockup's SVG sizing */
 .rd .rd-leaflet .leaflet-attribution-flag { display: none !important; }
+.rd-reviews .stars .ph-fill.ph-star { color: var(--text); }

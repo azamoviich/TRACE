@@ -597,7 +597,7 @@ export default function App() {
 
   // Redesigned pages render their own markup under .rd; the rest still use
   // Tailwind and sit in the same container with the new tokens.
-  const REDESIGNED: Partial<Record<ViewState, string>> = { dashboard: 'dash', sales: 'sales', operations: 'ops', financial: 'fin', employees: 'staff', plan: 'plan' };
+  const REDESIGNED: Partial<Record<ViewState, string>> = { dashboard: 'dash', sales: 'sales', operations: 'ops', financial: 'fin', employees: 'staff', plan: 'plan', reviews: 'reviews' };
   const rdPage = REDESIGNED[currentView];
 
   return (

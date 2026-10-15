@@ -11,6 +11,7 @@ import './styles/rd/fin.css';
 import './styles/rd/staff.css';
 import './styles/rd/plan.css';
 import './styles/rd/reviews.css';
+import './styles/rd/book.css';
 import './styles/rd/app.css';
 
 const rootElement = document.getElementById('root');

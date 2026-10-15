@@ -257,10 +257,10 @@ export function HostessPanel({ lang, onShowToast }: { lang: Language; onShowToas
     <div className="space-y-3">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex rounded-xl bg-card p-0.5">
+        <div className="seg" role="group">
           {([['map', MapIcon, tr(lang, 'Карта', 'Map', 'Xarita')], ['timeline', ChartGantt, tr(lang, 'Таймлайн', 'Timeline', 'Vaqt jadvali')], ['guests', Users, tr(lang, 'Гости', 'Guests', 'Mehmonlar')]] as const).map(([id, Icon, label]) => (
-            <button key={id} onClick={() => { setView(id); if (id !== 'timeline') setDate(today); }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-semibold transition-colors ${view === id ? 'bg-primary text-white' : 'text-muted hover:text-text'}`}>
+            <button key={id} aria-pressed={view === id} onClick={() => { setView(id); if (id !== 'timeline') setDate(today); }}
+              className="flex items-center gap-1.5">
               <Icon size={14} />{label}
             </button>
           ))}
@@ -318,10 +318,9 @@ export function HostessPanel({ lang, onShowToast }: { lang: Language; onShowToas
       {view === 'map' && (
         <>
           {halls.length > 1 && (
-            <div className="flex gap-1.5 overflow-x-auto pb-1">
+            <div className="seg small bk-scroll" role="group">
               {halls.map(h => (
-                <button key={h.id} onClick={() => { setHallId(h.id); setSelectedTable(null); }}
-                  className={`px-3.5 py-1.5 rounded-xl text-[13px] font-semibold whitespace-nowrap ${h.id === hall.id ? 'bg-primary text-white' : 'bg-card text-muted hover:text-text'}`}>
+                <button key={h.id} aria-pressed={h.id === hall.id} onClick={() => { setHallId(h.id); setSelectedTable(null); }}>
                   {h.name}
                 </button>
               ))}

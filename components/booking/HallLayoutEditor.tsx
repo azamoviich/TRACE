@@ -426,12 +426,11 @@ export function HallLayoutEditor({ lang, onShowToast, readOnly = false }: Props)
     <div className="space-y-3">
       {/* Halls row */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-        {halls.map(h => (
-          <button key={h.id} onClick={() => switchHall(h.id)}
-            className={`px-3.5 py-2 rounded-xl text-[13px] font-semibold whitespace-nowrap transition-colors ${h.id === activeHallId ? 'bg-primary text-white' : 'bg-card text-muted hover:text-text'}`}>
+        {halls.length > 0 && <span className="seg small" role="group">{halls.map(h => (
+          <button key={h.id} aria-pressed={h.id === activeHallId} onClick={() => switchHall(h.id)}>
             {h.name}
           </button>
-        ))}
+        ))}</span>}
         {!readOnly && (
           <button onClick={createHall} title={tr(lang, 'Добавить зал', 'Add hall', "Zal qo'shish")}
             className="px-3 py-2 rounded-xl text-[13px] font-semibold bg-card text-muted hover:text-text flex items-center gap-1">

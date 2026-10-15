@@ -26,8 +26,8 @@ const fmtPct = (v: number | null) => (v == null ? '—' : `${v}%`);
 function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="rounded-2xl border border-border bg-card px-4 py-3">
-      <p className="text-[11px] uppercase tracking-wider text-muted">{label}</p>
-      <p className="text-[24px] font-bold text-text tabular-nums leading-tight mt-1">{value}</p>
+      <p className="text-[13.5px] text-muted">{label}</p>
+      <p className="text-[24px] font-semibold text-text tabular-nums leading-tight mt-1.5 tracking-tight">{value}</p>
       {sub && <p className="text-[12px] text-muted mt-0.5">{sub}</p>}
     </div>
   );
@@ -43,7 +43,7 @@ function Bars({ items, height = 120 }: { items: { key: string; label: string; va
         {items.map(i => (
           <div key={i.key} title={i.title} className="flex-1 h-full flex items-end group cursor-default">
             <div
-              className="w-full rounded-t-[4px] bg-primary/80 group-hover:bg-primary transition-colors"
+              className="w-full rounded-t-[2px] bk-bar transition-colors"
               style={{ height: `${(i.value / max) * 100}%`, minHeight: i.value > 0 ? 2 : 0 }}
             />
           </div>
@@ -98,10 +98,9 @@ export function BookingReport({ lang }: { lang: Language }) {
   const t = report?.totals;
   return (
     <div className="space-y-4">
-      <div className="flex gap-1.5">
+      <div className="seg" role="group" aria-label={tr(lang, 'Период', 'Period', 'Davr')}>
         {RANGES.map(r => (
-          <button key={r} onClick={() => setDays(r)}
-            className={`px-3 py-1.5 rounded-xl text-[12px] font-semibold ${days === r ? 'bg-text text-background' : 'bg-card text-muted hover:text-text'}`}>
+          <button key={r} aria-pressed={days === r} onClick={() => setDays(r)}>
             {tr(lang, `${r} дней`, `${r} days`, `${r} kun`)}
           </button>
         ))}

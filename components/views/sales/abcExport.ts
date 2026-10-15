@@ -35,9 +35,9 @@ export function makeAbcExport(filtered: AbcRow[], lang: Language, rangeLabel: st
     const scopeDeadWeight = scope.filter(i => i.abcRevenue === 'C' && i.velocity < 0.5).length;
     const aPct = Math.round((scopeACount / total) * 100);
     list.push(
-      ru ? `${scopeACount} из ${total} позиций (${aPct}%) формируют ~70% выручки — классическое ядро Парето, держите их в наличии всегда.`
-        : isUz ? `${scopeACount}/${total} taom (${aPct}%) tushumning ~70% ini beradi — doim yetkazib turing.`
-        : `${scopeACount} of ${total} items (${aPct}%) drive ~70% of revenue — the Pareto core. Never let these run out.`
+      ru ? `${scopeACount} из ${total} позиций (${aPct}%) формируют ~80% выручки — классическое ядро Парето, держите их в наличии всегда.`
+        : isUz ? `${scopeACount}/${total} taom (${aPct}%) tushumning ~80% ini beradi — doim yetkazib turing.`
+        : `${scopeACount} of ${total} items (${aPct}%) drive ~80% of revenue — the Pareto core. Never let these run out.`
     );
     if (scopeDeadWeight > 0) {
       list.push(

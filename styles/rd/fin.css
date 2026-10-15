@@ -128,3 +128,18 @@
   .rd-fin .p-head { padding: 18px 16px 12px; }
   .rd-fin .p-body { padding: 14px 16px 28px; }
 }
+.rd-fin .search { position: relative; flex: 0 1 280px; }
+.rd-fin .search input { width: 100%; font: inherit; font-size: max(16px, 1em); color: var(--text); background: var(--surface); border: 1px solid var(--rule-strong); border-radius: 8px; padding: 6px 10px 6px 32px; transition: border-color .2s; }
+.rd-fin .search input:focus { outline: none; border-color: var(--text-2); }
+.rd-fin .search .ph { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-3); font-size: 15px; pointer-events: none; }
+.rd-fin .seg .cnt { margin-left: 6px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.rd-fin .s-v.neg { color: var(--neg); }
+.rd-fin .tag.bad { color: var(--neg); border-color: color-mix(in srgb, var(--neg) 40%, transparent); }
+.rd-fin .stock-warn { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 18px; font-size: 14px; line-height: 1.5; color: var(--text-2); }
+.rd-fin .stock-warn .ph { color: var(--neg); font-size: 16px; margin-top: 2px; }
+@media (max-width: 640px) {
+  .rd-fin .search { flex: 1 1 100%; }
+  .rd-fin .tools .spacer { display: none; }
+  .rd-fin .stock-seg { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .rd-fin .stock-seg button { white-space: nowrap; }
+}

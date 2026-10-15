@@ -717,12 +717,45 @@ function demoAbc(): AbcRow[] {
     const marginPct = Math.round(((revenue - cost) / revenue) * 1000) / 10;
     const costPerUnit = Math.round(d.price * costRatio);
     const foodCostPct = Math.round(costRatio * 1000) / 10;
+    // Demo: recipe cost sits a few percent either side of the actual one, steadily per dish.
+    const drift = ((d.name.length * 7) % 19 - 7) / 100;
+    const recipeCostPerUnit = Math.round(costPerUnit / (1 + drift));
+    const costGapPct = Math.round(((costPerUnit - recipeCostPerUnit) / recipeCostPerUnit) * 1000) / 10;
     return {
       name: d.name, cat: d.category, revenue, qty,
       avgPrice: d.price, velocity: Math.round(qty / 7 * 10) / 10, share,
       cost, grossProfit, marginPct, costPerUnit, foodCostPct,
+      recipeCostPerUnit, recipeFoodCostPct: Math.round((foodCostPct / (1 + drift)) * 10) / 10, costGapPct,
       abc: grade, abcRevenue: grade, abcQty,
       abcProfit: marginPct >= 65 ? 'A' : marginPct >= 60 ? 'B' : 'C',
+      // Demo: checks and XYZ as iiko's own report gives them.
+      cheques: Math.round(qty * 0.86), abcCheques: abcQty,
+      xyzCv: (d.name.length * 13) % 70 + 6,
+      xyz: ((d.name.length * 13) % 70 + 6) <= 20 ? 'X' : ((d.name.length * 13) % 70 + 6) <= 45 ? 'Y' : 'Z',
+      source: getDemoPos() === 'poster' ? 'poster' : 'iiko',
+    };
+  });
+}
+
+function demoGoodsAbc(): GoodsAbcRow[] {
+  const rows: [string, string, number, number, number][] = [
+    ['Говядина (вырезка)', 'кг', 9_850_000, 54.7, 14], ['Лосось охл.', 'кг', 6_120_000, 19.1, 4], ['Сыр пармезан', 'кг', 3_480_000, 14.5, 9],
+    ['Курица (филе)', 'кг', 3_210_000, 37.8, 8], ['Сливки 33%', 'л', 2_640_000, 42.6, 11], ['Кофе зерно', 'кг', 2_310_000, 8, 6],
+    ['Масло сливочное', 'кг', 1_420_000, 14.5, 17], ['Креветки', 'кг', 1_390_000, 5.2, 3], ['Томаты', 'кг', 860_000, 61.4, 12],
+    ['Молоко 3,2%', 'л', 690_000, 53, 7], ['Мука пшеничная', 'кг', 410_000, 54.7, 10], ['Рис девзира', 'кг', 380_000, 11.9, 2],
+    ['Лимоны', 'кг', 240_000, 8.6, 9], ['Зелень', 'кг', 210_000, 7, 21], ['Сироп ванильный', 'бут', 190_000, 2, 4],
+  ];
+  const total = rows.reduce((a, r) => a + r[2], 0);
+  let acc = 0;
+  return rows.map(([name, unit, cost, amount, dishes], i) => {
+    const share = Math.round(cost / total * 1000) / 10;
+    acc += cost / total * 100;
+    const g: AbcGrade = acc <= 80 ? 'A' : acc <= 95 ? 'B' : 'C';
+    const cv = (name.length * 11) % 60 + 8;
+    return {
+      id: `g${i}`, name, unit, type: 'GOODS', salesCost: cost, salesCostShare: share, amount, dishes,
+      dishRevenue: Math.round(cost * 3.1), markup: 210, mainDishesProfit: Math.round(cost * 2.1),
+      abcCost: g, abcAmount: (amount > 30 ? 'A' : amount > 10 ? 'B' : 'C') as AbcGrade, xyz: cv <= 20 ? 'X' : cv <= 45 ? 'Y' : 'Z', xyzCv: cv,
     };
   });
 }
@@ -1162,6 +1195,30 @@ function demoInventory(): FinancialInventoryDoc[] {
     doc('inv-doc-2', '0033', 9, 'Бар'),
     doc('inv-doc-3', '0032', 16, 'Склад'),
   ];
+}
+
+function demoStock(): StockSnapshot {
+  const rows: [string, string, string, number, number, number | null, number | null][] = [
+    ['Говядина (вырезка)', 'кг', 'Кухня', 14.2, 180_000, 8, 30],
+    ['Курица (филе)', 'кг', 'Кухня', 6.5, 85_000, 10, 40],
+    ['Лосось охл.', 'кг', 'Кухня', 5.4, 320_000, 3, 12],
+    ['Сливки 33%', 'л', 'Кухня', -2.5, 62_000, 4, 20],
+    ['Томаты', 'кг', 'Кухня', 18.6, 14_000, 5, 25],
+    ['Сыр пармезан', 'кг', 'Кухня', 2.1, 240_000, 1, 6],
+    ['Мука пшеничная', 'кг', 'Склад', 75, 7_500, 20, 60],
+    ['Масло сливочное', 'кг', 'Склад', 9.3, 98_000, 5, 25],
+    ['Рис девзира', 'кг', 'Склад', 3.2, 32_000, 10, 50],
+    ['Кофе зерно', 'кг', 'Бар', 4.8, 290_000, 2, 10],
+    ['Молоко 3,2%', 'л', 'Бар', 26, 13_000, 10, 40],
+    ['Лимоны', 'кг', 'Бар', -1.2, 28_000, null, null],
+    ['Сироп ванильный', 'бут', 'Бар', 7, 95_000, 2, 6],
+  ];
+  const items: StockItem[] = rows.map(([name, unit, store, qty, unitCost, min, max], i) => ({
+    id: `st${i}`, name, unit, type: 'GOODS', storeId: store, store, qty, unitCost,
+    totalValue: Math.round(qty * unitCost), min, max,
+    status: qty < 0 ? 'negative' : min != null && qty < min ? 'low' : max != null && qty > max ? 'over' : 'ok',
+  }));
+  return { asOf: new Date().toISOString().slice(0, 16), items };
 }
 
 function demoPosterInventory(): PosterInventoryItem[] {
@@ -1702,6 +1759,11 @@ export const traceApi = {
             : (r.cost != null && r.revenue > 0 ? Math.round((r.cost / r.revenue) * 1000) / 10 : null)),
         })));
     },
+    abcGoods: (range: 'today' | '7days' | '30days' | 'custom', customFrom?: string, customTo?: string): Promise<GoodsAbcRow[] | null> => {
+      if (isDemoTenant()) return Promise.resolve(getDemoPos() === 'poster' ? null : demoGoodsAbc());
+      const q = customFrom && customTo ? `from=${customFrom}&to=${customTo}` : `range=${range}`;
+      return apiFetch(`/sales/abc-goods?${q}`).then(r => r.json()).then(d => (Array.isArray(d) ? d : null));
+    },
     abcHistory: (dishName: string, lang: Language = 'ru'): Promise<AbcHistoryItem[]> =>
       isDemoTenant() ? Promise.resolve(demoAbcHistory(dishName, lang)) : apiFetch(`/sales/abc/history?dishName=${encodeURIComponent(dishName)}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     abcDaypart: (dishName: string, range = '30days', lang: Language = 'ru'): Promise<DaypartData> =>
@@ -1795,6 +1857,9 @@ export const traceApi = {
       isDemoTenant() ? Promise.resolve(demoInvoices()) : apiFetch(`/financial/invoices?range=${range}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     inventory: (range: 'today' | '7days' | '30days' = '30days'): Promise<(FinancialInventoryDoc | PosterInventoryItem)[] | null> =>
       isDemoTenant() ? Promise.resolve(getDemoPos() === 'poster' ? demoPosterInventory() : demoInventory()) : apiFetch(`/financial/inventory?range=${range}`).then(r => r.json()).then(d => (Array.isArray(d) && d.length ? d : null)),
+    // iiko only — live store balances (Склад).
+    stock: (): Promise<StockSnapshot | null> =>
+      isDemoTenant() ? Promise.resolve(getDemoPos() === 'poster' ? null : demoStock()) : apiFetch(`/financial/stock`).then(r => r.json()).then(d => (d && Array.isArray(d.items) ? d : null)),
     // Poster only — doc-based stocktaking archive, a second view alongside inventory() above.
     inventoryDocs: (): Promise<PosterInventoryDoc[]> =>
       isDemoTenant() ? Promise.resolve(getDemoPos() === 'poster' ? demoPosterInventoryDocs() : []) : apiFetch(`/financial/inventory-docs`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
@@ -2611,10 +2676,67 @@ export interface AbcRow {
   // (cost ÷ revenue) × 100 — the inverse of marginPct, kept as its own field
   // since "food cost %" is the term kitchens actually think in (lower = better).
   foodCostPct?: number | null;
+  // By tech card at current ingredient prices — what the dish should cost.
+  // Unlike costPerUnit it does not move with write-offs or stocktakes. iiko only.
+  recipeCostPerUnit?: number | null;
+  recipeFoodCostPct?: number | null;
+  // (actual − recipe) ÷ recipe × 100. Positive: costs more than it should.
+  costGapPct?: number | null;
   abc: AbcGrade;        // = abcRevenue (backward compat)
   abcRevenue: AbcGrade;
   abcQty: AbcGrade;
   abcProfit: AbcGrade;
+  /** Checks that contained the dish and their ABC grade (iiko only). */
+  cheques?: number | null;
+  abcCheques?: AbcGrade | null;
+  /** Sales stability: X steady, Y uneven, Z irregular. xyzCv is the variation in %. iiko only. */
+  xyz?: 'X' | 'Y' | 'Z' | null;
+  xyzCv?: number | null;
+  /** 'iiko' = iiko's own ABC report; 'olap' = rebuilt from the public API when that was unavailable. */
+  source?: 'iiko' | 'olap' | 'poster';
+}
+
+// One ingredient in iiko's "Фудкост → ABC/XYZ анализ товаров".
+export interface GoodsAbcRow {
+  id: string;
+  name: string;
+  unit: string;
+  type: string;
+  /** what the product cost in the dishes sold */
+  salesCost: number;
+  salesCostShare: number;
+  amount: number;
+  /** how many dishes use it */
+  dishes: number;
+  dishRevenue: number;
+  markup: number;
+  mainDishesProfit: number;
+  abcCost: AbcGrade | null;
+  abcAmount: AbcGrade | null;
+  xyz: 'X' | 'Y' | 'Z' | null;
+  xyzCv: number | null;
+}
+
+// iiko store balance — one product in one store, right now.
+export interface StockItem {
+  id: string;
+  name: string;
+  unit: string;
+  type: string;
+  storeId: string;
+  store: string;
+  qty: number;
+  unitCost: number;
+  totalValue: number;
+  /** min/max level from the product card in iiko, if set */
+  min: number | null;
+  max: number | null;
+  status: 'ok' | 'low' | 'over' | 'negative';
+}
+
+export interface StockSnapshot {
+  asOf: string;
+  items: StockItem[];
 }
 
 export interface AbcHistoryItem {

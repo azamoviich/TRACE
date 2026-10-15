@@ -18,6 +18,7 @@ import {
   MenuAnalysisRow,
 } from '../../services/traceApi';
 import { StocktakeList, StocktakeDrawer } from './InventoryStocktake';
+import { IikoStock } from './IikoStock';
 import { mln, mlnUnit, sum, PeriodSeg, PeriodValue, periodDates, rangeLabel, dayLabel, Skel, AiMeta, AiState, LineChart, nowHM } from '../rd/ui';
 
 const WASTE_BENCHMARK = 3.0; // industry standard %
@@ -93,7 +94,7 @@ export const Financial: React.FC<{
     { key: 'menu',       label: tr(lang, 'Анализ меню', 'Menu Analysis', 'Menyu tahlili') },
     { key: 'invoices',   label: t.invoices },
     { key: 'writeoffs',  label: t.writeoffs },
-    { key: 'inventory',  label: t.inventory },
+    { key: 'inventory',  label: tr(lang, 'Склад', 'Stock', 'Ombor') },
     { key: 'cashshifts', label: tr(lang, 'Кассовые смены', 'Cash Shifts', 'Kassa smenalari') },
     { key: 'gl',         label: tr(lang, 'Учёт', 'Accounting', 'Hisob') },
   ];
@@ -604,15 +605,14 @@ export const Financial: React.FC<{
   // ── Inventory ──
   const stockPane = () => (
     <section className="block card-ph" aria-labelledby="h-stock">
-      <div className="sec-head"><h2 id="h-stock">{isPoster ? tr(lang, 'Склад', 'Stock', 'Ombor') : tr(lang, 'Документы инвентаризации', 'Stocktake documents', 'Inventarizatsiya hujjatlari')}</h2>
-        {isPoster ? (
-          <span className="seg small" role="group">
-            <button aria-pressed={inventoryView === 'live'} onClick={() => setInventoryView('live')}>{tr(lang, 'Остатки сейчас', 'Stock now', 'Hozirgi qoldiq')}</button>
-            <button aria-pressed={inventoryView === 'docs'} onClick={() => setInventoryView('docs')}>{tr(lang, 'Архив', 'History', 'Arxiv')}</button>
-          </span>
-        ) : <span className="faint" style={{ fontSize: 13 }}>{tr(lang, 'нажмите на строку, чтобы увидеть позиции', 'click a row to see items', "pozitsiyalarni ko'rish uchun qatorni bosing")}</span>}
+      <div className="sec-head"><h2 id="h-stock">{tr(lang, 'Склад', 'Stock', 'Ombor')}</h2>
+        <span className="seg small" role="group" aria-label={tr(lang, 'Что показать', 'What to show', "Nimani ko'rsatish")}>
+          <button aria-pressed={inventoryView === 'live'} onClick={() => setInventoryView('live')}>{tr(lang, 'Остатки сейчас', 'Stock now', 'Hozirgi qoldiq')}</button>
+          <button aria-pressed={inventoryView === 'docs'} onClick={() => setInventoryView('docs')}>{isPoster ? tr(lang, 'Архив', 'History', 'Arxiv') : tr(lang, 'Инвентаризации', 'Stocktakes', 'Inventarizatsiyalar')}</button>
+        </span>
       </div>
-      {isPoster && inventoryView === 'docs' ? (inventoryDocsLoading ? <Loading /> : !inventoryDocs.length ? <p className="rd-empty">{tr(lang, 'Инвентаризаций не найдено', 'No stocktakes found', 'Inventarizatsiya topilmadi')}</p> : (
+      {!isPoster && inventoryView === 'docs' && inventory && inventory.length > 0 && <p className="src" style={{ margin: '-6px 0 14px' }}>{tr(lang, 'Недостачи и излишки по каждой инвентаризации. Нажмите на строку, чтобы увидеть позиции.', 'Shortages and surpluses per stocktake. Click a row to see items.', "Har bir inventarizatsiya bo'yicha kamomad va ortiqcha. Pozitsiyalar uchun qatorni bosing.")}</p>}
+      {!isPoster && inventoryView === 'live' ? <IikoStock lang={lang} /> : isPoster && inventoryView === 'docs' ? (inventoryDocsLoading ? <Loading /> : !inventoryDocs.length ? <p className="rd-empty">{tr(lang, 'Инвентаризаций не найдено', 'No stocktakes found', 'Inventarizatsiya topilmadi')}</p> : (
         <table className="dt"><thead><tr><th>{tr(lang, 'Склад', 'Storage', 'Ombor')}</th><th>{tr(lang, 'Начало', 'Started', 'Boshlandi')}</th><th className="hide-sm">{tr(lang, 'Окончание', 'Ended', 'Tugadi')}</th><th className="r">{tr(lang, 'Сумма', 'Amount', 'Summa')}</th><th className="hide-sm">{tr(lang, 'Статус', 'Status', 'Holat')}</th></tr></thead>
           <tbody>{inventoryDocs.map(d => <tr key={d.id}><td className="strong">{d.storageName}</td><td>{d.dateStart}</td><td className="hide-sm">{d.dateEnd}</td><td className="r">{fmtN(d.sum)}</td><td className="hide-sm muted">{d.status}</td></tr>)}</tbody></table>
       )) : inventoryLoading ? <Loading /> : !inventory || !inventory.length ? <p className="rd-empty">{isPoster ? tr(lang, 'Нет данных об остатках', 'No stock data', "Qoldiq ma'lumotlari yo'q") : tr(lang, 'Документов инвентаризации за период нет', 'No stocktake documents for the period', 'Davr uchun hujjatlar yoʻq')}</p>

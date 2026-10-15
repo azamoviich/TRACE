@@ -7,7 +7,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { tr } from '../../constants';
 import { Language, ComparisonPeriod } from '../../types';
 import {
-  traceApi, getTenantPlan, RevenueRow, HourlyRow, CategoryPerfRow, AbcRow, HeatmapResult,
+  traceApi, getTenantPlan, RevenueRow, HourlyRow, CategoryPerfRow, AbcRow, HeatmapResult, GoodsAbcRow,
 } from '../../services/traceApi';
 import { tashkentDateStr, tashkentHours } from '../../utils/tz';
 import {
@@ -20,9 +20,9 @@ import { makeAbcExport } from './sales/abcExport';
 
 type Metric = 'rev' | 'ord' | 'chk' | 'prof';
 type Quad = 'star' | 'horse' | 'puzzle' | 'dog';
-type SortKey = 'name' | 'price' | 'qty' | 'vel' | 'rev' | 'cost' | 'fc' | 'profit';
-type Col = 'cat' | 'qty' | 'rev' | 'cost' | 'fc' | 'profit' | 'abc' | 'cls' | 'price' | 'vel';
-const COL_DEFAULT: Record<Col, boolean> = { cat: true, qty: true, rev: true, cost: true, fc: true, profit: true, abc: true, cls: true, price: false, vel: false };
+type SortKey = 'name' | 'price' | 'qty' | 'vel' | 'rev' | 'cost' | 'rcost' | 'drift' | 'fc' | 'profit' | 'cheq' | 'xyz';
+type Col = 'cat' | 'qty' | 'rev' | 'cost' | 'rcost' | 'drift' | 'fc' | 'profit' | 'abc' | 'xyz' | 'cheq' | 'cls' | 'price' | 'vel';
+const COL_DEFAULT: Record<Col, boolean> = { cat: true, qty: true, rev: true, cost: true, rcost: false, drift: true, fc: true, profit: true, abc: true, xyz: true, cheq: false, cls: true, price: false, vel: false };
 
 const SHIFT: Record<ComparisonPeriod, number> = { yesterday: 1, last_week: 7, last_month: 30, last_year: 365 };
 const CMP_OPTIONS: Record<'today' | '7days' | '30days', ComparisonPeriod[]> = {
@@ -217,6 +217,14 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
   useEffect(() => { try { localStorage.setItem('trace_abc_hidden_cats', JSON.stringify([...hiddenCats])); } catch {} }, [hiddenCats]);
   const [detail, setDetail] = useState<AbcRow | null>(null);
   const catNames = useMemo(() => [...new Set(items.map(i => i.cat))].sort(), [items]);
+  // Recipe cost, checks and XYZ come from iiko only (recipe cost via iikoOffice).
+  const hasRecipe = items.some(i => i.recipeCostPerUnit != null);
+  const hasCheq = items.some(i => i.cheques != null);
+  const hasXyz = items.some(i => i.xyz != null);
+  const abcSource = items[0]?.source;
+  const iikoAbc = abcSource === 'iiko' || abcSource === 'olap';
+  // Dishes, or products by what they cost in the dishes sold (iiko only).
+  const [abcView, setAbcView] = useState<'dishes' | 'products'>('dishes');
   const sectionsPresent = useMemo(() => makeAbcExport([], lang, '').ABC_SECTIONS.filter(s => items.some(i => i.sec === s.id)), [items, lang]);
 
   const visibleItems = items.filter(i => !hiddenCats.has(i.cat));
@@ -230,7 +238,8 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
     if (q) r = r.filter(i => i.name.toLowerCase().includes(q));
     const key: Record<SortKey, (i: Item) => number | string> = {
       name: i => i.name, price: i => i.avgPrice, qty: i => i.qty, vel: i => i.velocity, rev: i => i.revenue,
-      cost: i => i.unitCost ?? -1, fc: i => i.fc ?? -1, profit: i => i.profit,
+      cost: i => i.unitCost ?? -1, rcost: i => i.recipeCostPerUnit ?? -1, drift: i => i.costGapPct ?? -1e9,
+      fc: i => i.fc ?? -1, profit: i => i.profit, cheq: i => i.cheques ?? -1, xyz: i => i.xyzCv ?? 1e9,
     };
     return [...r].sort((a, b) => {
       const A = key[sort.k](a), B = key[sort.k](b);
@@ -377,10 +386,15 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
   const maxCatShare = Math.max(1, ...cats.map(c => c.pct));
   const COLS: [Col, string][] = [
     ['cat', tr(lang, 'Категория', 'Category', 'Kategoriya')], ['qty', tr(lang, 'Продано', 'Sold', 'Sotildi')], ['rev', tr(lang, 'Выручка', 'Revenue', 'Tushum')],
-    ['cost', tr(lang, 'Себестоимость', 'Cost', 'Tannarx')], ['fc', tr(lang, 'Фудкост', 'Food cost', 'Fudkost')], ['profit', tr(lang, 'Прибыль', 'Profit', 'Foyda')],
-    ['abc', 'ABC'], ['cls', tr(lang, 'Группа', 'Group', 'Guruh')], ['price', tr(lang, 'Цена', 'Price', 'Narx')], ['vel', tr(lang, 'В день', 'Per day', 'Kuniga')],
+    ['cost', tr(lang, 'Себестоимость', 'Cost', 'Tannarx')],
+    ...(hasRecipe ? [['rcost', tr(lang, 'По техкарте', 'Recipe cost', "Texkarta bo'yicha")], ['drift', tr(lang, 'Отклонение от техкарты', 'Drift from recipe', 'Texkartadan farq')]] as [Col, string][] : []),
+    ['fc', tr(lang, 'Фудкост', 'Food cost', 'Fudkost')], ['profit', tr(lang, 'Прибыль', 'Profit', 'Foyda')],
+    ['abc', 'ABC'], ...(hasXyz ? [['xyz', tr(lang, 'XYZ — стабильность продаж', 'XYZ — sales stability', 'XYZ — savdo barqarorligi')]] as [Col, string][] : []),
+    ...(hasCheq ? [['cheq', tr(lang, 'Чеков', 'Checks', 'Cheklar')]] as [Col, string][] : []),
+    ['cls', tr(lang, 'Группа', 'Group', 'Guruh')], ['price', tr(lang, 'Цена', 'Price', 'Narx')], ['vel', tr(lang, 'В день', 'Per day', 'Kuniga')],
   ];
-  const tableCls = 'menu ' + (Object.keys(cols) as Col[]).filter(c => !cols[c]).map(c => `hide-${c}`).join(' ');
+  const off = (c: Col) => !cols[c] || (c === 'rcost' || c === 'drift' ? !hasRecipe : c === 'xyz' ? !hasXyz : c === 'cheq' ? !hasCheq : false);
+  const tableCls = 'menu ' + (Object.keys(cols) as Col[]).filter(off).map(c => `hide-${c}`).join(' ');
 
   return (
     <>
@@ -475,7 +489,15 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
 
       {/* 3. Menu: one table, four plain-language groups as filters */}
       <section className="band rise card-ph" style={{ animationDelay: '.14s' }} aria-labelledby="h-menu">
-        <div className="sec-head"><h2 id="h-menu">{tr(lang, 'Меню и ABC-анализ', 'Menu and ABC analysis', 'Menyu va ABC tahlili')}</h2></div>
+        <div className="sec-head"><h2 id="h-menu">{tr(lang, 'Меню и ABC-анализ', 'Menu and ABC analysis', 'Menyu va ABC tahlili')}</h2>
+          {iikoAbc && (
+            <span className="seg small" role="group" aria-label={tr(lang, 'Что анализировать', 'What to analyse', 'Nimani tahlil qilish')}>
+              <button aria-pressed={abcView === 'dishes'} onClick={() => setAbcView('dishes')}>{tr(lang, 'Блюда', 'Dishes', 'Taomlar')}</button>
+              <button aria-pressed={abcView === 'products'} onClick={() => setAbcView('products')}>{tr(lang, 'Продукты', 'Products', 'Mahsulotlar')}</button>
+            </span>
+          )}
+        </div>
+        {abcView === 'products' && iikoAbc ? <GoodsAbc lang={lang} from={from} to={to} /> : <>
         <div className="quads">
           {(Object.keys(QUADS) as Quad[]).map(k => {
             const inQ = visibleItems.filter(i => i.q === k);
@@ -543,13 +565,17 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
             {sortBtn('vel', tr(lang, 'В день', 'Per day', 'Kuniga'), 'r c-vel')}
             {sortBtn('rev', tr(lang, 'Выручка', 'Revenue', 'Tushum'), 'r c-rev')}
             {sortBtn('cost', tr(lang, 'Себест.', 'Cost', 'Tannarx'), 'r c-cost')}
+            {sortBtn('rcost', tr(lang, 'По техкарте', 'Recipe', 'Texkarta'), 'r c-rcost')}
+            {sortBtn('drift', tr(lang, 'Откл.', 'Drift', 'Farq'), 'r c-drift')}
             {sortBtn('fc', tr(lang, 'Фудкост', 'Food cost', 'Fudkost'), 'r c-fc')}
             {sortBtn('profit', tr(lang, 'Прибыль', 'Profit', 'Foyda'), 'r c-profit')}
             <th className="c-abc" title={tr(lang, 'Класс по количеству, выручке и прибыли', 'Class by quantity, revenue and profit', "Soni, tushum va foyda bo'yicha sinf")}>ABC <span className="faint" style={{ fontWeight: 400 }}>{tr(lang, 'К/В/П', 'Q/R/P', 'S/T/F')}</span></th>
+            {sortBtn('xyz', 'XYZ', 'c-xyz')}
+            {sortBtn('cheq', tr(lang, 'Чеков', 'Checks', 'Cheklar'), 'r c-cheq')}
             <th className="c-cls">{tr(lang, 'Группа', 'Group', 'Guruh')}</th>
           </tr></thead>
           <tbody>
-            {loading && !items.length ? <tr><td colSpan={11}><Skel lines={['w9', 'w9', 'w9', 'w9', 'w7']} /></td></tr>
+            {loading && !items.length ? <tr><td colSpan={15}><Skel lines={['w9', 'w9', 'w9', 'w9', 'w7']} /></td></tr>
               : shown.length ? shown.map(r => (
                 <tr key={r.name + r.cat} tabIndex={0} onClick={() => setDetail(r)} onKeyDown={e => { if (e.key === 'Enter') setDetail(r); }}>
                   <td className="name">{r.name}<span className="sub">{r.cat} · {fmt(r.qty)} {tr(lang, 'шт', 'pcs', 'dona')}{r.fc != null ? `, ${tr(lang, 'фудкост', 'food cost', 'fudkost')} ${Math.round(r.fc)}%` : ''}</span></td>
@@ -559,19 +585,27 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
                   <td className="r c-vel muted">{r.velocity.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}</td>
                   <td className="r c-rev">{fmt(r.revenue)}</td>
                   <td className="r c-cost muted">{r.unitCost != null ? fmt(r.unitCost) : '—'}</td>
+                  <td className="r c-rcost muted">{r.recipeCostPerUnit != null ? fmt(r.recipeCostPerUnit) : '—'}</td>
+                  <td className={`r c-drift ${r.costGapPct != null && r.costGapPct >= 5 ? 'neg' : r.costGapPct != null && r.costGapPct <= -5 ? 'pos' : 'muted'}`}>{r.costGapPct != null ? pctStr(r.costGapPct) : '—'}</td>
                   <td className={`r c-fc ${r.fc != null && r.fc >= 40 ? 'fc-hi' : ''}`}>{r.fc != null ? `${Math.round(r.fc)}%` : '—'}</td>
                   <td className="r c-profit">{r.unitCost != null ? fmt(r.profit) : '—'}</td>
                   <td className="c-abc"><span className="abc" title={`${tr(lang, 'Количество', 'Quantity', 'Soni')} ${r.abcQty}, ${tr(lang, 'выручка', 'revenue', 'tushum')} ${r.abcRevenue}, ${tr(lang, 'прибыль', 'profit', 'foyda')} ${r.abcProfit}`}>
                     {(['abcQty', 'abcRevenue', 'abcProfit'] as const).map(k => <b key={k} className={`g${r[k]}${k === abcMetric ? ' cur' : ''}`}>{r[k]}</b>)}
                   </span></td>
+                  <td className="c-xyz"><span className={`xyz x${r.xyz ?? ''}`} title={r.xyzCv != null ? `${tr(lang, 'Колебание продаж', 'Sales variation', "Savdo o'zgarishi")} ${r.xyzCv}%` : undefined}>{r.xyz ?? '—'}</span></td>
+                  <td className="r c-cheq muted">{r.cheques != null ? fmt(r.cheques) : '—'}</td>
                   <td className="c-cls"><span className={`cls ${r.q}`}>{QUADS[r.q].short}</span></td>
                 </tr>
-              )) : <tr><td colSpan={11} className="empty">{tr(lang, 'Ничего не нашлось', 'Nothing found', 'Hech narsa topilmadi')}{query ? ` «${query}»` : ''}</td></tr>}
+              )) : <tr><td colSpan={15} className="empty">{tr(lang, 'Ничего не нашлось', 'Nothing found', 'Hech narsa topilmadi')}{query ? ` «${query}»` : ''}</td></tr>}
           </tbody>
         </table>
         <div className="table-foot">
           <span><span>{filtered.length > shown.length ? tr(lang, `${shown.length} из ${filtered.length} позиций`, `${shown.length} of ${filtered.length} items`, `${filtered.length} tadan ${shown.length}`) : `${filtered.length} ${plural(filtered.length)}`}</span>
-            <span className="foot-note">{tr(lang, 'Прибыль считается как выручка минус себестоимость по техкартам iiko.', 'Profit is revenue minus cost from iiko recipe cards.', "Foyda = tushum minus iiko texkartalari bo'yicha tannarx.")}</span></span>
+            <span className="foot-note">{tr(lang, 'Прибыль считается как выручка минус себестоимость по техкартам iiko.', 'Profit is revenue minus cost from iiko recipe cards.', "Foyda = tushum minus iiko texkartalari bo'yicha tannarx.")}
+              {iikoAbc && <> {tr(lang, 'ABC: выручка без НДС после скидок, пороги A 80% · B 15% · C 5%, как в отчёте iiko «ABC/XYZ анализ блюд».', 'ABC: revenue without VAT after discounts, A 80% · B 15% · C 5%, as in iiko\'s “ABC/XYZ dish analysis”.', "ABC: QQSsiz tushum chegirmadan keyin, A 80% · B 15% · C 5%, iiko hisobotidagi kabi.")}
+                {abcSource === 'olap' && <> {tr(lang, 'Отчёт iiko сейчас недоступен — пересчитано из OLAP, может немного отличаться.', 'iiko\'s report is unavailable right now — rebuilt from OLAP, may differ slightly.', "iiko hisoboti hozir mavjud emas — OLAP'dan qayta hisoblandi.")}</>}</>}
+              {hasRecipe && cols.drift && <> {tr(lang, 'Отклонение: насколько фактическая себестоимость выше (+) или ниже техкарты.', 'Drift: how far actual cost is above (+) or below the recipe.', "Farq: haqiqiy tannarx texkartadan qanchalik yuqori (+) yoki past.")}</>}
+            </span></span>
           {filtered.length > 10 && <button className="link" type="button" onClick={() => setShowAll(s => !s)}>{showAll ? tr(lang, 'Свернуть', 'Collapse', "Yig'ish") : tr(lang, 'Показать все', 'Show all', "Hammasini ko'rsatish")}</button>}
         </div>
 
@@ -587,10 +621,82 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
           {menuAi.state === 'loading' && <div className="st-loading" aria-live="polite"><p className="ai-wait">{tr(lang, 'Сравниваем позиции по продажам, себестоимости и прибыли…', 'Comparing items by sales, cost and profit…', 'Pozitsiyalarni savdo, tannarx va foyda bo‘yicha solishtiryapmiz…')}</p><Skel lines={['w9', 'w7', 'w9', 'w5']} /></div>}
           {menuAi.state === 'done' && <div className="st-done menu-ai-body">{richParas(menuAi.text)}</div>}
         </div>
+        </>}
       </section>
 
       {/* 4. Recommendations */}
       {!poster && <Trio lang={lang} tiles={tiles} />}
+    </>
+  );
+};
+
+// ── Ingredient ABC (iiko "Фудкост → ABC/XYZ анализ товаров") ───────────────
+// Which products eat the food-cost budget: what each cost in the dishes sold.
+const GoodsAbc: React.FC<{ lang: Language; from: string; to: string }> = ({ lang, from, to }) => {
+  const [rows, setRows] = useState<GoodsAbcRow[] | null | undefined>(undefined);
+  const [query, setQuery] = useState('');
+  const [grade, setGrade] = useState<'all' | 'A' | 'B' | 'C'>('all');
+  const [all, setAll] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setRows(undefined);
+    traceApi.sales.abcGoods('custom', from, to).then(d => { if (alive) setRows(d); }).catch(() => { if (alive) setRows(null); });
+    return () => { alive = false; };
+  }, [from, to]);
+  const list = useMemo(() => {
+    let l = rows ?? [];
+    if (grade !== 'all') l = l.filter(r => r.abcCost === grade);
+    const q = query.trim().toLowerCase();
+    if (q) l = l.filter(r => r.name.toLowerCase().includes(q));
+    return l;
+  }, [rows, grade, query]);
+  const shown = all ? list : list.slice(0, 15);
+  const aRows = (rows ?? []).filter(r => r.abcCost === 'A');
+  const aShare = aRows.reduce((s, r) => s + r.salesCostShare, 0);
+  const amt = (n: number) => n.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+  if (rows === null) return <p className="rd-empty">{tr(lang, 'Отчёт по продуктам из iiko сейчас недоступен.', "iiko's product report is unavailable right now.", 'iiko mahsulot hisoboti hozir mavjud emas.')}</p>;
+  return (
+    <>
+      <p className="goods-lead">
+        {tr(lang, 'Сколько каждый продукт стоил в проданных блюдах, как в отчёте iiko «ABC/XYZ анализ товаров».', 'What each product cost in the dishes sold, as in iiko’s “ABC/XYZ goods analysis”.', 'Har bir mahsulot sotilgan taomlarda qancha turdi, iiko hisobotidagi kabi.')}
+        {aRows.length > 0 && <> <b>{tr(lang, `${aRows.length} продуктов группы A — ${Math.round(aShare)}% затрат.`, `${aRows.length} group A products are ${Math.round(aShare)}% of cost.`, `A guruhidagi ${aRows.length} mahsulot — xarajatlarning ${Math.round(aShare)}%.`)}</b></>}
+      </p>
+      <div className="tools">
+        <label className="search"><i className="ph ph-magnifying-glass" aria-hidden="true" /><input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder={tr(lang, 'Найти продукт', 'Find a product', 'Mahsulot topish')} aria-label={tr(lang, 'Найти продукт', 'Find a product', 'Mahsulot topish')} /></label>
+        <span className="seg small" role="group" aria-label={tr(lang, 'Класс ABC по затратам', 'ABC class by cost', "Xarajat bo'yicha ABC sinfi")}>
+          {(['all', 'A', 'B', 'C'] as const).map(g => <button key={g} aria-pressed={grade === g} onClick={() => { setGrade(g); setAll(false); }}>{g === 'all' ? tr(lang, 'Все', 'All', 'Hammasi') : g}</button>)}
+        </span>
+      </div>
+      <table className="menu goods">
+        <thead><tr>
+          <th>{tr(lang, 'Продукт', 'Product', 'Mahsulot')}</th>
+          <th className="r">{tr(lang, 'Затраты', 'Cost', 'Xarajat')}</th>
+          <th className="r">{tr(lang, 'Доля', 'Share', 'Ulush')}</th>
+          <th className="r c-used">{tr(lang, 'Расход', 'Used', 'Sarf')}</th>
+          <th className="r c-dishes" title={tr(lang, 'В скольких проданных блюдах используется', 'How many sold dishes use it', 'Nechta sotilgan taomda ishlatiladi')}>{tr(lang, 'Блюд', 'Dishes', 'Taom')}</th>
+          <th title={tr(lang, 'Класс по затратам и по расходу', 'Class by cost and by amount used', "Xarajat va sarf bo'yicha sinf")}>ABC <span className="faint" style={{ fontWeight: 400 }}>{tr(lang, 'З/Р', 'C/U', 'X/S')}</span></th>
+          <th>XYZ</th>
+        </tr></thead>
+        <tbody>
+          {rows === undefined ? <tr><td colSpan={7}><Skel lines={['w9', 'w9', 'w9', 'w9', 'w7']} /></td></tr>
+            : shown.length ? shown.map(r => (
+              <tr key={r.id}>
+                <td className="name">{r.name}<span className="sub">{amt(r.amount)} {r.unit}</span></td>
+                <td className="r">{fmt(r.salesCost)}</td>
+                <td className="r muted">{r.salesCostShare.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%</td>
+                <td className="r c-used muted">{amt(r.amount)} {r.unit}</td>
+                <td className="r c-dishes muted">{r.dishes}</td>
+                <td><span className="abc">{[r.abcCost, r.abcAmount].map((g, k) => <b key={k} className={`g${g ?? ''}${k === 0 ? ' cur' : ''}`}>{g ?? '—'}</b>)}</span></td>
+                <td><span className={`xyz x${r.xyz ?? ''}`} title={r.xyzCv != null ? `${tr(lang, 'Колебание расхода', 'Usage variation', "Sarf o'zgarishi")} ${r.xyzCv}%` : undefined}>{r.xyz ?? '—'}</span></td>
+              </tr>
+            )) : <tr><td colSpan={7} className="empty">{tr(lang, 'Ничего не нашлось', 'Nothing found', 'Hech narsa topilmadi')}{query ? ` «${query}»` : ''}</td></tr>}
+        </tbody>
+      </table>
+      <div className="table-foot">
+        <span><span>{list.length > shown.length ? tr(lang, `${shown.length} из ${list.length} продуктов`, `${shown.length} of ${list.length} products`, `${list.length} tadan ${shown.length}`) : `${list.length} ${tr(lang, 'продуктов', 'products', 'mahsulot')}`}</span>
+          <span className="foot-note">{tr(lang, 'XYZ: X — расход ровный, Y — колеблется, Z — нерегулярный.', 'XYZ: X steady use, Y uneven, Z irregular.', "XYZ: X — bir tekis, Y — o'zgaruvchan, Z — notekis.")}</span></span>
+        {list.length > 15 && <button className="link" type="button" onClick={() => setAll(s => !s)}>{all ? tr(lang, 'Свернуть', 'Collapse', "Yig'ish") : tr(lang, 'Показать все', 'Show all', "Hammasini ko'rsatish")}</button>}
+      </div>
     </>
   );
 };

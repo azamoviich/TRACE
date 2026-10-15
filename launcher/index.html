@@ -4,37 +4,58 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>TRACE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
 <style>
-  :root { color-scheme: light; }
+  /* Redesign tokens (TRACE-mockups, Oct 2026) */
+  :root {
+    color-scheme: light dark;
+    --bg: #F6F4F0; --surface: #FFFFFF; --sunken: #EFECE6;
+    --text: #1C1B19; --text-2: #5E5B55; --text-3: #706C64;
+    --rule: #E4E0D8; --rule-strong: #D3CEC4;
+    --accent: #E8642C; --neg: #B4442E;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #18171A; --surface: #201F23; --sunken: #1C1B1E;
+      --text: #EDEAE4; --text-2: #A6A29A; --text-3: #8C887F;
+      --rule: #2D2C30; --rule-strong: #3A3940;
+      --accent: #F0784A; --neg: #E0806A;
+    }
+  }
   * { box-sizing: border-box; }
   body {
     margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    background: #F7F5F2; color: #1A1A1A; font-family: system-ui, sans-serif; padding: 16px; position: relative;
+    background: var(--bg); color: var(--text); font: 400 15px/1.5 "IBM Plex Sans", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased; padding: 16px; position: relative;
   }
   .lang-btn {
-    position: absolute; top: 20px; right: 20px; display: flex; align-items: center; gap: 6px;
-    background: none; width: auto; padding: 6px 12px; border-radius: 999px; border: 1px solid #E5E2DD;
-    color: #5F5F5F; font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.15em;
-    cursor: pointer; font-family: inherit;
+    position: absolute; top: 18px; right: 18px; display: flex; align-items: center; gap: 6px;
+    background: none; width: auto; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--rule);
+    color: var(--text-2); font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit;
   }
-  .lang-btn:hover { background: #F7F5F2; border-color: #FF6B35; color: #1A1A1A; }
-  .wrap { width: 100%; max-width: 640px; visibility: hidden; }
-  .header { text-align: center; margin-bottom: 32px; }
-  .header h1 { font-size: 24px; font-weight: 900; letter-spacing: 0.25em; margin: 0; }
-  .header p { font-size: 9px; text-transform: uppercase; letter-spacing: 0.3em; color: #5F5F5F; margin: 8px 0 0; }
-  .row { display: flex; flex-wrap: wrap; justify-content: center; gap: 24px; }
+  .lang-btn:hover { background: none; border-color: var(--rule-strong); color: var(--text); }
+  .wrap { width: 100%; max-width: 620px; visibility: hidden; }
+  .header { display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 28px; }
+  .mark { position: relative; width: 40px; height: 40px; border-radius: 9px; background: var(--text); color: var(--bg); display: grid; place-items: center; margin-bottom: 14px; }
+  .mark svg { width: 40px; height: 40px; fill: currentColor; }
+  .mark::after { content: ""; position: absolute; left: 68.75%; top: 70.6%; width: 10%; height: 10%; border-radius: 1px; background: #E8642C; }
+  .header h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; margin: 0; }
+  .header p { font-size: 14px; color: var(--text-2); margin: 4px 0 0; }
+  .row { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; }
   .card {
-    background: #FFFFFF; border: 1px solid #E5E2DD; border-radius: 12px; padding: 24px;
+    background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 22px;
     width: 100%; max-width: 320px;
   }
   .card.qr { max-width: 260px; display: flex; flex-direction: column; align-items: center; text-align: center; }
-  label { display: block; font-size: 9px; text-transform: uppercase; letter-spacing: 0.18em; color: #5F5F5F; margin-bottom: 6px; font-weight: 500; }
-  .field { margin-bottom: 16px; }
+  label { display: block; font-size: 13.5px; color: var(--text-2); margin-bottom: 6px; font-weight: 400; }
+  .field { margin-bottom: 14px; }
   input[type="text"], input[type="password"] {
-    width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #E5E2DD;
-    background: #F7F5F2; color: #1A1A1A; font-size: 13px; font-family: inherit;
+    width: 100%; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--rule-strong);
+    background: var(--surface); color: var(--text); font-family: inherit; transition: border-color .2s;
   }
-  input[type="text"]:focus, input[type="password"]:focus { outline: none; border-color: #FF6B35; }
+  input[type="text"]:focus, input[type="password"]:focus { outline: none; border-color: var(--text-2); }
   /* Prevent Safari auto-zoom on input focus */
   input, textarea, select { font-size: max(16px, 1em); }
   .pw-wrap { position: relative; }
@@ -42,32 +63,34 @@
   .pw-toggle {
     position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
     width: 30px; height: 30px; padding: 0; display: flex; align-items: center; justify-content: center;
-    background: none; border-radius: 6px; color: #9a9a9a;
+    background: none; border: 0; border-radius: 6px; color: var(--text-3);
   }
-  .pw-toggle:hover { background: none; color: #1A1A1A; }
+  .pw-toggle:hover { background: none; color: var(--text); opacity: 1; }
   .remember { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; cursor: pointer; user-select: none; }
-  .remember input[type="checkbox"] { accent-color: #FF6B35; width: 15px; height: 15px; cursor: pointer; }
-  .remember span { font-size: 12px; color: #5F5F5F; }
+  .remember input[type="checkbox"] { accent-color: var(--text); width: 15px; height: 15px; cursor: pointer; }
+  .remember span { font-size: 14px; color: var(--text-2); }
   button {
-    width: 100%; padding: 11px; border-radius: 8px; border: none;
-    background: #FF6B35; color: white; font-weight: 600; font-size: 13px; cursor: pointer; font-family: inherit;
+    width: 100%; padding: 10px 16px; border-radius: 8px; border: 1px solid var(--text);
+    background: var(--text); color: var(--bg); font-weight: 500; font-size: 14.5px; cursor: pointer; font-family: inherit;
+    transition: opacity .2s;
   }
-  button:hover { background: #E85A1F; }
-  button:disabled { opacity: 0.6; cursor: default; }
-  .error { font-size: 12px; color: #DC2626; margin: -8px 0 16px; }
-  .qr-title { font-size: 9px; text-transform: uppercase; letter-spacing: 0.18em; color: #5F5F5F; font-weight: 500; margin: 0 0 16px; }
+  button:hover { opacity: .88; }
+  button:active { transform: translateY(1px); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .error { font-size: 13.5px; color: var(--neg); margin: -6px 0 14px; }
+  .qr-title { font-size: 15px; font-weight: 500; color: var(--text); margin: 0 0 14px; }
   .qr-box {
-    width: 168px; height: 168px; border-radius: 8px; border: 1px solid #E5E2DD;
+    width: 168px; height: 168px; border-radius: 8px; border: 1px solid var(--rule); background: #fff;
     display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; flex-shrink: 0;
   }
   .qr-box img { width: 100%; height: 100%; object-fit: contain; }
-  .qr-hint { font-size: 11px; color: #5F5F5F; margin: 16px 0 0; line-height: 1.5; }
+  .qr-hint { font-size: 13.5px; color: var(--text-2); margin: 14px 0 0; line-height: 1.5; }
   .spinner {
     width: 22px; height: 22px; border: 2px solid rgba(0,0,0,0.1); border-top-color: rgba(0,0,0,0.4);
     border-radius: 50%; animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .hint { text-align: center; font-size: 11px; color: #9a9a9a; margin-top: 20px; }
+  .hint { text-align: center; font-size: 13px; color: var(--text-3); margin-top: 20px; }
 </style>
 </head>
 <body>
@@ -77,6 +100,7 @@
   </button>
   <div class="wrap" id="wrap">
     <div class="header">
+      <span class="mark" aria-hidden="true"><svg viewBox="0 0 32 32"><g transform="translate(4.2 4.4) scale(.74)"><path d="M3 6h14.2l-4 6.4H3z"/><path d="M19.6 6H27a2.5 2.5 0 0 1 2.5 2.5v1.4a2.5 2.5 0 0 1-2.5 2.5H15.6z"/><path d="M12.6 14.6h6.8V24L16 28.6 12.6 24z"/></g></svg></span>
       <h1>TRACE</h1>
       <p>Restaurant OS</p>
     </div>
@@ -132,7 +156,7 @@
     // static asset with no build step to share that file with.
     const TR = {
       ru: {
-        login: 'Войти', password: 'Пароль', rememberMe: 'Запомнить меня', signIn: 'Войти в Систему',
+        login: 'Логин', password: 'Пароль', rememberMe: 'Запомнить меня', signIn: 'Войти',
         qrTitle: 'Вход через TRACE', qrHint: 'Откройте приложение TRACE на телефоне и отсканируйте код',
         qrExpired: 'Код истёк — обновляем...', qrConfirmed: 'Вход подтверждён',
         invalidLogin: 'Неверный логин или пароль',
@@ -140,7 +164,7 @@
         onceHint: 'Это нужно сделать только один раз на этом компьютере.',
       },
       en: {
-        login: 'Login', password: 'Password', rememberMe: 'Remember me', signIn: 'Enter System',
+        login: 'Login', password: 'Password', rememberMe: 'Remember me', signIn: 'Sign in',
         qrTitle: 'Sign in via TRACE', qrHint: 'Open TRACE on your phone and scan the code',
         qrExpired: 'Code expired — refreshing...', qrConfirmed: 'Signed in',
         invalidLogin: 'Invalid login or password',
@@ -148,7 +172,7 @@
         onceHint: 'You only need to do this once on this computer.',
       },
       uz: {
-        login: 'Kirish', password: 'Parol', rememberMe: 'Meni eslab qol', signIn: 'Tizimga kirish',
+        login: 'Login', password: 'Parol', rememberMe: 'Meni eslab qol', signIn: 'Kirish',
         qrTitle: 'TRACE orqali kirish', qrHint: 'Telefoningizda TRACE ilovasini oching va kodni skanerlang',
         qrExpired: 'Kod eskirdi — yangilanmoqda...', qrConfirmed: 'Kirish tasdiqlandi',
         invalidLogin: "Login yoki parol noto'g'ri",

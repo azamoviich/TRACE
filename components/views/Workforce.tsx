@@ -3,7 +3,7 @@
 // only the Geofence tab (branch clock-in radius + attendance/payroll policy);
 // Roster/Shifts/Swaps/Payroll/Rules tabs land in later phases as more tabs
 // added to the same `Tab` union, following this file's own pattern.
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MapPin, Locate, ShieldCheck, ShieldAlert, Save, Plus, Send, Check, X, Calendar, Pin, FileText, Link as LinkIcon, MessageSquare, Trash2, Upload, Folder, BellOff } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Wallet } from 'lucide-react';
@@ -161,8 +161,33 @@ function HubSettingsTab({ lang, onShowToast }: { lang: Language; onShowToast: (m
 }
 
 // ── Payroll ──────────────────────────────────────────────────────────────
-// Pay-profile editor (four additive inputs, per plan §1.4) + a period
-// review table. No lock button here yet — that's Phase 7.
+// Redesign (TRACE-mockups/staff.html "Зарплата"): period picker + lock,
+// totals strip, one accruals table; clicking a person opens their pay
+// settings in a side panel.
+const fmtMoney = (n: number) => Math.round(n).toLocaleString('ru-RU');
+const ini = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase()).join('');
+const periodLabel = (p: PayrollPeriod) => {
+  const a = new Date(p.starts_on), b = new Date(p.ends_on);
+  const f = (d: Date) => d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+  return a.getMonth() === b.getMonth() ? `${a.getDate()}–${f(b)}` : `${f(a)} – ${f(b)}`;
+};
+
+// Right-hand panel used by Payroll (and anywhere else in the Employees page).
+export function SidePanel({ title, sub, onClose, children }: { title: string; sub?: string; onClose: () => void; children: React.ReactNode }) {
+  const [on, setOn] = useState(false);
+  useEffect(() => { const id = requestAnimationFrame(() => setOn(true)); const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); }; window.addEventListener('keydown', k); return () => { cancelAnimationFrame(id); window.removeEventListener('keydown', k); }; }, []);
+  return (
+    <>
+      <div className={`scrim${on ? ' on' : ''}`} onClick={onClose} />
+      <aside className={`panel${on ? ' on' : ''}`} role="dialog" aria-label={title}>
+        <div className="p-head"><div><h2>{title}</h2>{sub && <div className="faint">{sub}</div>}</div>
+          <button className="p-close" onClick={onClose} aria-label="Close"><i className="ph ph-x" aria-hidden="true" /></button></div>
+        <div className="p-body">{children}</div>
+      </aside>
+    </>
+  );
+}
+
 export function PayrollTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['onShowToast'] }) {
   const [employees, setEmployees] = useState<ChecklistEmployee[]>([]);
   const [roles, setRoles] = useState<ChecklistRole[]>([]);
@@ -171,115 +196,96 @@ export function PayrollTab({ lang, onShowToast }: { lang: Language; onShowToast:
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
   const [locking, setLocking] = useState(false);
+  const [confirmLock, setConfirmLock] = useState(false);
 
   const loadPeriods = () => checklistApi.payroll.periods().then(ps => { setPeriods(ps); if (!selectedPeriodId && ps[0]) setSelectedPeriodId(ps[0].id); }).catch(() => {});
-
   useEffect(() => {
     checklistApi.employees.list().then(setEmployees).catch(() => {});
     checklistApi.roles.list().then(setRoles).catch(() => {});
     loadPeriods();
   }, []);
-
   useEffect(() => {
     if (selectedPeriodId) checklistApi.payroll.payslips(selectedPeriodId).then(setPayslips).catch(() => {});
   }, [selectedPeriodId]);
 
   const lockPeriod = async () => {
     if (!selectedPeriodId) return;
-    if (!confirm(tr(lang, 'Заблокировать период? Это заморозит все расчёты.', 'Lock this period? This freezes every payslip in it.', 'Bu davrni bloklaysizmi? Bu barcha hisob-kitoblarni muzlatadi.'))) return;
     setLocking(true);
     try {
       await checklistApi.payroll.lockPeriod(selectedPeriodId);
       await Promise.all([loadPeriods(), checklistApi.payroll.payslips(selectedPeriodId).then(setPayslips)]);
-      onShowToast(tr(lang, 'Период заблокирован', 'Period locked', 'Davr bloklandi'), 'success');
-    } catch { onShowToast(tr(lang, 'Не удалось заблокировать', 'Failed to lock', "Bloklab bo'lmadi"), 'error'); }
+      setConfirmLock(false);
+      onShowToast(tr(lang, 'Период закрыт', 'Period locked', 'Davr yopildi'), 'success');
+    } catch { onShowToast(tr(lang, 'Не удалось закрыть период', 'Failed to lock', "Davrni yopib bo'lmadi"), 'error'); }
     finally { setLocking(false); }
   };
 
   const roleName = (id: string) => roles.find(r => r.id === id)?.name ?? '—';
   const selectedPeriod = periods.find(p => p.id === selectedPeriodId);
-  const totalForPeriod = payslips.reduce((sum, p) => sum + Number(p.total_amount), 0);
-
-  if (editingEmployeeId) {
-    const employee = employees.find(e => e.id === editingEmployeeId)!;
-    return (
-      <PayProfileEditor
-        lang={lang}
-        employee={employee}
-        onShowToast={onShowToast}
-        onDone={() => { setEditingEmployeeId(null); if (selectedPeriodId) checklistApi.payroll.payslips(selectedPeriodId).then(setPayslips); }}
-      />
-    );
-  }
+  const total = payslips.reduce((s, p) => s + Number(p.total_amount), 0);
+  const slipBy = new Map(payslips.map(p => [p.employee_id, p]));
+  const currency = payslips[0]?.currency ?? tr(lang, 'сум', 'UZS', "so'm");
+  const editing = employees.find(e => e.id === editingEmployeeId) ?? null;
+  const rows = [...employees].sort((a, b) => Number(slipBy.get(b.id)?.total_amount ?? 0) - Number(slipBy.get(a.id)?.total_amount ?? 0));
+  const locked = selectedPeriod?.status === 'locked';
 
   return (
-    <div className="space-y-5">
-      <Card>
-        <h3 className="text-[15px] font-semibold text-text tracking-tight mb-3 flex items-center gap-2">
-          <Wallet size={16} /> {tr(lang, 'Ставки сотрудников', 'Employee pay rates', "Xodimlar ish haqi")}
-        </h3>
-        <div className="space-y-1.5">
-          {employees.map(e => (
-            <button key={e.id} onClick={() => setEditingEmployeeId(e.id)} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg bg-background border border-border text-left hover:border-primary/40">
-              <div>
-                <p className="text-[13px] font-medium text-text">{e.name}</p>
-                <p className="text-[11px] text-muted mt-0.5">{roleName(e.role_id)}</p>
-              </div>
-              <span className="text-[12px] text-primary font-semibold">{tr(lang, 'Настроить', 'Configure', 'Sozlash')}</span>
-            </button>
-          ))}
-        </div>
-      </Card>
-
-      <Card>
-        <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-          <h3 className="text-[15px] font-semibold text-text tracking-tight">{tr(lang, 'Расчётный период', 'Payroll period', 'Hisob davri')}</h3>
-          {periods.length > 0 && (
-            <select value={selectedPeriodId} onChange={e => setSelectedPeriodId(e.target.value)} className="px-3 py-1.5 rounded-lg border border-border bg-background text-[12px] text-text">
-              {periods.map(p => (
-                <option key={p.id} value={p.id}>
-                  {new Date(p.starts_on).toLocaleDateString()} – {new Date(p.ends_on).toLocaleDateString()}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-
-        {!selectedPeriod ? (
-          <p className="text-[13px] text-muted">{tr(lang, 'Периодов пока нет — появятся после первой закрытой смены', 'No periods yet — one appears after the first closed shift', "Hozircha davr yo'q — birinchi yopilgan smenadan keyin paydo bo'ladi")}</p>
-        ) : (
-          <>
-            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-              <div>
-                <span className="text-[13px] text-muted block">{tr(lang, 'Итого за период', 'Period total', "Davr uchun jami")}</span>
-                <span className="text-[22px] font-display font-bold text-text tabular-nums">{totalForPeriod.toLocaleString()} {payslips[0]?.currency ?? ''}</span>
-              </div>
-              {selectedPeriod.status === 'locked' ? (
-                <span className="px-3 py-1.5 rounded-lg bg-card-hover text-[12px] font-semibold text-muted flex items-center gap-1.5">
-                  <Lock size={13} /> {tr(lang, 'Заблокирован', 'Locked', 'Bloklangan')}
-                </span>
-              ) : (
-                <button onClick={lockPeriod} disabled={locking || payslips.length === 0} className="px-3 py-1.5 rounded-lg bg-card border border-border text-[12px] font-semibold flex items-center gap-1.5 text-text disabled:opacity-50">
-                  <Lock size={13} /> {locking ? tr(lang, 'Блокировка…', 'Locking…', 'Bloklanmoqda…') : tr(lang, 'Заблокировать период', 'Lock period', 'Davrni bloklash')}
-                </button>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              {payslips.map(p => (
-                <div key={p.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-background border border-border">
-                  <div>
-                    <span className="text-[13px] text-text">{p.employee_name}</span>
-                    <span className="text-[11px] text-muted ml-2">{p.role_name}</span>
-                  </div>
-                  <span className="text-[13px] font-semibold text-text tabular-nums">{Number(p.total_amount).toLocaleString()} {p.currency}</span>
-                </div>
-              ))}
-              {payslips.length === 0 && <p className="text-[13px] text-muted">{tr(lang, 'Нет данных за этот период', 'No payslips for this period', "Bu davr uchun ma'lumot yo'q")}</p>}
-            </div>
-          </>
+    <>
+      <div className="tools">
+        {periods.length > 0 && (
+          <span className="sel"><select value={selectedPeriodId} onChange={e => setSelectedPeriodId(e.target.value)} aria-label={tr(lang, 'Расчётный период', 'Pay period', 'Hisob davri')}>
+            {periods.map(p => <option key={p.id} value={p.id}>{periodLabel(p)}{p.status === 'locked' ? '' : tr(lang, ', идёт', ', open', ', ochiq')}</option>)}
+          </select><i className="ph ph-caret-down chev" aria-hidden="true" /></span>
         )}
-      </Card>
-    </div>
+        <span className="spacer" />
+        {selectedPeriod && (
+          <span className="lock-row">{locked
+            ? <span className="tag"><i className="ph ph-lock-simple" aria-hidden="true" /> {tr(lang, 'Закрыт, изменить нельзя', 'Locked, read-only', "Yopilgan, o'zgartirib bo'lmaydi")}</span>
+            : <button className="btn" type="button" disabled={!payslips.length} onClick={() => setConfirmLock(true)}><i className="ph ph-lock-simple" aria-hidden="true" />{tr(lang, 'Закрыть период', 'Lock period', 'Davrni yopish')}</button>}
+          </span>
+        )}
+      </div>
+      {confirmLock && selectedPeriod && (
+        <div className="confirm">
+          <span>{tr(lang, `Закрыть период ${periodLabel(selectedPeriod)}? Начисления заморозятся: ставки, бонусы и штрафы за эти даты больше не изменить.`, `Lock ${periodLabel(selectedPeriod)}? Accruals freeze: rates, bonuses and penalties for these dates can't change any more.`, `${periodLabel(selectedPeriod)} davrini yopasizmi? Hisoblar muzlatiladi.`)}</span>
+          <button className="btn solid" type="button" disabled={locking} onClick={lockPeriod}>{locking ? tr(lang, 'Закрываем…', 'Locking…', 'Yopilmoqda…') : tr(lang, 'Закрыть период', 'Lock period', 'Davrni yopish')}</button>
+          <button className="btn" type="button" onClick={() => setConfirmLock(false)}>{tr(lang, 'Отмена', 'Cancel', 'Bekor')}</button>
+        </div>
+      )}
+      <section className="strip" aria-label={tr(lang, 'Итоги периода', 'Period totals', 'Davr yakunlari')}>
+        <div><div className="s-l">{tr(lang, 'К выплате', 'To pay', "To'lanadi")}</div><div className="s-v">{fmtMoney(total)}<small>{currency}</small></div><div className="s-d">{selectedPeriod ? (locked ? tr(lang, 'период закрыт', 'period locked', 'davr yopilgan') : tr(lang, 'период идёт', 'period open', 'davr ochiq')) : tr(lang, 'периодов ещё нет', 'no periods yet', "davrlar yo'q")}</div></div>
+        <div><div className="s-l">{tr(lang, 'Сотрудников с начислением', 'People with accruals', 'Hisobli xodimlar')}</div><div className="s-v">{payslips.filter(p => Number(p.total_amount) > 0).length}</div><div className="s-d">{tr(lang, `из ${employees.length}`, `of ${employees.length}`, `${employees.length} dan`)}</div></div>
+        <div><div className="s-l">{tr(lang, 'В среднем на человека', 'Average per person', "O'rtacha bir kishiga")}</div><div className="s-v">{payslips.length ? fmtMoney(total / payslips.length) : '—'}</div><div className="s-d">{currency}</div></div>
+        <div><div className="s-l">{tr(lang, 'Без ставки', 'No rate set', "Stavkasiz")}</div><div className="s-v">{employees.filter(e => !slipBy.has(e.id)).length}</div><div className="s-d">{tr(lang, 'задайте в карточке', 'set it per person', 'kartochkada belgilang')}</div></div>
+      </section>
+      <section className="card-ph" aria-labelledby="h-pay">
+        <div className="sec-head"><h2 id="h-pay">{tr(lang, 'Начисления', 'Accruals', 'Hisoblar')}</h2><span className="sec-note">{tr(lang, 'Нажмите на сотрудника, чтобы настроить ставку, часы или добавить бонус', 'Click a person to set their rate, hours or add a bonus', "Stavka, soat yoki bonus uchun xodimni bosing")}</span></div>
+        {!selectedPeriod && <p className="note"><i className="ph ph-info" aria-hidden="true" /><span>{tr(lang, 'Периодов пока нет: первый появится после первой закрытой смены.', 'No periods yet: the first appears after the first closed shift.', "Hozircha davr yo'q: birinchi yopilgan smenadan keyin paydo bo'ladi.")}</span></p>}
+        {employees.length === 0 ? <div className="empty"><b>{tr(lang, 'Сотрудников пока нет', 'No employees yet', "Hozircha xodimlar yo'q")}</b></div> : (
+          <table className="dt">
+            <thead><tr><th>{tr(lang, 'Сотрудник', 'Employee', 'Xodim')}</th><th className="hide-sm">{tr(lang, 'Должность', 'Role', 'Lavozim')}</th><th className="r">{tr(lang, 'К выплате', 'To pay', "To'lanadi")}</th><th className="hide-sm" aria-label="open" /></tr></thead>
+            <tbody>{rows.map(e => {
+              const slip = slipBy.get(e.id);
+              return (
+                <tr key={e.id} className="click" tabIndex={0} onClick={() => setEditingEmployeeId(e.id)} onKeyDown={ev => { if (ev.key === 'Enter') setEditingEmployeeId(e.id); }}>
+                  <td><div className="who"><span className="ava" aria-hidden="true">{ini(e.name)}</span><div style={{ minWidth: 0 }}><b>{e.name}</b><span className="ph-sub">{slip ? roleName(e.role_id) : <span style={{ color: 'var(--accent)' }}>{tr(lang, 'начислений нет', 'nothing accrued', "hisob yo'q")}</span>}</span></div></div></td>
+                  <td className="hide-sm muted">{roleName(e.role_id)}</td>
+                  <td className="r" style={{ fontWeight: 500 }}>{slip ? fmtMoney(Number(slip.total_amount)) : <span className="faint">0</span>}</td>
+                  <td className="go hide-sm"><i className="ph ph-caret-right" aria-hidden="true" /></td>
+                </tr>
+              );
+            })}</tbody>
+            {payslips.length > 0 && <tfoot><tr><td>{tr(lang, 'Итого', 'Total', 'Jami')}</td><td className="hide-sm" /><td className="r">{fmtMoney(total)}</td><td className="hide-sm" /></tr></tfoot>}
+          </table>
+        )}
+      </section>
+      {editing && (
+        <SidePanel title={editing.name} sub={roleName(editing.role_id)} onClose={() => setEditingEmployeeId(null)}>
+          <PayProfileEditor lang={lang} employee={editing} onShowToast={onShowToast}
+            onDone={() => { setEditingEmployeeId(null); if (selectedPeriodId) checklistApi.payroll.payslips(selectedPeriodId).then(setPayslips); }} />
+        </SidePanel>
+      )}
+    </>
   );
 }
 
@@ -329,29 +335,18 @@ export function AttendanceRulesCard({ lang, onShowToast }: {
   };
 
   return (
-    <Card>
-      <h3 className="text-[15px] font-semibold text-text tracking-tight mb-1 flex items-center gap-2">
-        <ShieldQuestion size={16} /> {tr(lang, 'Опоздания и штрафы', 'Lateness & penalties', 'Kechikish va jarimalar')}
-      </h3>
-      <p className="text-[12px] text-muted mb-4">
-        {tr(lang,
-          'После льготных минут каждая пропущенная минута вычитается из фиксированной оплаты, плюс штраф. Пример: смена 10:00, льгота 0 — пришёл в 10:01 = −1 минута и штраф.',
-          'Past the grace minutes every missed minute is deducted from fixed pay, plus the penalty. Example: shift at 10:00, grace 0 — arriving 10:01 = −1 minute and the penalty.',
-          "Imtiyozli daqiqalardan keyin har bir o'tkazib yuborilgan daqiqa fiks to'lovdan ayiriladi, ustiga jarima. Misol: smena 10:00, imtiyoz 0 — 10:01 da kelsa = −1 daqiqa va jarima.")}
-      </p>
-      <div className="grid sm:grid-cols-2 gap-3">
-        <Field label={tr(lang, 'Льготные минуты опоздания', 'Grace minutes for lateness', 'Kechikish uchun imtiyoz, daq')} value={graceMin ?? 0} onChange={setGraceMin} />
-        <Field label={tr(lang, 'Можно открыть смену раньше, мин', 'Can clock in early by, min', 'Smenani oldinroq ochish, daq')} value={earlyMin ?? 30} onChange={setEarlyMin} />
-        <Field label={tr(lang, 'Штраф за опоздание (0 = выкл)', 'Late penalty (0 = off)', 'Kechikish jarimasi (0 = o\'chiq)')} value={lateAmount} onChange={setLateAmount} />
-        <Field label={tr(lang, 'Штраф за невыполненный чек-лист (0 = выкл)', 'Missed checklist penalty (0 = off)', 'Bajarilmagan cheklist jarimasi (0 = o\'chiq)')} value={missedAmount} onChange={setMissedAmount} />
+    <section className="card" aria-labelledby="h-late">
+      <h2 id="h-late">{tr(lang, 'Опоздания и штрафы', 'Lateness and penalties', 'Kechikish va jarimalar')}</h2>
+      <p className="lead">{tr(lang, 'После льготных минут каждая пропущенная минута вычитается из фиксированной оплаты, а штраф добавляется сверху.', 'Past the grace minutes, every missed minute comes off fixed pay and the penalty is added on top.', "Imtiyozli daqiqalardan keyin har bir daqiqa fiks to'lovdan ayiriladi, ustiga jarima qo'shiladi.")}</p>
+      <div className="fgrid">
+        <Field label={tr(lang, 'Льготные минуты опоздания', 'Grace minutes for lateness', 'Kechikish uchun imtiyoz')} unit={tr(lang, 'мин', 'min', 'daq')} value={graceMin ?? 0} onChange={setGraceMin} />
+        <Field label={tr(lang, 'Можно открыть смену раньше на', 'Can clock in early by', 'Smenani oldinroq ochish')} unit={tr(lang, 'мин', 'min', 'daq')} value={earlyMin ?? 30} onChange={setEarlyMin} />
+        <Field label={tr(lang, 'Штраф за опоздание', 'Late penalty', 'Kechikish jarimasi')} unit={tr(lang, 'сум', 'UZS', "so'm")} hint={tr(lang, '0, чтобы выключить', '0 turns it off', "0 — o'chiq")} value={lateAmount} onChange={setLateAmount} step={5000} />
+        <Field label={tr(lang, 'Штраф за невыполненный чек-лист', 'Missed checklist penalty', 'Bajarilmagan cheklist jarimasi')} unit={tr(lang, 'сум', 'UZS', "so'm")} hint={tr(lang, '0, чтобы выключить', '0 turns it off', "0 — o'chiq")} value={missedAmount} onChange={setMissedAmount} step={5000} />
       </div>
-      <p className="text-[11px] text-muted mt-2">
-        {tr(lang, 'Раннее время до начала смены не оплачивается. Ранний уход считается так же, как опоздание.', 'Time before the shift starts is never paid. Leaving early is counted the same way as lateness.', "Smena boshlanishidan oldingi vaqt to'lanmaydi. Erta ketish kechikish kabi hisoblanadi.")}
-      </p>
-      <button onClick={save} disabled={busy || graceMin === null} className="mt-4 px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold disabled:opacity-50">
-        {busy ? tr(lang, 'Сохранение…', 'Saving…', 'Saqlanmoqda…') : tr(lang, 'Сохранить правила', 'Save rules', 'Qoidalarni saqlash')}
-      </button>
-    </Card>
+      <p className="fine">{tr(lang, 'Время до начала смены не оплачивается. Ранний уход считается так же, как опоздание.', 'Time before the shift starts is never paid. Leaving early counts the same as lateness.', "Smenadan oldingi vaqt to'lanmaydi. Erta ketish kechikish kabi hisoblanadi.")}</p>
+      <div className="save"><button className="btn solid" type="button" onClick={save} disabled={busy || graceMin === null}>{busy ? tr(lang, 'Сохранение…', 'Saving…', 'Saqlanmoqda…') : tr(lang, 'Сохранить правила', 'Save rules', 'Qoidalarni saqlash')}</button></div>
+    </section>
   );
 }
 
@@ -403,13 +398,8 @@ export function PayProfileEditor({ lang, employee, onShowToast, onDone }: {
     if (diff <= 0) diff += 24 * 60;
     return diff;
   })();
-
   const update = (key: keyof typeof profile, value: number) => setProfile(p => ({ ...p, [key]: value }));
-
-  const estimatedMonthly = profile.monthlyAmount
-    + profile.dailyAmount * 22
-    + profile.perShiftAmount * 22
-    + profile.hourlyRate * 8 * 22;
+  const estimatedMonthly = profile.monthlyAmount + profile.dailyAmount * 22 + profile.perShiftAmount * 22 + profile.hourlyRate * 8 * 22;
 
   const save = async () => {
     if ((schedule.start == null) !== (schedule.end == null)) {
@@ -419,14 +409,12 @@ export function PayProfileEditor({ lang, employee, onShowToast, onDone }: {
     setBusy(true);
     try {
       const percent = Math.max(0, Math.min(100, salesPercent));
-      const salaryType = percent > 0 ? 'percent_of_sales'
-        : profile.hourlyRate > 0 ? 'hourly'
-        : profile.perShiftAmount > 0 ? 'per_shift' : 'fixed';
+      const salaryType = percent > 0 ? 'percent_of_sales' : profile.hourlyRate > 0 ? 'hourly' : profile.perShiftAmount > 0 ? 'per_shift' : 'fixed';
       await Promise.all([
         checklistApi.payroll.savePayProfile(employee.id, { ...profile, salaryType, config: { percent } }),
         checklistApi.payroll.saveSchedule(employee.id, schedule),
       ]);
-      onShowToast(tr(lang, 'Ставка сохранена', 'Pay rate saved', "Stavka saqlandi"), 'success');
+      onShowToast(tr(lang, 'Ставка сохранена', 'Pay rate saved', 'Stavka saqlandi'), 'success');
       onDone();
     } catch { onShowToast(tr(lang, 'Не удалось сохранить', 'Failed to save', "Saqlab bo'lmadi"), 'error'); }
     finally { setBusy(false); }
@@ -439,103 +427,76 @@ export function PayProfileEditor({ lang, employee, onShowToast, onDone }: {
       await checklistApi.payroll.addAdjustment(employee.id, { kind: adjKind, amount: adjAmount, reason: adjReason.trim() || undefined });
       setAdjAmount(0); setAdjReason('');
       onShowToast(tr(lang, 'Начисление добавлено', 'Adjustment added', "Hisoblash qo'shildi"), 'success');
-    } catch { onShowToast(tr(lang, 'Не удалось добавить (возможно, период заблокирован)', 'Failed to add (period may be locked)', "Qo'shib bo'lmadi (davr bloklangan bo'lishi mumkin)"), 'error'); }
+    } catch { onShowToast(tr(lang, 'Не удалось добавить (возможно, период закрыт)', 'Failed to add (the period may be locked)', "Qo'shib bo'lmadi (davr yopilgan bo'lishi mumkin)"), 'error'); }
     finally { setAdjBusy(false); }
   };
 
-  if (!loaded) return <Card><p className="text-[13px] text-muted">{tr(lang, 'Загрузка...', 'Loading...', 'Yuklanmoqda...')}</p></Card>;
+  if (!loaded) return <div className="sk w9" />;
+  const sumU = tr(lang, 'сум', 'UZS', "so'm");
 
   return (
-    <Card>
-      <button onClick={onDone} className="text-[13px] text-muted hover:text-text mb-4">{tr(lang, '← Назад', '← Back', '← Orqaga')}</button>
-      <h3 className="text-[15px] font-semibold text-text tracking-tight mb-1">{employee.name}</h3>
-      <p className="text-[12px] text-muted mb-4">{tr(lang, 'Типы оплаты складываются — заполните только нужные поля', 'Salary types are additive — fill in only what applies', "To'lov turlari qo'shiladi — faqat kerakli maydonlarni to'ldiring")}</p>
-
-      <div className="grid sm:grid-cols-2 gap-3">
-        <Field label={tr(lang, 'Фикс. в месяц', 'Fixed monthly', 'Oylik fiks')} value={profile.monthlyAmount} onChange={v => update('monthlyAmount', v)} />
-        <Field label={tr(lang, 'За день', 'Per day', 'Kunlik')} value={profile.dailyAmount} onChange={v => update('dailyAmount', v)} />
-        <Field label={tr(lang, 'За смену', 'Per shift', 'Smena uchun')} value={profile.perShiftAmount} onChange={v => update('perShiftAmount', v)} />
-        <Field label={tr(lang, 'За час', 'Per hour', 'Soatlik')} value={profile.hourlyRate} onChange={v => update('hourlyRate', v)} />
-        <Field label={tr(lang, '% от продаж', '% of sales', 'Savdodan %')} value={salesPercent} onChange={setSalesPercent} step={0.5} />
+    <>
+      <p className="lead">{tr(lang, 'Виды оплаты складываются: заполните только нужные поля.', 'Pay types add up: fill in only what applies.', "To'lov turlari qo'shiladi: faqat keraklisini to'ldiring.")}</p>
+      <div className="fgrid">
+        <Field label={tr(lang, 'Фикс в месяц', 'Fixed per month', 'Oylik fiks')} unit={sumU} value={profile.monthlyAmount} onChange={v => update('monthlyAmount', v)} step={50000} />
+        <Field label={tr(lang, 'За день', 'Per day', 'Kunlik')} unit={sumU} value={profile.dailyAmount} onChange={v => update('dailyAmount', v)} step={5000} />
+        <Field label={tr(lang, 'За смену', 'Per shift', 'Smena uchun')} unit={sumU} value={profile.perShiftAmount} onChange={v => update('perShiftAmount', v)} step={5000} />
+        <Field label={tr(lang, 'За час', 'Per hour', 'Soatlik')} unit={sumU} value={profile.hourlyRate} onChange={v => update('hourlyRate', v)} step={1000} />
+        <Field label={tr(lang, 'Процент от продаж', 'Percent of sales', 'Savdodan foiz')} unit="%" value={salesPercent} onChange={setSalesPercent} step={0.5}
+          hint={salesPercent > 0 && !employee.iiko_employee_id ? tr(lang, 'Работает только для сотрудника, связанного с iiko: продажи берутся по официанту в заказе.', 'Only works for an employee linked to iiko: sales are taken by the waiter on the order.', "Faqat iiko'ga bog'langan xodim uchun ishlaydi.") : undefined} bad={salesPercent > 0 && !employee.iiko_employee_id} />
       </div>
-      {salesPercent > 0 && !employee.iiko_employee_id && (
-        <p className="text-[11px] text-danger mt-2">
-          {tr(lang, 'Процент от продаж работает только для сотрудника, привязанного к iiko — продажи берутся по официанту в заказе.', 'Percent of sales only works for an employee linked to iiko — sales are attributed by the waiter on the order.', "Savdodan foiz faqat iiko'ga bog'langan xodim uchun ishlaydi — savdo buyurtmadagi ofitsiant bo'yicha olinadi.")}
-        </p>
-      )}
-
-      <div className="mt-5 pt-4 border-t border-border">
-        <h4 className="text-[13px] font-semibold text-text mb-1">{tr(lang, 'Рабочие часы', 'Working hours', 'Ish vaqti')}</h4>
-        <p className="text-[11px] text-muted mb-3">{tr(lang, 'По ним считаются опоздания и ранний уход, если на день нет смены в расписании.', 'Lateness and leaving early are measured against these whenever the roster has no shift that day.', "Agar jadvalda o'sha kunga smena bo'lmasa, kechikish va erta ketish shu bo'yicha hisoblanadi.")}</p>
-        <div className="flex items-center gap-2 flex-wrap mb-3">
-          <input type="time" value={schedule.start ?? ''} onChange={e => setSchedule(sc => ({ ...sc, start: e.target.value || null }))} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text tabular-nums" />
-          <span className="text-muted">—</span>
-          <input type="time" value={schedule.end ?? ''} onChange={e => setSchedule(sc => ({ ...sc, end: e.target.value || null }))} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text tabular-nums" />
-          {scheduleMinutes > 0 && <span className="text-[12px] text-muted">{Math.floor(scheduleMinutes / 60)}{tr(lang, 'ч', 'h', 'soat')}{scheduleMinutes % 60 ? ` ${scheduleMinutes % 60}${tr(lang, 'м', 'm', 'daq')}` : ''}</span>}
-        </div>
-        <div className="flex gap-1.5 flex-wrap">
-          {WEEKDAYS.map(d => (
-            <button key={d.iso} onClick={() => toggleDay(d.iso)}
-              className={`w-11 py-1.5 rounded-lg text-[12px] font-semibold border transition-colors ${schedule.days.includes(d.iso) ? 'bg-primary text-white border-primary' : 'bg-background text-muted border-border hover:text-text'}`}>
-              {tr(lang, d.ru, d.en, d.uz)}
-            </button>
-          ))}
-        </div>
+      <h3>{tr(lang, 'Рабочие часы', 'Working hours', 'Ish vaqti')}</h3>
+      <p className="faint" style={{ fontSize: 13, margin: 0 }}>{tr(lang, 'По ним считаются опоздания, если на день нет смены в расписании.', 'Lateness is measured against these when the roster has no shift that day.', "Jadvalda smena bo'lmasa, kechikish shu bo'yicha hisoblanadi.")}</p>
+      <div className="times">
+        <input className="in" type="time" value={schedule.start ?? ''} onChange={e => setSchedule(sc => ({ ...sc, start: e.target.value || null }))} aria-label={tr(lang, 'Начало', 'Start', 'Boshlanishi')} />
+        <span className="faint">—</span>
+        <input className="in" type="time" value={schedule.end ?? ''} onChange={e => setSchedule(sc => ({ ...sc, end: e.target.value || null }))} aria-label={tr(lang, 'Конец', 'End', 'Tugashi')} />
+        {scheduleMinutes > 0 && <span className="faint">{Math.floor(scheduleMinutes / 60)} {tr(lang, 'ч', 'h', 'soat')}{scheduleMinutes % 60 ? ` ${scheduleMinutes % 60} ${tr(lang, 'мин', 'min', 'daq')}` : ''}</span>}
       </div>
-
-      <div className="grid sm:grid-cols-3 gap-3 mt-3">
-        <Field label={tr(lang, 'Множитель сверхурочных', 'Overtime multiplier', "Qo'shimcha ish koeffitsienti")} value={profile.overtimeMultiplier} onChange={v => update('overtimeMultiplier', v)} step={0.1} />
-        <Field label={tr(lang, 'После, мин', 'Overtime after, min', "Necha daqiqadan keyin")} value={profile.overtimeAfterMinutes} onChange={v => update('overtimeAfterMinutes', v)} />
-        <Field label={tr(lang, 'Мин. смена, мин', 'Min shift, min', "Min smena, daqiqa")} value={profile.minShiftMinutes} onChange={v => update('minShiftMinutes', v)} />
+      <div className="days">
+        {WEEKDAYS.map(d => <button key={d.iso} type="button" aria-pressed={schedule.days.includes(d.iso)} onClick={() => toggleDay(d.iso)}>{tr(lang, d.ru, d.en, d.uz)}</button>)}
       </div>
-
-      <div className="mt-4 p-3 rounded-lg bg-primary/10 flex items-baseline justify-between">
-        <span className="text-[12px] text-muted">{tr(lang, 'Ориентировочно в месяц (22 смены × 8ч)', 'Estimated monthly (22 shifts × 8h)', "Taxminiy oylik (22 smena × 8soat)")}</span>
-        <span className="text-[16px] font-bold text-text tabular-nums">{estimatedMonthly.toLocaleString()}</span>
+      <div className="fgrid three">
+        <Field label={tr(lang, 'Сверхурочные ×', 'Overtime ×', "Qo'shimcha ×")} value={profile.overtimeMultiplier} onChange={v => update('overtimeMultiplier', v)} step={0.1} />
+        <Field label={tr(lang, 'Сверхурочные после', 'Overtime after', 'Keyin')} unit={tr(lang, 'мин', 'min', 'daq')} value={profile.overtimeAfterMinutes} onChange={v => update('overtimeAfterMinutes', v)} step={15} />
+        <Field label={tr(lang, 'Минимум смены', 'Minimum shift', 'Min smena')} unit={tr(lang, 'мин', 'min', 'daq')} value={profile.minShiftMinutes} onChange={v => update('minShiftMinutes', v)} step={15} />
       </div>
+      <div className="est"><small>{tr(lang, 'Примерно в месяц (22 смены по 8 ч)', 'About a month (22 shifts × 8 h)', 'Taxminan oyiga (22 smena × 8 soat)')}</small><b>{fmtMoney(estimatedMonthly)}</b></div>
+      <button className="btn solid wide-btn" type="button" onClick={save} disabled={busy}>{busy ? tr(lang, 'Сохранение…', 'Saving…', 'Saqlanmoqda…') : tr(lang, 'Сохранить', 'Save', 'Saqlash')}</button>
 
-      <button onClick={save} disabled={busy} className="w-full mt-4 px-3.5 py-2.5 rounded-lg bg-primary text-white text-[13px] font-semibold disabled:opacity-50">
-        {busy ? tr(lang, 'Сохранение…', 'Saving…', 'Saqlanmoqda…') : tr(lang, 'Сохранить', 'Save', 'Saqlash')}
-      </button>
-
-      <div className="mt-6 pt-4 border-t border-border">
-        <h4 className="text-[13px] font-semibold text-text mb-2">{tr(lang, 'Разовое начисление', 'One-off adjustment', "Bir martalik hisoblash")}</h4>
-        <div className="grid sm:grid-cols-2 gap-2 mb-2">
-          <select value={adjKind} onChange={e => setAdjKind(e.target.value as 'bonus' | 'penalty')} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text">
+      <h3>{tr(lang, 'Разовое начисление', 'One-off adjustment', 'Bir martalik hisob')}</h3>
+      <div className="fgrid">
+        <label className="fld"><span>{tr(lang, 'Что', 'Type', 'Turi')}</span>
+          <span className="sel"><select className="in" value={adjKind} onChange={e => setAdjKind(e.target.value as 'bonus' | 'penalty' | 'advance')}>
             <option value="bonus">{tr(lang, 'Бонус', 'Bonus', 'Bonus')}</option>
             <option value="penalty">{tr(lang, 'Штраф', 'Penalty', 'Jarima')}</option>
             <option value="advance">{tr(lang, 'Аванс (уже выплачен)', 'Advance (already paid)', "Avans (to'langan)")}</option>
-          </select>
-          <input type="number" value={adjAmount || ''} onChange={e => setAdjAmount(Number(e.target.value) || 0)} placeholder={tr(lang, 'Сумма', 'Amount', "Summa")} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text" />
-        </div>
-        <input value={adjReason} onChange={e => setAdjReason(e.target.value)} placeholder={tr(lang, 'Причина', 'Reason', 'Sabab')} className="w-full px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text mb-2" />
-        <button onClick={addAdjustment} disabled={adjBusy || !adjAmount || (adjKind !== 'advance' && !adjReason.trim())} className="px-3.5 py-2 rounded-lg bg-card border border-border text-[13px] font-semibold text-text disabled:opacity-50">
-          {adjBusy ? tr(lang, 'Добавление…', 'Adding…', "Qo'shilmoqda…") : tr(lang, 'Добавить', 'Add', "Qo'shish")}
-        </button>
+          </select><i className="ph ph-caret-down chev" aria-hidden="true" /></span></label>
+        <Field label={tr(lang, 'Сумма', 'Amount', 'Summa')} unit={sumU} value={adjAmount} onChange={setAdjAmount} step={5000} />
       </div>
-    </Card>
+      <label className="fld"><span>{tr(lang, 'Причина', 'Reason', 'Sabab')}{adjKind !== 'advance' ? ' *' : ''}</span><input className="in" value={adjReason} onChange={e => setAdjReason(e.target.value)} /></label>
+      <button className="btn" type="button" onClick={addAdjustment} disabled={adjBusy || !adjAmount || (adjKind !== 'advance' && !adjReason.trim())}>{adjBusy ? tr(lang, 'Добавляем…', 'Adding…', "Qo'shilmoqda…") : tr(lang, 'Добавить', 'Add', "Qo'shish")}</button>
+    </>
   );
 }
 
-function Field({ label, value, onChange, step = 1 }: { label: string; value: number; onChange: (v: number) => void; step?: number }) {
+function Field({ label, value, onChange, step = 1, unit, hint, bad }: { label: string; value: number; onChange: (v: number) => void; step?: number; unit?: string; hint?: string; bad?: boolean }) {
   return (
-    <div>
-      <label className="text-[11px] text-muted mb-1 block">{label}</label>
-      <input
-        type="number"
-        step={step}
-        value={value}
-        onChange={e => onChange(Number(e.target.value) || 0)}
-        className="w-full px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text tabular-nums"
-      />
-    </div>
+    <label className="fld">
+      <span>{label}</span>
+      <span className="inu"><input className="in" type="number" step={step} min={0} value={value} onChange={e => onChange(Number(e.target.value) || 0)} />{unit && <em>{unit}</em>}</span>
+      {hint && <span className={`hint${bad ? ' bad' : ''}`}>{hint}</span>}
+    </label>
   );
 }
 
 // ── Roster ───────────────────────────────────────────────────────────────
-// Build-a-week + swap approvals. Keeps the same Card/tr conventions as the
-// rest of this file — a genuine "grid" builder (drag to assign, etc.) is a
-// future pass; this ships create → publish → approve end-to-end.
+// Redesign: a week grid (people grouped by role × 7 days). Empty cells add a
+// shift for that person and day; a shift opens a small popover to cancel it.
+// Swap requests and location signals sit underneath.
+const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const hm = (iso: string) => new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+
 export function RosterTab({ lang, onShowToast }: { lang: Language; onShowToast: Props['onShowToast'] }) {
   const [roles, setRoles] = useState<ChecklistRole[]>([]);
   const [employees, setEmployees] = useState<ChecklistEmployee[]>([]);
@@ -543,15 +504,13 @@ export function RosterTab({ lang, onShowToast }: { lang: Language; onShowToast: 
   const [swaps, setSwaps] = useState<SwapRequest[]>([]);
   const [coverage, setCoverage] = useState<RosterCoverageRow[]>([]);
   const [signals, setSignals] = useState<ShiftSignal[]>([]);
-  const [showAdd, setShowAdd] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [conflictPending, setConflictPending] = useState<{ employeeId: string; roleId: string; plannedStart: string; plannedEnd: string } | null>(null);
-
-  const [roleId, setRoleId] = useState('');
-  const [employeeId, setEmployeeId] = useState('');
-  const [date, setDate] = useState('');
+  const [week, setWeek] = useState(0);
+  const [adding, setAdding] = useState<{ employeeId: string; roleId: string; date: string } | null>(null);
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('17:00');
+  const [conflict, setConflict] = useState(false);
+  const [openShift, setOpenShift] = useState<string | null>(null);
 
   const load = () => {
     checklistApi.roles.list().then(setRoles).catch(() => {});
@@ -565,187 +524,157 @@ export function RosterTab({ lang, onShowToast }: { lang: Language; onShowToast: 
     checklistApi.shifts.signals().then(setSignals).catch(() => {});
   };
   useEffect(() => { load(); }, []);
-  useEffect(() => { if (!roleId && roles[0]) setRoleId(roles[0].id); }, [roles]);
-  useEffect(() => {
-    const roleEmployees = employees.filter(e => e.role_id === roleId);
-    if (roleEmployees[0] && !roleEmployees.some(e => e.id === employeeId)) setEmployeeId(roleEmployees[0].id);
-  }, [roleId, employees]);
 
-  const roleEmployees = employees.filter(e => e.role_id === roleId);
-  const roleName = (id: string) => roles.find(r => r.id === id)?.name ?? '—';
-  const employeeName = (id: string) => employees.find(e => e.id === id)?.name ?? '—';
+  // Week starts on Monday.
+  const start = useMemo(() => {
+    const d = new Date(); d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + week * 7);
+    return d;
+  }, [week]);
+  const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
+  const todayKey = dayKey(new Date());
+  const live = shifts.filter(s => s.status !== 'cancelled');
+  const byCell = new Map<string, RosterShift[]>();
+  for (const s of live) { const k = `${s.employee_id}|${dayKey(new Date(s.planned_start))}`; byCell.set(k, [...(byCell.get(k) ?? []), s]); }
+  const swapByShift = new Map(swaps.map(s => [s.roster_shift_id, s]));
+  const fmtDay = (d: Date) => `${tr(lang, WEEKDAYS[(d.getDay() + 6) % 7].ru, WEEKDAYS[(d.getDay() + 6) % 7].en, WEEKDAYS[(d.getDay() + 6) % 7].uz)}, ${d.getDate()}`;
+  const dm = (d: Date) => d.toLocaleDateString(tr(lang, 'ru-RU', 'en-GB', 'uz-Latn-UZ'), { day: 'numeric', month: 'long' });
+  const weekLabel = days[0].getMonth() === days[6].getMonth() ? `${days[0].getDate()}–${dm(days[6])}` : `${dm(days[0])} – ${dm(days[6])}`;
+  const gaps = coverage.filter(c => c.days_with_coverage === 0 && c.active_employee_count > 0);
+  const groups = roles.map(r => ({ role: r, people: employees.filter(e => e.role_id === r.id) })).filter(g => g.people.length);
 
   const addShift = async (force = false) => {
-    if (!employeeId || !roleId || !date) {
-      onShowToast(tr(lang, 'Укажите дату, роль и сотрудника', 'Enter a date, role and employee', "Sana, rol va xodimni kiriting"), 'error');
-      return;
-    }
+    if (!adding) return;
     setBusy(true);
-    const plannedStart = new Date(`${date}T${startTime}:00`).toISOString();
-    const plannedEnd = new Date(`${date}T${endTime}:00`).toISOString();
+    const plannedStart = new Date(`${adding.date}T${startTime}:00`).toISOString();
+    let endDate = adding.date;
+    if (endTime <= startTime) { const d = new Date(`${adding.date}T00:00:00`); d.setDate(d.getDate() + 1); endDate = dayKey(d); }
+    const plannedEnd = new Date(`${endDate}T${endTime}:00`).toISOString();
     try {
-      const created = await checklistApi.roster.create({ employeeId, roleId, plannedStart, plannedEnd, force });
+      const created = await checklistApi.roster.create({ employeeId: adding.employeeId, roleId: adding.roleId, plannedStart, plannedEnd, force });
       await checklistApi.roster.publish([created.id]);
-      setShowAdd(false);
-      setConflictPending(null);
+      setAdding(null); setConflict(false);
       load();
-      onShowToast(tr(lang, 'Смена опубликована', 'Shift published', 'Smena e\'lon qilindi'), 'success');
+      onShowToast(tr(lang, 'Смена опубликована', 'Shift published', "Smena e'lon qilindi"), 'success');
     } catch (err: any) {
-      if (String(err?.message ?? '').includes('DOUBLE_BOOKED')) {
-        setConflictPending({ employeeId, roleId, plannedStart, plannedEnd });
-      } else {
-        onShowToast(tr(lang, 'Не удалось создать смену', 'Failed to create shift', "Smena yaratib bo'lmadi"), 'error');
-      }
-    }
-    finally { setBusy(false); }
+      if (String(err?.message ?? '').includes('DOUBLE_BOOKED')) setConflict(true);
+      else onShowToast(tr(lang, 'Не удалось создать смену', 'Failed to create shift', "Smena yaratib bo'lmadi"), 'error');
+    } finally { setBusy(false); }
   };
-
   const cancelShift = async (id: string) => {
-    try { await checklistApi.roster.cancel(id); load(); } catch { onShowToast(tr(lang, 'Не удалось отменить', 'Failed to cancel', "Bekor qilib bo'lmadi"), 'error'); }
+    try { await checklistApi.roster.cancel(id); setOpenShift(null); load(); } catch { onShowToast(tr(lang, 'Не удалось отменить', 'Failed to cancel', "Bekor qilib bo'lmadi"), 'error'); }
   };
-
   const approveSwap = async (id: string) => {
     try { await checklistApi.roster.approveSwap(id); load(); onShowToast(tr(lang, 'Замена одобрена', 'Swap approved', 'Almashtirish tasdiqlandi'), 'success'); }
-    catch { onShowToast(tr(lang, 'Нужен исполнитель — дождитесь отклика', 'Needs a claimer first — wait for someone to volunteer', "Avval kimdir javob berishini kuting"), 'error'); }
+    catch { onShowToast(tr(lang, 'Нужен желающий: дождитесь отклика', 'Needs a volunteer first', "Avval kimdir javob berishini kuting"), 'error'); }
   };
   const rejectSwap = async (id: string) => {
     try { await checklistApi.roster.rejectSwap(id); load(); }
     catch { onShowToast(tr(lang, 'Не удалось отклонить', 'Failed to reject', "Rad etib bo'lmadi"), 'error'); }
   };
-
-  const upcoming = shifts.filter(s => s.status === 'published' && new Date(s.planned_end) > new Date()).sort((a, b) => a.planned_start.localeCompare(b.planned_start));
+  const nameOf = (id: string) => employees.find(e => e.id === id)?.name ?? '—';
 
   return (
-    <div className="space-y-5">
-      <Card>
-        <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
-          <h3 className="text-[15px] font-semibold text-text tracking-tight flex items-center gap-2">
-            <Calendar size={16} /> {tr(lang, 'Расписание', 'Roster', 'Jadval')}
-          </h3>
-          <button onClick={() => setShowAdd(v => !v)} className="px-3 py-1.5 rounded-lg bg-primary text-white text-[12px] font-semibold flex items-center gap-1.5">
-            <Plus size={14} /> {tr(lang, 'Добавить смену', 'Add shift', "Smena qo'shish")}
-          </button>
+    <>
+      <div className="tools">
+        <div className="wk">
+          <button type="button" aria-label={tr(lang, 'Предыдущая неделя', 'Previous week', 'Oldingi hafta')} onClick={() => setWeek(w => w - 1)} disabled={week <= -2}><i className="ph ph-caret-left" aria-hidden="true" /></button>
+          <span>{weekLabel}</span>
+          <button type="button" aria-label={tr(lang, 'Следующая неделя', 'Next week', 'Keyingi hafta')} onClick={() => setWeek(w => w + 1)}><i className="ph ph-caret-right" aria-hidden="true" /></button>
         </div>
-
-        {showAdd && (
-          <div className="mt-3 mb-4 p-3.5 rounded-xl border border-border bg-background space-y-2">
-            <div className="grid sm:grid-cols-2 gap-2">
-              <select value={roleId} onChange={e => setRoleId(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text">
-                {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-              </select>
-              <select value={employeeId} onChange={e => setEmployeeId(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text">
-                {roleEmployees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-              </select>
-            </div>
-            <div className="grid sm:grid-cols-3 gap-2">
-              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
-              <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
-              <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-card text-[13px] text-text" />
-            </div>
-            <div className="flex items-center gap-2 pt-1">
-              <button onClick={() => addShift(false)} disabled={busy} className="px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold flex items-center gap-1.5 disabled:opacity-50">
-                <Send size={14} /> {tr(lang, 'Опубликовать', 'Publish', "E'lon qilish")}
-              </button>
-              <button onClick={() => setShowAdd(false)} className="px-3.5 py-2 rounded-lg bg-card border border-border text-muted text-[13px] font-medium">
-                {tr(lang, 'Отмена', 'Cancel', 'Bekor qilish')}
-              </button>
-            </div>
-            {conflictPending && (
-              <div className="mt-2 p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-[12px] text-red-600 flex items-center justify-between gap-2">
-                <span>{tr(lang, 'У сотрудника уже есть смена в это время', 'This employee already has an overlapping shift', "Bu xodimning shu vaqtda smenasi bor")}</span>
-                <button onClick={() => addShift(true)} disabled={busy} className="px-2.5 py-1 rounded-md bg-red-500 text-white text-[11px] font-semibold whitespace-nowrap">
-                  {tr(lang, 'Всё равно создать', 'Create anyway', "Baribir yaratish")}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {coverage.some(c => c.days_with_coverage === 0 && c.active_employee_count > 0) && (
-          <div className="mt-3 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[12px] text-amber-700">
-            {tr(lang, 'Нет смен на ближайшие 7 дней для: ', 'No shifts in the next 7 days for: ', 'Keyingi 7 kun uchun smenalar yo\'q: ')}
-            {coverage.filter(c => c.days_with_coverage === 0 && c.active_employee_count > 0).map(c => c.role_name).join(', ')}
-          </div>
-        )}
-
-        {upcoming.length === 0 ? (
-          <p className="text-[13px] text-muted">{tr(lang, 'Смены не запланированы', 'No shifts scheduled', "Smenalar rejalashtirilmagan")}</p>
-        ) : (
-          <div className="space-y-1.5">
-            {upcoming.map(s => (
-              <div key={s.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-background border border-border">
-                <div>
-                  <span className="text-[13px] text-text font-medium">{s.employee_name}</span>
-                  <span className="text-[11px] text-muted ml-2">{s.role_name}</span>
-                  <p className="text-[11px] text-muted mt-0.5">
-                    {new Date(s.planned_start).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                    {' – '}
-                    {new Date(s.planned_end).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                  </p>
-                </div>
-                <button onClick={() => cancelShift(s.id)} className="text-red-500 hover:text-red-600 text-[11px] font-semibold">
-                  {tr(lang, 'Отменить', 'Cancel', 'Bekor qilish')}
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      <Card>
-        <h3 className="text-[15px] font-semibold text-text tracking-tight mb-3">{tr(lang, 'Запросы на замену', 'Swap requests', "Almashtirish so'rovlari")}</h3>
-        {swaps.length === 0 ? (
-          <p className="text-[13px] text-muted">{tr(lang, 'Нет активных запросов', 'No active requests', "Faol so'rovlar yo'q")}</p>
-        ) : (
-          <div className="space-y-1.5">
-            {swaps.map(s => (
-              <div key={s.id} className="p-3 rounded-lg bg-background border border-border space-y-1.5">
-                <p className="text-[13px] text-text">
-                  <span className="font-medium">{s.requesting_employee_name}</span>{' '}
-                  {tr(lang, 'просит замену на', 'wants coverage for', 'uchun almashtirish so\'ramoqda')}{' '}
-                  {new Date(s.planned_start).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                </p>
-                {s.reason && <p className="text-[11px] text-muted">{s.reason}</p>}
-                <p className="text-[11px] text-muted">
-                  {s.status === 'claimed'
-                    ? tr(lang, `Готов выйти: ${s.coverer_employee_name}`, `Volunteered: ${s.coverer_employee_name}`, `Tayyor: ${s.coverer_employee_name}`)
-                    : tr(lang, 'Ожидает желающего', 'Waiting for a volunteer', "Ko'ngilli kutilmoqda")}
-                </p>
-                {s.status === 'claimed' && (
-                  <div className="flex items-center gap-2 pt-1">
-                    <button onClick={() => approveSwap(s.id)} className="px-2.5 py-1.5 rounded-lg bg-green-500/10 text-green-600 text-[12px] font-semibold flex items-center gap-1">
-                      <Check size={13} /> {tr(lang, 'Одобрить', 'Approve', 'Tasdiqlash')}
-                    </button>
-                    <button onClick={() => rejectSwap(s.id)} className="px-2.5 py-1.5 rounded-lg bg-red-500/10 text-red-600 text-[12px] font-semibold flex items-center gap-1">
-                      <X size={13} /> {tr(lang, 'Отклонить', 'Reject', 'Rad etish')}
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      {signals.length > 0 && (
-        <Card>
-          <h3 className="text-[15px] font-semibold text-text tracking-tight mb-3">
-            {tr(lang, 'Сигналы геолокации', 'Location signals', 'Geolokatsiya signallari')}
-          </h3>
-          <div className="space-y-1.5">
-            {signals.slice(0, 20).map(s => (
-              <div key={s.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-background border border-border text-[12px]">
-                <span className="text-text font-medium">{s.employee_name}</span>
-                <span className="text-muted">
-                  {s.type === 'geo_fail' ? tr(lang, 'вне радиуса', 'outside radius', 'radiusdan tashqari') : tr(lang, 'подмена локации', 'mock location', 'soxta joylashuv')}
-                </span>
-                <span className="text-muted">{new Date(s.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
+        {week !== 0 && <button className="link" type="button" onClick={() => setWeek(0)}>{tr(lang, 'Эта неделя', 'This week', 'Shu hafta')}</button>}
+        <span className="spacer" />
+        <button className="btn solid" type="button" onClick={() => { const e = employees[0]; if (e) setAdding({ employeeId: e.id, roleId: e.role_id, date: dayKey(days.find(d => dayKey(d) >= todayKey) ?? days[0]) }); }}><i className="ph ph-plus" aria-hidden="true" />{tr(lang, 'Добавить смену', 'Add shift', "Smena qo'shish")}</button>
+      </div>
+      {gaps.length > 0 && week === 0 && (
+        <p className="note"><i className="ph ph-warning" aria-hidden="true" /><span>{tr(lang, `Нет ни одной смены на ближайшие 7 дней: ${gaps.map(g => g.role_name.toLowerCase()).join(', ')}.`, `No shifts in the next 7 days for: ${gaps.map(g => g.role_name).join(', ')}.`, `Keyingi 7 kunga smena yo'q: ${gaps.map(g => g.role_name).join(', ')}.`)}</span></p>
       )}
-    </div>
+
+      {adding && (
+        <div className="confirm" style={{ flexWrap: 'wrap' }}>
+          <span className="sel"><select className="in" value={adding.employeeId} onChange={e => { const emp = employees.find(x => x.id === e.target.value); if (emp) setAdding({ ...adding, employeeId: emp.id, roleId: emp.role_id }); }} aria-label={tr(lang, 'Сотрудник', 'Employee', 'Xodim')}>
+            {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+          </select><i className="ph ph-caret-down chev" aria-hidden="true" /></span>
+          <input className="in" type="date" value={adding.date} onChange={e => setAdding({ ...adding, date: e.target.value })} aria-label={tr(lang, 'Дата', 'Date', 'Sana')} />
+          <input className="in" type="time" value={startTime} onChange={e => setStartTime(e.target.value)} aria-label={tr(lang, 'Начало', 'Start', 'Boshlanishi')} />
+          <input className="in" type="time" value={endTime} onChange={e => setEndTime(e.target.value)} aria-label={tr(lang, 'Конец', 'End', 'Tugashi')} />
+          <button className="btn solid" type="button" disabled={busy} onClick={() => addShift(false)}>{tr(lang, 'Опубликовать', 'Publish', "E'lon qilish")}</button>
+          <button className="btn" type="button" onClick={() => { setAdding(null); setConflict(false); }}>{tr(lang, 'Отмена', 'Cancel', 'Bekor')}</button>
+          {conflict && <span className="neg" style={{ flexBasis: '100%' }}>{tr(lang, 'У сотрудника уже есть смена в это время.', 'This person already has an overlapping shift.', 'Bu xodimning shu vaqtda smenasi bor.')} <button className="link" type="button" onClick={() => addShift(true)}>{tr(lang, 'Всё равно создать', 'Create anyway', 'Baribir yaratish')}</button></span>}
+        </div>
+      )}
+
+      {groups.length === 0 ? <div className="empty"><b>{tr(lang, 'Нет сотрудников с должностью', 'No employees with a role yet', "Lavozimli xodimlar yo'q")}</b></div> : (
+        <div className="grid-wrap"><table className="ros">
+          <thead><tr><th>{tr(lang, 'Сотрудник', 'Employee', 'Xodim')}</th>{days.map(d => <th key={dayKey(d)} className={dayKey(d) === todayKey ? 'today' : ''}>{fmtDay(d)}</th>)}</tr></thead>
+          <tbody>{groups.map(g => {
+            const hasShift = g.people.some(p => days.some(d => byCell.has(`${p.id}|${dayKey(d)}`)));
+            return (
+              <React.Fragment key={g.role.id}>
+                <tr className="role"><td colSpan={8}>{g.role.name}{!hasShift && <span className="gap-warn">{tr(lang, 'нет смен', 'no shifts', "smena yo'q")}</span>}</td></tr>
+                {g.people.map(p => (
+                  <tr key={p.id}>
+                    <td><div className="who"><span className="ava" aria-hidden="true">{ini(p.name)}</span><b>{p.name}</b></div></td>
+                    {days.map(d => {
+                      const k = dayKey(d);
+                      const cell = byCell.get(`${p.id}|${k}`) ?? [];
+                      return (
+                        <td key={k} className={k < todayKey ? 'past' : ''} style={{ position: 'relative' }}>
+                          {cell.length ? cell.map(s => {
+                            const sw = swapByShift.get(s.id);
+                            return (
+                              <span key={s.id} className="pop-wrap" style={{ display: 'block' }}>
+                                <button className={`shift${sw ? ' swap' : ''}`} type="button" onClick={() => setOpenShift(o => o === s.id ? null : s.id)}>
+                                  {hm(s.planned_start).replace(/:00/g, '')}–{hm(s.planned_end).replace(/:00/g, '')}{sw && <i className="ph ph-arrows-left-right" aria-label={tr(lang, 'просит замену', 'wants a swap', "almashtirish so'raydi")} />}
+                                </button>
+                                {openShift === s.id && (
+                                  <div className="pop shift-pop">
+                                    <p><b>{p.name}</b><br />{fmtDay(d)}, {hm(s.planned_start)}–{hm(s.planned_end)}</p>
+                                    {sw && <p className="faint">{sw.status === 'claimed' ? tr(lang, `Готов выйти: ${sw.coverer_employee_name}`, `Volunteer: ${sw.coverer_employee_name}`, `Tayyor: ${sw.coverer_employee_name}`) : tr(lang, 'Просит замену, ждёт желающего', 'Wants a swap, waiting for a volunteer', "Almashtirish so'ramoqda")}</p>}
+                                    {k >= todayKey && <button className="btn danger" type="button" onClick={() => cancelShift(s.id)}>{tr(lang, 'Отменить смену', 'Cancel shift', 'Smenani bekor qilish')}</button>}
+                                  </div>
+                                )}
+                              </span>
+                            );
+                          }) : k >= todayKey ? (
+                            <button className="add-cell" type="button" aria-label={tr(lang, `Добавить смену: ${p.name}, ${fmtDay(d)}`, `Add shift: ${p.name}, ${fmtDay(d)}`, `Smena qo'shish: ${p.name}, ${fmtDay(d)}`)}
+                              onClick={() => setAdding({ employeeId: p.id, roleId: p.role_id, date: k })}><i className="ph ph-plus" aria-hidden="true" /></button>
+                          ) : null}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </React.Fragment>
+            );
+          })}</tbody>
+        </table></div>
+      )}
+
+      <div className="rost-side">
+        <section className="card-ph" aria-labelledby="h-swap">
+          <div className="sec-head"><h2 id="h-swap">{tr(lang, 'Запросы на замену', 'Swap requests', "Almashtirish so'rovlari")}</h2><span className="sec-note">{tr(lang, 'Сотрудники просят в приложении TRACE', 'Staff ask in the TRACE app', "Xodimlar TRACE ilovasida so'raydi")}</span></div>
+          {swaps.length === 0 ? <p className="rd-empty">{tr(lang, 'Активных запросов нет', 'No active requests', "Faol so'rovlar yo'q")}</p> : swaps.map(s => (
+            <div className="req" key={s.id}>
+              <p><b>{s.requesting_employee_name}</b> {tr(lang, 'просит замену на', 'wants cover for', 'uchun almashtirish so‘raydi')} {new Date(s.planned_start).toLocaleString(tr(lang, 'ru-RU', 'en-GB', 'uz-Latn-UZ'), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+              {s.reason && <p className="faint">{s.reason}</p>}
+              <p className="faint">{s.status === 'claimed' ? tr(lang, `Готов выйти: ${s.coverer_employee_name}`, `Volunteer: ${s.coverer_employee_name}`, `Tayyor: ${s.coverer_employee_name}`) : tr(lang, 'Ждёт желающего', 'Waiting for a volunteer', "Ko'ngilli kutilmoqda")}</p>
+              {s.status === 'claimed' && <div className="acts">
+                <button className="btn solid" type="button" onClick={() => approveSwap(s.id)}>{tr(lang, 'Одобрить', 'Approve', 'Tasdiqlash')}</button>
+                <button className="btn" type="button" onClick={() => rejectSwap(s.id)}>{tr(lang, 'Отклонить', 'Reject', 'Rad etish')}</button>
+              </div>}
+            </div>
+          ))}
+        </section>
+        <section className="card-ph" aria-labelledby="h-sig">
+          <div className="sec-head"><h2 id="h-sig">{tr(lang, 'Сигналы геолокации', 'Location signals', 'Geolokatsiya signallari')}</h2><span className="sec-note">{tr(lang, 'Попытки войти не с места', 'Clock-in attempts from elsewhere', 'Boshqa joydan kirish urinishlari')}</span></div>
+          {signals.length === 0 ? <p className="rd-empty">{tr(lang, 'Всё спокойно', 'All quiet', 'Hammasi joyida')}</p> : signals.slice(0, 20).map(s => (
+            <div className="sig" key={s.id}><b>{s.employee_name || nameOf(s.employee_id)}</b> <span>{s.type === 'geo_fail' ? tr(lang, 'вне радиуса', 'outside the radius', 'radiusdan tashqarida') : tr(lang, 'подмена геолокации', 'mocked location', 'soxta joylashuv')}</span>
+              <span className="faint"> · {new Date(s.created_at).toLocaleString(tr(lang, 'ru-RU', 'en-GB', 'uz-Latn-UZ'), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>
+          ))}
+        </section>
+      </div>
+    </>
   );
 }
 
@@ -780,56 +709,34 @@ export function GeofenceTab({ lang, onShowToast }: { lang: Language; onShowToast
   }, []);
 
   // Map setup — runs once settings have loaded so the initial pin position
-  // (existing lat/lng, or the Tashkent default) is known before Leaflet
-  // mounts. Dragging the marker or clicking the map updates `settings`
-  // directly; the circle radius reacts to the radius slider separately below.
+  // (existing lat/lng, or the Tashkent default) is known before Leaflet mounts.
   useEffect(() => {
     if (loading || !mapRef.current || mapInstance.current) return;
     let cancelled = false;
-
     loadLeaflet().then(L => {
       if (cancelled || !mapRef.current) return;
       leafletRef.current = L;
       const center: [number, number] = settings?.geofenceLat != null && settings?.geofenceLng != null
-        ? [settings.geofenceLat, settings.geofenceLng]
-        : DEFAULT_CENTER;
-
+        ? [settings.geofenceLat, settings.geofenceLng] : DEFAULT_CENTER;
       const map = L.map(mapRef.current, { zoomControl: true }).setView(center, settings?.geofenceLat != null ? 16 : 11);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap',
-        maxZoom: 19,
-      }).addTo(map);
-
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap', maxZoom: 19 }).addTo(map);
+      const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#E8642C';
       const marker = L.marker(center, { draggable: true }).addTo(map);
-      const circle = L.circle(center, {
-        radius: settings?.geofenceRadiusM ?? 150,
-        color: '#FF6B35',
-        fillColor: '#FF6B35',
-        fillOpacity: 0.12,
-        weight: 2,
-      }).addTo(map);
-
+      const circle = L.circle(center, { radius: settings?.geofenceRadiusM ?? 150, color: accent, fillColor: accent, fillOpacity: 0.12, weight: 2 }).addTo(map);
       const applyPosition = (lat: number, lng: number) => {
         marker.setLatLng([lat, lng]);
         circle.setLatLng([lat, lng]);
         setSettings(s => (s ? { ...s, geofenceLat: lat, geofenceLng: lng } : s));
       };
-
-      marker.on('dragend', () => {
-        const { lat, lng } = marker.getLatLng();
-        applyPosition(lat, lng);
-      });
+      marker.on('dragend', () => { const { lat, lng } = marker.getLatLng(); applyPosition(lat, lng); });
       map.on('click', (e: any) => applyPosition(e.latlng.lat, e.latlng.lng));
-
       mapInstance.current = map;
       markerRef.current = marker;
       circleRef.current = circle;
     });
-
     return () => { cancelled = true; };
   }, [loading]);
 
-  // Radius slider moves the circle live without waiting for save.
   useEffect(() => {
     if (circleRef.current && settings) circleRef.current.setRadius(settings.geofenceRadiusM);
   }, [settings?.geofenceRadiusM]);
@@ -837,46 +744,30 @@ export function GeofenceTab({ lang, onShowToast }: { lang: Language; onShowToast
   function update<K extends keyof WorkforceGeofenceSettings>(key: K, value: WorkforceGeofenceSettings[K]) {
     setSettings(s => (s ? { ...s, [key]: value } : s));
   }
-
+  const moveTo = (lat: number, lng: number) => {
+    update('geofenceLat', lat); update('geofenceLng', lng);
+    if (mapInstance.current) mapInstance.current.setView([lat, lng], 17);
+    if (markerRef.current) markerRef.current.setLatLng([lat, lng]);
+    if (circleRef.current) circleRef.current.setLatLng([lat, lng]);
+  };
   async function useMyLocation() {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
-      pos => {
-        const { latitude, longitude } = pos.coords;
-        update('geofenceLat', latitude);
-        update('geofenceLng', longitude);
-        if (mapInstance.current) mapInstance.current.setView([latitude, longitude], 17);
-        if (markerRef.current) markerRef.current.setLatLng([latitude, longitude]);
-        if (circleRef.current) circleRef.current.setLatLng([latitude, longitude]);
-      },
+      pos => moveTo(pos.coords.latitude, pos.coords.longitude),
       () => onShowToast(tr(lang, 'Не удалось определить геолокацию', 'Could not get your location', "Joylashuvni aniqlab bo'lmadi"), 'error'),
     );
   }
-
   async function searchAddress() {
     if (!address.trim()) return;
     setSearching(true);
     try {
-      // Nominatim — free, keyless, matches this project's existing
-      // no-paid-map-SDK posture (Tailwind/recharts/lucide are all CDN too).
+      // Nominatim: free and keyless, like the OSM tiles above.
       const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`);
       const rows = await res.json();
-      if (!Array.isArray(rows) || rows.length === 0) {
-        onShowToast(tr(lang, 'Адрес не найден', 'Address not found', 'Manzil topilmadi'), 'error');
-        return;
-      }
-      const lat = parseFloat(rows[0].lat);
-      const lng = parseFloat(rows[0].lon);
-      update('geofenceLat', lat);
-      update('geofenceLng', lng);
-      if (mapInstance.current) mapInstance.current.setView([lat, lng], 17);
-      if (markerRef.current) markerRef.current.setLatLng([lat, lng]);
-      if (circleRef.current) circleRef.current.setLatLng([lat, lng]);
-    } finally {
-      setSearching(false);
-    }
+      if (!Array.isArray(rows) || rows.length === 0) { onShowToast(tr(lang, 'Адрес не найден', 'Address not found', 'Manzil topilmadi'), 'error'); return; }
+      moveTo(parseFloat(rows[0].lat), parseFloat(rows[0].lon));
+    } finally { setSearching(false); }
   }
-
   async function save() {
     if (!settings) return;
     setSaving(true);
@@ -884,129 +775,45 @@ export function GeofenceTab({ lang, onShowToast }: { lang: Language; onShowToast
       const result = await traceApi.settings.saveGeofence(settings);
       setSettings(result);
       onShowToast(tr(lang, 'Настройки сохранены', 'Settings saved', 'Sozlamalar saqlandi'), 'success');
-    } catch {
-      onShowToast(tr(lang, 'Не удалось сохранить', 'Failed to save', "Saqlab bo'lmadi"), 'error');
-    } finally {
-      setSaving(false);
-    }
+    } catch { onShowToast(tr(lang, 'Не удалось сохранить', 'Failed to save', "Saqlab bo'lmadi"), 'error'); }
+    finally { setSaving(false); }
   }
 
-  if (loading || !settings) {
-    return <Card><div className="h-64 animate-pulse bg-card-hover rounded-2xl" /></Card>;
-  }
-
+  if (loading || !settings) return <section className="card wide"><div className="sk w9" /><div className="sk w7" /></section>;
   const pinDropped = settings.geofenceLat != null && settings.geofenceLng != null;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-      <Card className="lg:col-span-2 !p-0 overflow-hidden">
-        <div ref={mapRef} className="w-full h-[420px] rounded-3xl" />
-      </Card>
-
-      <div className="space-y-5">
-        <Card title={tr(lang, 'Точка филиала', 'Branch location', 'Filial nuqtasi')}>
-          <div className="space-y-3">
-            <div className="flex gap-2">
-              <input
-                value={address}
-                onChange={e => setAddress(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && searchAddress()}
-                placeholder={tr(lang, 'Найти по адресу…', 'Search by address…', 'Manzil bo\'yicha qidirish…')}
-                className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text"
-              />
-              <button
-                onClick={searchAddress}
-                disabled={searching}
-                className="px-3 py-2 rounded-lg bg-card-hover text-[13px] font-medium text-text disabled:opacity-50"
-              >
-                {tr(lang, 'Найти', 'Search', 'Qidirish')}
-              </button>
+    <section className="card wide" aria-labelledby="h-geo">
+      <h2 id="h-geo">{tr(lang, 'Геолокация', 'Location', 'Geolokatsiya')}</h2>
+      <p className="lead">{tr(lang, 'Смену можно открыть только рядом с филиалом. Нажмите на карту, чтобы переставить точку.', 'A shift can only be opened near the branch. Click the map to move the pin.', "Smenani faqat filial yonida ochish mumkin. Nuqtani ko'chirish uchun xaritani bosing.")}</p>
+      <div className="geo">
+        <div className="map rd-leaflet"><div ref={mapRef} style={{ width: '100%', height: '100%', minHeight: 360 }} /></div>
+        <div className="geo-side">
+          <div>
+            <span className="fld"><span>{tr(lang, 'Точка филиала', 'Branch location', 'Filial nuqtasi')}</span></span>
+            <div className="row" style={{ marginTop: 5 }}>
+              <input className="in" value={address} onChange={e => setAddress(e.target.value)} onKeyDown={e => e.key === 'Enter' && searchAddress()} placeholder={tr(lang, 'Найти по адресу', 'Find by address', "Manzil bo'yicha topish")} aria-label={tr(lang, 'Адрес', 'Address', 'Manzil')} />
+              <button className="btn" type="button" onClick={searchAddress} disabled={searching}>{tr(lang, 'Найти', 'Find', 'Topish')}</button>
             </div>
-            <button
-              onClick={useMyLocation}
-              className="w-full flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg bg-card-hover text-[13px] font-medium text-text"
-            >
-              <Locate size={14} /> {tr(lang, 'Использовать моё местоположение', 'Use my current location', 'Joriy joylashuvimni ishlatish')}
-            </button>
-            <p className="text-[12px] text-muted flex items-center gap-1.5">
-              <MapPin size={12} />
-              {pinDropped
-                ? `${settings.geofenceLat!.toFixed(6)}, ${settings.geofenceLng!.toFixed(6)}`
-                : tr(lang, 'Точка ещё не установлена — кликните по карте', 'No pin set yet — click the map', 'Nuqta hali belgilanmagan — xaritani bosing')}
-            </p>
+            <button className="btn wide-btn" type="button" style={{ marginTop: 8 }} onClick={useMyLocation}><i className="ph ph-crosshair" aria-hidden="true" />{tr(lang, 'Взять моё местоположение', 'Use my location', 'Mening joylashuvim')}</button>
+            <div className="coords"><i className="ph ph-map-pin" aria-hidden="true" /><span className="mono">{pinDropped ? `${settings.geofenceLat!.toFixed(6)}, ${settings.geofenceLng!.toFixed(6)}` : tr(lang, 'Точка ещё не поставлена', 'No pin yet', "Nuqta hali qo'yilmagan")}</span></div>
           </div>
-        </Card>
-
-        <Card title={tr(lang, 'Радиус входа', 'Clock-in radius', 'Kirish radiusi')}>
-          <div className="space-y-2">
-            <div className="flex items-baseline justify-between">
-              <span className="text-[32px] font-display font-bold text-text tabular-nums">{settings.geofenceRadiusM}</span>
-              <span className="text-[13px] text-muted">{tr(lang, 'метров', 'meters', 'metr')}</span>
-            </div>
-            <input
-              type="range"
-              min={25}
-              max={500}
-              step={5}
-              value={settings.geofenceRadiusM}
-              onChange={e => update('geofenceRadiusM', Number(e.target.value))}
-              className="w-full accent-primary"
-            />
+          <div>
+            <span className="fld"><span>{tr(lang, 'Радиус входа', 'Clock-in radius', 'Kirish radiusi')}</span></span>
+            <div className="radius-v"><span>{settings.geofenceRadiusM}</span><small>{tr(lang, 'метров', 'metres', 'metr')}</small></div>
+            <input type="range" min={25} max={500} step={5} value={settings.geofenceRadiusM} onChange={e => update('geofenceRadiusM', Number(e.target.value))} aria-label={tr(lang, 'Радиус входа, метров', 'Clock-in radius, metres', 'Kirish radiusi, metr')} />
           </div>
-        </Card>
-
-        <Card>
-          <button
-            onClick={() => update('geofenceEnabled', !settings.geofenceEnabled)}
-            className="w-full flex items-center justify-between gap-3"
-          >
-            <div className="flex items-center gap-2.5 text-left">
-              {settings.geofenceEnabled ? <ShieldAlert size={18} className="text-danger shrink-0" /> : <ShieldCheck size={18} className="text-muted shrink-0" />}
-              <div>
-                <div className="text-[13px] font-semibold text-text">
-                  {tr(lang, 'Блокировать вход вне радиуса', 'Enforce geofence on clock-in', 'Kirishni radius tashqarisida bloklash')}
-                </div>
-                <div className="text-[12px] text-muted mt-0.5">
-                  {settings.geofenceEnabled
-                    ? tr(lang, 'Сотрудники вне радиуса не смогут открыть смену', 'Employees outside the radius cannot open a shift', "Radiusdan tashqaridagi xodimlar smenani ocha olmaydi")
-                    : tr(lang, 'Выключено — вход разрешён из любой точки, попытки логируются', 'Off — clock-in allowed from anywhere, attempts are still logged', "O'chirilgan — istalgan joydan kirish mumkin, urinishlar qayd etiladi")}
-                </div>
-              </div>
-            </div>
-            <span className={`shrink-0 w-11 h-6 rounded-full transition-colors relative ${settings.geofenceEnabled ? 'bg-danger' : 'bg-card-hover'}`}>
-              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${settings.geofenceEnabled ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
-            </span>
-          </button>
-        </Card>
-
-        <Card>
-          <button
-            onClick={() => update('employeeAppEnabled', !settings.employeeAppEnabled)}
-            className="w-full flex items-center justify-between gap-3"
-          >
-            <div className="text-left">
-              <div className="text-[13px] font-semibold text-text">
-                {tr(lang, 'Приложение для сотрудников', 'Employee app', 'Xodimlar ilovasi')}
-              </div>
-              <div className="text-[12px] text-muted mt-0.5">
-                {tr(lang, 'Включить смены/пропуска для этого филиала', 'Turn on shifts/clock-in for this branch', 'Ushbu filial uchun smenalarni yoqish')}
-              </div>
-            </div>
-            <span className={`shrink-0 w-11 h-6 rounded-full transition-colors relative ${settings.employeeAppEnabled ? 'bg-primary' : 'bg-card-hover'}`}>
-              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${settings.employeeAppEnabled ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
-            </span>
-          </button>
-        </Card>
-
-        <button
-          onClick={save}
-          disabled={saving}
-          className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-lg bg-primary hover:bg-primary-hover text-white text-[13px] font-semibold disabled:opacity-50"
-        >
-          <Save size={14} /> {saving ? tr(lang, 'Сохранение…', 'Saving…', 'Saqlanmoqda…') : tr(lang, 'Сохранить', 'Save', 'Saqlash')}
-        </button>
+          <div>
+            <div className="sw-row"><div><b>{tr(lang, 'Блокировать вход вне радиуса', 'Block clock-in outside the radius', 'Radiusdan tashqarida bloklash')}</b>
+              <p>{settings.geofenceEnabled ? tr(lang, 'Сотрудники вне радиуса не смогут открыть смену', "Staff outside the radius can't open a shift", "Radiusdan tashqaridagi xodimlar smena ocha olmaydi") : tr(lang, 'Выключено: вход откуда угодно, попытки записываются', 'Off: clock-in from anywhere, attempts are logged', "O'chiq: istalgan joydan, urinishlar yoziladi")}</p></div>
+              <button className="sw" role="switch" aria-checked={settings.geofenceEnabled} onClick={() => update('geofenceEnabled', !settings.geofenceEnabled)} aria-label={tr(lang, 'Блокировать вход вне радиуса', 'Block clock-in outside the radius', 'Radiusdan tashqarida bloklash')} /></div>
+            <div className="sw-row"><div><b>{tr(lang, 'Приложение для сотрудников', 'Employee app', 'Xodimlar ilovasi')}</b><p>{tr(lang, 'Смены и вход через приложение TRACE в этом филиале', 'Shifts and clock-in through the TRACE app at this branch', 'Shu filialda TRACE ilovasi orqali smena va kirish')}</p></div>
+              <button className="sw" role="switch" aria-checked={settings.employeeAppEnabled} onClick={() => update('employeeAppEnabled', !settings.employeeAppEnabled)} aria-label={tr(lang, 'Приложение для сотрудников', 'Employee app', 'Xodimlar ilovasi')} /></div>
+          </div>
+          <button className="btn solid wide-btn" type="button" onClick={save} disabled={saving}><i className="ph ph-floppy-disk" aria-hidden="true" />{saving ? tr(lang, 'Сохранение…', 'Saving…', 'Saqlanmoqda…') : tr(lang, 'Сохранить', 'Save', 'Saqlash')}</button>
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
 

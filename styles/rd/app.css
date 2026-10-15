@@ -60,3 +60,6 @@ input, textarea, select { font-size: max(16px, 1em); }
 .rd .rd-empty { margin: 0; padding: 14px 0; font-size: 14px; color: var(--text-3); }
 .rd .btn:disabled { opacity: .5; cursor: default; }
 .rd .rd-err { color: var(--neg); font-size: 13.5px; margin: 8px 0 0; }
+
+/* Leaflet inside the mockup's .map box: undo the mockup's SVG sizing */
+.rd .rd-leaflet .leaflet-attribution-flag { display: none !important; }

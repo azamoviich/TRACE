@@ -119,7 +119,7 @@
 .rd-staff .geo { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); gap: 28px; }
 .rd-staff .map { position: relative; border-radius: 12px; overflow: hidden; border: 1px solid var(--rule); background: var(--sunken); cursor: crosshair; }
 .dark .rd-staff .map g[stroke] { stroke: var(--rule-strong); }
-.rd-staff .map svg { display: block; width: 100%; height: 420px; }
+.rd-staff .map:not(.rd-leaflet) svg { display: block; width: 100%; height: 420px; }
 .rd-staff .map .scalebar { position: absolute; left: 12px; bottom: 10px; font-size: 12px; color: var(--text-2); background: color-mix(in srgb, var(--surface) 85%, transparent); padding: 2px 6px; border-radius: 4px; }
 .rd-staff .map .scalebar i { display: block; height: 4px; border: 1.5px solid var(--text-2); border-top: 0; margin-top: 2px; }
 .rd-staff .geo-side { display: flex; flex-direction: column; gap: 22px; }
@@ -259,7 +259,7 @@
   .rd-staff .rules { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .rd-staff .fgrid, .rd-staff .fgrid.three { grid-template-columns: 1fr; }
   .rd-staff .p-body .fgrid { grid-template-columns: 1fr 1fr; }
-  .rd-staff .map svg { height: 260px; }
+  .rd-staff .map:not(.rd-leaflet) svg { height: 260px; }
   .rd-staff .geo { gap: 18px; }
   .rd-staff .rules .save .btn.solid { width: 100%; justify-content: center; padding: 12px; }
   .rd-staff .panel { top: auto; left: 0; width: 100%; height: 92dvh; border-left: 0; border-top: 1px solid var(--rule); border-radius: 16px 16px 0 0; transform: translateY(100%); }

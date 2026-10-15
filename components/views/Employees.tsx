@@ -11,6 +11,7 @@ import { Language, ChecklistRole, ChecklistEmployee } from '../../types';
 import { checklistApi, traceApi, EmployeeDashboard, EmployeeDashboardRow, EmployeeStatus, PosCandidate } from '../../services/traceApi';
 import { statusBadge, relativeTimeShort } from './Checklists';
 import { PayrollTab, PayProfileEditor, RosterTab, GeofenceTab, AttendanceRulesCard } from './Workforce';
+import { Skel } from '../rd/ui';
 
 function tr(lang: Language, ru: string, en: string, uz: string) {
   return lang === 'ru' ? ru : lang === 'uz' ? uz : en;
@@ -50,42 +51,50 @@ interface Props {
 }
 
 export function Employees({ lang, onShowToast }: Props) {
-  const [tab, setTab] = useState<Tab>('team');
+  const [tab, setTab] = useState<Tab>(() => {
+    const h = typeof window !== 'undefined' ? window.location.hash.slice(1) : '';
+    return (['team', 'schedule', 'payroll', 'settings'] as Tab[]).includes(h as Tab) ? h as Tab : 'team';
+  });
+  const [headCount, setHeadCount] = useState<number | null>(null);
+  const [swapCount, setSwapCount] = useState(0);
+  useEffect(() => {
+    checklistApi.roster.swapRequests('claimed').then(r => setSwapCount(r.length)).catch(() => {});
+  }, []);
+  const go = (t: Tab) => { setTab(t); try { history.replaceState(null, '', `${location.pathname}${location.search}#${t}`); } catch {} };
 
-  const tabs: { id: Tab; label: string; icon: typeof Users }[] = [
-    { id: 'team', label: tr(lang, 'Команда', 'Team', 'Jamoa'), icon: Users },
-    { id: 'schedule', label: tr(lang, 'Расписание', 'Schedule', 'Jadval'), icon: CalendarDays },
-    { id: 'payroll', label: tr(lang, 'Зарплата', 'Payroll', 'Ish haqi'), icon: Wallet },
-    { id: 'settings', label: tr(lang, 'Правила входа', 'Clock-in rules', 'Kirish qoidalari'), icon: Clock },
+  const tabs: { id: Tab; label: string; n?: string }[] = [
+    { id: 'team', label: tr(lang, 'Команда', 'Team', 'Jamoa') },
+    { id: 'schedule', label: tr(lang, 'Расписание', 'Schedule', 'Jadval'), n: swapCount ? tr(lang, `${swapCount} замен${swapCount === 1 ? 'а' : swapCount < 5 ? 'ы' : ''}`, `${swapCount} swap${swapCount === 1 ? '' : 's'}`, `${swapCount} almashtirish`) : undefined },
+    { id: 'payroll', label: tr(lang, 'Зарплата', 'Payroll', 'Ish haqi') },
+    { id: 'settings', label: tr(lang, 'Правила входа', 'Clock-in rules', 'Kirish qoidalari') },
   ];
 
   return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        {tabs.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`px-3.5 py-2 rounded-xl text-[13px] font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
-              tab === t.id ? 'bg-primary text-white' : 'bg-card text-muted hover:text-text'
-            }`}
-          >
-            <t.icon size={14} /> {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'team' && <TeamTab lang={lang} onShowToast={onShowToast} />}
-      {tab === 'schedule' && <RosterTab lang={lang} onShowToast={onShowToast} />}
-      {tab === 'payroll' && <PayrollTab lang={lang} onShowToast={onShowToast} />}
-      {tab === 'settings' && (
-        <div className="space-y-5">
-          <AttendanceRulesCard lang={lang} onShowToast={onShowToast} />
-          <FaceRulesCard lang={lang} onShowToast={onShowToast} />
-          <GeofenceTab lang={lang} onShowToast={onShowToast} />
+    <>
+      <div className="page-head rise">
+        <div>
+          <h1>{tr(lang, 'Сотрудники', 'Employees', 'Xodimlar')}</h1>
+          <div className="sub">{headCount != null ? tr(lang, `${headCount} человек в приложении TRACE`, `${headCount} people in the TRACE app`, `TRACE ilovasida ${headCount} kishi`) : ' '}</div>
         </div>
-      )}
-    </div>
+      </div>
+      <nav className="tabs rise" role="tablist" aria-label={tr(lang, 'Разделы', 'Sections', "Bo'limlar")} style={{ animationDelay: '.04s' }}>
+        {tabs.map(t => (
+          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => go(t.id)}>{t.label}{t.n && <span className="n">{t.n}</span>}</button>
+        ))}
+      </nav>
+      <div className="pane rise" role="tabpanel" style={{ animationDelay: '.08s' }} key={tab}>
+        {tab === 'team' && <TeamTab lang={lang} onShowToast={onShowToast} onCount={setHeadCount} />}
+        {tab === 'schedule' && <RosterTab lang={lang} onShowToast={onShowToast} />}
+        {tab === 'payroll' && <PayrollTab lang={lang} onShowToast={onShowToast} />}
+        {tab === 'settings' && (
+          <div className="rules">
+            <AttendanceRulesCard lang={lang} onShowToast={onShowToast} />
+            <FaceRulesCard lang={lang} onShowToast={onShowToast} />
+            <GeofenceTab lang={lang} onShowToast={onShowToast} />
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -98,7 +107,13 @@ const STATUS_FILTERS: { id: EmployeeStatus | ''; ru: string; en: string; uz: str
   { id: 'suspended', ru: 'Отключены', en: 'Disabled', uz: "O'chirilgan" },
 ];
 
-function TeamTab({ lang, onShowToast }: { lang: Language; onShowToast: Toast }) {
+// Mockup status pill: .st.on (green dot), .st.inv (accent), .st.susp (muted)
+function statusPill(lang: Language, status: EmployeeStatus): { cls: string; label: string } {
+  const b = statusBadge(lang, status);
+  return { cls: status === 'on_shift' ? 'on' : status === 'invited_not_logged_in' ? 'inv' : status === 'suspended' || status === 'terminated' ? 'susp' : '', label: b.label };
+}
+
+function TeamTab({ lang, onShowToast, onCount }: { lang: Language; onShowToast: Toast; onCount?: (n: number) => void }) {
   const [dashboard, setDashboard] = useState<EmployeeDashboard | null>(null);
   const [roles, setRoles] = useState<ChecklistRole[]>([]);
   const [q, setQ] = useState('');
@@ -107,77 +122,93 @@ function TeamTab({ lang, onShowToast }: { lang: Language; onShowToast: Toast }) 
   const [inviting, setInviting] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
 
-  const load = () => checklistApi.employees.dashboard().then(setDashboard).catch(() => onShowToast(tr(lang, 'Не удалось загрузить сотрудников', 'Failed to load employees', "Xodimlarni yuklab bo'lmadi"), 'error'));
+  const load = () => checklistApi.employees.dashboard().then(d => { setDashboard(d); onCount?.(d.summary.total); }).catch(() => onShowToast(tr(lang, 'Не удалось загрузить сотрудников', 'Failed to load employees', "Xodimlarni yuklab bo'lmadi"), 'error'));
   const loadRoles = () => checklistApi.roles.list().then(setRoles).catch(() => {});
   useEffect(() => { load(); loadRoles(); }, []);
 
-  const rows = useMemo(() => (dashboard?.employees ?? []).filter(e =>
-    (!q || e.name.toLowerCase().includes(q.toLowerCase()) || (e.phone ?? '').includes(q))
+  const all = dashboard?.employees ?? [];
+  const rows = useMemo(() => all.filter(e =>
+    (!q || e.name.toLowerCase().includes(q.toLowerCase()) || (e.phone ?? '').replace(/\s/g, '').includes(q.replace(/\s/g, '')))
     && (!status || e.status === status)
     && (!roleId || e.roleId === roleId),
   ), [dashboard, q, status, roleId]);
 
-  const open = dashboard?.employees.find(e => e.id === openId) ?? null;
+  const open = all.find(e => e.id === openId) ?? null;
   const s = dashboard?.summary;
+  const cnt = (st: EmployeeStatus) => all.filter(e => e.status === st).length;
+  const resend = all.filter(e => e.tempPasswordUsed).length;
 
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          { label: tr(lang, 'Сотрудников', 'Employees', 'Xodimlar'), value: s?.total },
-          { label: tr(lang, 'На смене сейчас', 'On shift now', 'Hozir smenada'), value: s?.onShiftNow, accent: true },
-          { label: tr(lang, 'Ждут входа', 'Awaiting first login', 'Kirishni kutmoqda'), value: s?.notYetOnboarded },
-          { label: tr(lang, 'Чек-листы сегодня', 'Checklists today', 'Bugungi cheklistlar'), value: s ? (s.checklistsToday.total ? `${s.checklistsToday.done}/${s.checklistsToday.total}` : '—') : undefined },
-        ].map(tile => (
-          <Card key={tile.label}>
-            <p className={`text-[24px] font-display font-bold tabular-nums ${tile.accent ? 'text-primary' : 'text-text'}`}>{tile.value ?? '…'}</p>
-            <p className="text-[11px] text-muted uppercase tracking-[0.1em] mt-0.5">{tile.label}</p>
-          </Card>
+    <>
+      <section className="strip" aria-label={tr(lang, 'Команда сейчас', 'Team now', 'Jamoa hozir')}>
+        {([
+          [tr(lang, 'Сотрудников', 'Employees', 'Xodimlar'), s?.total, '', cnt('suspended') ? tr(lang, `${cnt('suspended')} отключено`, `${cnt('suspended')} disabled`, `${cnt('suspended')} o'chirilgan`) : tr(lang, 'все активны', 'all active', 'hammasi faol')],
+          [tr(lang, 'На смене сейчас', 'On shift now', 'Hozir smenada'), s?.onShiftNow, '', ''],
+          [tr(lang, 'Ждут первого входа', 'Awaiting first login', 'Birinchi kirishni kutmoqda'), s?.notYetOnboarded, '', resend ? tr(lang, `${resend} нужен новый пароль`, `${resend} need a new password`, `${resend} yangi parol kerak`) : ''],
+          [tr(lang, 'Чек-листы сегодня', 'Checklists today', 'Bugungi cheklistlar'), s ? (s.checklistsToday.total ? s.checklistsToday.done : '—') : undefined, s?.checklistsToday.total ? tr(lang, `из ${s.checklistsToday.total}`, `of ${s.checklistsToday.total}`, `${s.checklistsToday.total} dan`) : '', s && s.checklistsToday.total > s.checklistsToday.done ? tr(lang, `${s.checklistsToday.total - s.checklistsToday.done} ещё не закрыты`, `${s.checklistsToday.total - s.checklistsToday.done} still open`, `${s.checklistsToday.total - s.checklistsToday.done} ta ochiq`) : ''],
+        ] as [string, React.ReactNode, string, string][]).map(([l, v, u, d]) => (
+          <div key={l}><div className="s-l">{l}</div><div className="s-v">{v ?? '…'}{u && <small>{u}</small>}</div>{d && <div className="s-d">{d}</div>}</div>
         ))}
-      </div>
+      </section>
 
-      <Card>
-        <div className="flex items-center gap-2 flex-wrap mb-4">
-          <div className="relative flex-1 min-w-[180px]">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-            <input value={q} onChange={e => setQ(e.target.value)} placeholder={tr(lang, 'Имя или телефон', 'Name or phone', 'Ism yoki telefon')}
-              className="w-full pl-8 pr-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text" />
-          </div>
-          <select value={roleId} onChange={e => setRoleId(e.target.value)} className="px-3 py-2 rounded-lg border border-border bg-background text-[13px] text-text">
-            <option value="">{tr(lang, 'Все должности', 'All roles', 'Barcha lavozimlar')}</option>
-            {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-          <button onClick={() => setInviting(true)} className="px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold flex items-center gap-1.5 hover:bg-primary-hover transition-colors">
-            <UserPlus size={15} /> {tr(lang, 'Пригласить', 'Invite', 'Taklif qilish')}
-          </button>
-        </div>
-        <div className="flex gap-1.5 overflow-x-auto pb-3">
+      <div className="tools">
+        <label className="search"><i className="ph ph-magnifying-glass" aria-hidden="true" /><input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder={tr(lang, 'Имя или телефон', 'Name or phone', 'Ism yoki telefon')} aria-label={tr(lang, 'Поиск', 'Search', 'Qidirish')} /></label>
+        <span className="sel"><select value={roleId} onChange={e => setRoleId(e.target.value)} aria-label={tr(lang, 'Должность', 'Role', 'Lavozim')}>
+          <option value="">{tr(lang, 'Все должности', 'All roles', 'Barcha lavozimlar')}</option>
+          {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </select><i className="ph ph-caret-down chev" aria-hidden="true" /></span>
+        <div className="seg-scroll"><div className="seg small" role="group" aria-label={tr(lang, 'Статус', 'Status', 'Holat')}>
           {STATUS_FILTERS.map(f => (
-            <button key={f.id || 'all'} onClick={() => setStatus(f.id)}
-              className={`px-2.5 py-1 rounded-full text-[12px] font-medium whitespace-nowrap border transition-colors ${status === f.id ? 'border-primary text-primary bg-primary/10' : 'border-border text-muted hover:text-text'}`}>
-              {tr(lang, f.ru, f.en, f.uz)}
+            <button key={f.id || 'all'} aria-pressed={status === f.id} onClick={() => setStatus(f.id)}>
+              {tr(lang, f.ru, f.en, f.uz)}<span className="n">{f.id ? cnt(f.id) : all.length}</span>
             </button>
           ))}
-        </div>
+        </div></div>
+        <span className="spacer" />
+        <button className="btn solid" type="button" onClick={() => setInviting(true)}><i className="ph ph-user-plus" aria-hidden="true" />{tr(lang, 'Пригласить', 'Invite', 'Taklif qilish')}</button>
+      </div>
 
-        {!dashboard ? (
-          <p className="text-[13px] text-muted py-6 text-center">{tr(lang, 'Загрузка…', 'Loading…', 'Yuklanmoqda…')}</p>
-        ) : dashboard.employees.length === 0 ? (
-          <div className="py-10 text-center">
-            <p className="text-[14px] text-text font-semibold">{tr(lang, 'Пока никого нет', 'No one here yet', "Hozircha hech kim yo'q")}</p>
-            <p className="text-[12px] text-muted mt-1 mb-4">{tr(lang, 'Пригласите сотрудников из iiko — они получат логин по SMS', 'Invite staff from iiko — they get their login by SMS', "Xodimlarni iiko'dan taklif qiling — ular loginni SMS orqali oladi")}</p>
-            <button onClick={() => setInviting(true)} className="px-4 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold inline-flex items-center gap-1.5">
-              <UserPlus size={15} /> {tr(lang, 'Пригласить первого', 'Invite the first one', 'Birinchisini taklif qilish')}
-            </button>
-          </div>
-        ) : rows.length === 0 ? (
-          <p className="text-[13px] text-muted py-6 text-center">{tr(lang, 'Никого не найдено', 'No matches', 'Hech kim topilmadi')}</p>
-        ) : (
-          <div className="divide-y divide-border">
-            {rows.map(e => <EmployeeRow key={e.id} lang={lang} e={e} onOpen={() => setOpenId(e.id)} />)}
+      <section className="card-ph" aria-label={tr(lang, 'Список сотрудников', 'Employee list', "Xodimlar ro'yxati")}>
+        {!dashboard ? <Skel lines={['w9', 'w9', 'w9', 'w7']} />
+          : all.length === 0 ? (
+            <div className="empty"><b>{tr(lang, 'Пока никого нет', 'No one here yet', "Hozircha hech kim yo'q")}</b>{tr(lang, 'Пригласите сотрудников из iiko: логин придёт им по SMS.', 'Invite staff from iiko: they get their login by SMS.', "Xodimlarni iiko'dan taklif qiling: login SMS orqali keladi.")}
+              <div style={{ marginTop: 14 }}><button className="btn solid" onClick={() => setInviting(true)}><i className="ph ph-user-plus" aria-hidden="true" />{tr(lang, 'Пригласить первого', 'Invite the first one', 'Birinchisini taklif qilish')}</button></div></div>
+          ) : rows.length === 0 ? (
+            <div className="empty"><b>{tr(lang, 'Никого не найдено', 'No matches', 'Hech kim topilmadi')}</b>{tr(lang, 'Попробуйте другое имя или уберите фильтр', 'Try another name or clear the filter', "Boshqa ism yozing yoki filtrni olib tashlang")}</div>
+          ) : (
+            <table className="dt">
+              <thead><tr>
+                <th>{tr(lang, 'Сотрудник', 'Employee', 'Xodim')}</th><th className="hide-sm">{tr(lang, 'Должность', 'Role', 'Lavozim')}</th><th className="hide-sm">{tr(lang, 'Статус', 'Status', 'Holat')}</th>
+                <th className="hide-md">{tr(lang, 'Вход на смену', 'Clock-in', 'Smenaga kirish')}</th><th className="hide-md">iiko</th><th className="r">{tr(lang, 'Начислено', 'Accrued', 'Hisoblangan')}</th><th className="hide-sm" aria-label={tr(lang, 'Открыть', 'Open', 'Ochish')} />
+              </tr></thead>
+              <tbody>{rows.map(e => {
+                const pill = statusPill(lang, e.status);
+                const when = e.status === 'invited_not_logged_in' ? relativeTimeShort(lang, e.invitedAt) : e.status === 'onboarded_offline' ? relativeTimeShort(lang, e.lastActiveAt) : '';
+                return (
+                  <tr key={e.id} className={`click${pill.cls === 'susp' ? ' dim' : ''}`} tabIndex={0} onClick={() => setOpenId(e.id)} onKeyDown={ev => { if (ev.key === 'Enter') setOpenId(e.id); }}>
+                    <td><div className="who">
+                      {e.photoUrl ? <img className="ava" src={e.photoUrl} alt="" style={{ objectFit: 'cover' }} /> : <span className="ava" aria-hidden="true">{initials(e.name)}</span>}
+                      <div style={{ minWidth: 0 }}><b>{e.name}</b><span className="ph-sub">{e.roleName} · {pill.label.toLowerCase()}{e.tempPasswordUsed ? tr(lang, ', нужен новый пароль', ', needs a new password', ', yangi parol kerak') : ''}</span></div>
+                    </div></td>
+                    <td className="hide-sm muted">{e.roleName}</td>
+                    <td className="hide-sm"><span className={`st ${pill.cls}`}>{pill.label}</span> {when && <span className="faint" style={{ fontSize: 13 }}>{when}</span>}
+                      {e.tempPasswordUsed && <span className="resend">{tr(lang, 'Пароль использован, отправьте новый', 'Password used, send a new one', 'Parol ishlatilgan, yangisini yuboring')}</span>}</td>
+                    <td className={`hide-md ${e.faceEnrolled ? '' : 'faint'}`}>{!e.appAccount || pill.cls === 'inv' || pill.cls === 'susp' ? <span className="faint">{tr(lang, 'нет', 'none', "yo'q")}</span> : e.faceEnrolled ? tr(lang, 'Лицо и геолокация', 'Face and location', 'Yuz va joylashuv') : tr(lang, 'Только геолокация', 'Location only', 'Faqat joylashuv')}</td>
+                    <td className="hide-md">{e.posEmployeeId ? tr(lang, 'Связан', 'Linked', "Bog'langan") : <span className="faint">{tr(lang, 'Нет', 'No', "Yo'q")}</span>}</td>
+                    <td className="r">{e.payroll ? Math.round(e.payroll.accrued).toLocaleString('ru-RU') : <span className="faint">{tr(lang, 'нет', 'none', "yo'q")}</span>}</td>
+                    <td className="go hide-sm"><i className="ph ph-caret-right" aria-hidden="true" /></td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          )}
+        {dashboard && all.length > 0 && (
+          <div className="foot">
+            <span>{rows.length === all.length ? tr(lang, `${all.length} сотрудников`, `${all.length} employees`, `${all.length} xodim`) : tr(lang, `Показано ${rows.length} из ${all.length}`, `Showing ${rows.length} of ${all.length}`, `${all.length} dan ${rows.length}`)}</span>
+            <span className="hide-sm">{tr(lang, 'Начислено за текущий период, по ставкам из вкладки «Зарплата»', 'Accrued this period, at the rates in the Payroll tab', "Joriy davr uchun, «Ish haqi» stavkalari bo'yicha")}</span>
           </div>
         )}
-      </Card>
+      </section>
 
       {inviting && (
         <InviteModal lang={lang} roles={roles} onShowToast={onShowToast} onRolesChanged={loadRoles}
@@ -187,7 +218,7 @@ function TeamTab({ lang, onShowToast }: { lang: Language; onShowToast: Toast }) 
         <EmployeeDrawer lang={lang} e={open} roles={roles} onShowToast={onShowToast}
           onClose={() => setOpenId(null)} onChanged={load} />
       )}
-    </div>
+    </>
   );
 }
 
@@ -199,39 +230,6 @@ function Avatar({ name, photoUrl, size = 36 }: { name: string; photoUrl: string 
         {initials(name)}
       </div>
     );
-}
-
-function EmployeeRow({ lang, e, onOpen }: { lang: Language; e: EmployeeDashboardRow; onOpen: () => void }) {
-  const badge = statusBadge(lang, e.status);
-  return (
-    <button onClick={onOpen} className="w-full flex items-center gap-3 py-2.5 px-1 text-left hover:bg-card-hover/50 rounded-lg transition-colors">
-      <Avatar name={e.name} photoUrl={e.photoUrl} />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[14px] font-medium text-text truncate">{e.name}</span>
-          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${badge.className}`}>{badge.label}</span>
-          {e.tempPasswordUsed && (
-            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-600">{tr(lang, 'Нужна повторная отправка', 'Needs resend', 'Qayta yuborish kerak')}</span>
-          )}
-        </div>
-        <p className="text-[12px] text-muted mt-0.5 truncate">
-          {e.roleName}
-          {e.status === 'invited_not_logged_in'
-            ? ` · ${tr(lang, 'приглашён', 'invited', 'taklif qilingan')} ${relativeTimeShort(lang, e.invitedAt)}`
-            : ` · ${tr(lang, 'был(а)', 'active', 'faol edi')} ${relativeTimeShort(lang, e.lastActiveAt)}`}
-          {e.posEmployeeId && ' · iiko'}
-          {!e.faceEnrolled && e.appAccount && ` · ${tr(lang, 'без фото лица', 'no face photo', "yuz rasmi yo'q")}`}
-        </p>
-      </div>
-      {e.payroll && (
-        <div className="text-right hidden sm:block">
-          <p className="text-[13px] font-semibold text-text tabular-nums">{Math.round(e.payroll.accrued).toLocaleString('ru-RU')}</p>
-          <p className="text-[10px] text-muted">{tr(lang, 'начислено', 'accrued', 'hisoblangan')}</p>
-        </div>
-      )}
-      <ChevronRight size={16} className="text-muted shrink-0" />
-    </button>
-  );
 }
 
 // ── Invite: pick from POS (or no POS) → details → sent ───────────────────
@@ -686,34 +684,25 @@ function FaceRulesCard({ lang, onShowToast }: { lang: Language; onShowToast: Toa
   };
 
   return (
-    <Card>
-      <h3 className="text-[15px] font-semibold text-text tracking-tight mb-1 flex items-center gap-2"><ScanFace size={16} /> {tr(lang, 'Проверка лица', 'Face check', 'Yuz tekshiruvi')}</h3>
-      <p className="text-[12px] text-muted mb-4">
-        {tr(lang, 'Работает для сотрудников, у которых в карточке есть фото лица: сотрудник смотрит в камеру, моргает и поворачивает голову в случайную сторону.', 'Applies to employees with a face photo on their card: they look at the camera, blink, and turn their head in a random direction.', "Kartasida yuz rasmi bor xodimlar uchun: kameraga qaraydi, ko'z qisadi va boshini tasodifiy tomonga buradi.")}
-      </p>
-      <label className="text-[11px] text-muted block mb-1">{tr(lang, 'Строгость совпадения', 'Match strictness', 'Moslik qat\'iyligi')}: <span className="text-text font-semibold">{threshold ?? '…'}</span></label>
-      <input type="range" min={60} max={95} step={5} value={threshold ?? 80} onChange={e => setThreshold(Number(e.target.value))} className="w-full accent-[rgb(var(--color-primary))]" />
-      <div className="flex justify-between text-[10px] text-muted mb-4">
-        <span>{tr(lang, 'Мягче — меньше ложных отказов', 'Lenient — fewer false rejections', 'Yumshoq')}</span>
-        <span>{tr(lang, 'Строже', 'Strict', "Qat'iy")}</span>
+    <section className="card" aria-labelledby="h-face">
+      <h2 id="h-face">{tr(lang, 'Проверка лица', 'Face check', 'Yuz tekshiruvi')}</h2>
+      <p className="lead">{tr(lang, 'Для сотрудников с фото лица в карточке: при открытии смены смотрят в камеру, моргают и поворачивают голову.', 'For staff with a face photo on their card: when opening a shift they look at the camera, blink and turn their head.', "Kartasida yuz rasmi bor xodimlar uchun: smenani ochishda kameraga qaraydi, ko'z qisadi va boshini buradi.")}</p>
+      <label className="fld"><span>{tr(lang, 'Строгость совпадения', 'Match strictness', "Moslik qat'iyligi")}: <b>{threshold ?? '…'}</b></span>
+        <input type="range" min={60} max={95} step={5} value={threshold ?? 80} onChange={e => setThreshold(Number(e.target.value))} />
+        <span className="scale"><span>{tr(lang, 'Мягче, меньше ложных отказов', 'Softer, fewer false rejections', 'Yumshoqroq')}</span><span>{tr(lang, 'Строже', 'Stricter', "Qat'iyroq")}</span></span>
+      </label>
+      <div style={{ marginTop: 18 }}><span className="fld"><span>{tr(lang, 'Если лицо не совпало', "If the face doesn't match", 'Agar yuz mos kelmasa')}</span></span>
+        <div className="radio" role="radiogroup">
+          {([
+            ['allow_flagged', tr(lang, 'Смена откроется, вы увидите её на проверке', 'The shift opens and you see it for review', "Smena ochiladi, siz uni tekshirasiz"), tr(lang, 'Сотрудник не застрянет у входа, если камера плохая', "Nobody gets stuck at the door over a bad camera", "Kamera yomon bo'lsa ham xodim kirib qoladi")],
+            ['block', tr(lang, 'Смену открыть нельзя, пока лицо не совпадёт', "Can't open a shift until the face matches", "Yuz mos kelmaguncha smena ochilmaydi"), tr(lang, 'Строже, но кто-то может не выйти вовремя', 'Stricter, but someone may start late', "Qat'iyroq, lekin kimdir kechikishi mumkin")],
+          ] as const).map(([id, title, sub]) => (
+            <label key={id}><input type="radio" name="facefail" checked={policy === id} onChange={() => setPolicy(id)} /><span>{title}<small>{sub}</small></span></label>
+          ))}
+        </div>
       </div>
-      <p className="text-[11px] text-muted mb-1.5">{tr(lang, 'Если лицо не совпало', "If the face doesn't match", 'Agar yuz mos kelmasa')}</p>
-      <div className="grid sm:grid-cols-2 gap-2">
-        {([
-          ['allow_flagged', tr(lang, 'Пустить, но отметить', 'Allow, but flag it', "Kiritish, lekin belgilash"), tr(lang, 'Смена откроется, вы увидите её на проверке', 'Shift opens; you see it for review', "Smena ochiladi, siz tekshirasiz")],
-          ['block', tr(lang, 'Не пускать', 'Block', 'Kiritmaslik'), tr(lang, 'Смену открыть нельзя, пока лицо не совпадёт', "Can't clock in until the face matches", "Yuz mos kelmaguncha smena ochilmaydi")],
-        ] as const).map(([id, title, sub]) => (
-          <button key={id} onClick={() => setPolicy(id)}
-            className={`text-left p-3 rounded-lg border transition-colors ${policy === id ? 'border-primary bg-primary/10' : 'border-border bg-background hover:border-primary/40'}`}>
-            <p className="text-[13px] font-semibold text-text">{title}</p>
-            <p className="text-[11px] text-muted mt-0.5">{sub}</p>
-          </button>
-        ))}
-      </div>
-      <button onClick={save} disabled={busy || threshold === null} className="mt-4 px-3.5 py-2 rounded-lg bg-primary text-white text-[13px] font-semibold disabled:opacity-50">
-        {busy ? tr(lang, 'Сохранение…', 'Saving…', 'Saqlanmoqda…') : tr(lang, 'Сохранить', 'Save', 'Saqlash')}
-      </button>
-    </Card>
+      <div className="save"><button className="btn solid" type="button" onClick={save} disabled={busy || threshold === null}>{busy ? tr(lang, 'Сохранение…', 'Saving…', 'Saqlanmoqda…') : tr(lang, 'Сохранить', 'Save', 'Saqlash')}</button></div>
+    </section>
   );
 }
 

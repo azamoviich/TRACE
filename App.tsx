@@ -558,7 +558,7 @@ export default function App() {
     // these views, they'd only fire requests the backend refuses.
     if (EMPLOYEE_APP_PAGE_IDS.includes(currentView) && !employeeAppEnabled) return null;
     switch (isMarketing && currentView !== 'loyalty' ? 'reviews' : currentView) {
-      case 'dashboard':   return <Dashboard key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} onOpenPlan={planAvailable && !hiddenPages.includes('plan') ? () => setCurrentView('plan') : undefined} />;
+      case 'dashboard':   return <Dashboard key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} onOpenPlan={planAvailable && !hiddenPages.includes('plan') ? () => setCurrentView('plan') : undefined} onNavigate={setCurrentView} />;
       case 'sales':       return <Sales key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} />;
       case 'operations':  return <Operations key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} branches={branches} isAllBranches={activeBranchId === ALL_BRANCHES_ID} />;
       case 'financial':   return <Financial key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} />;
@@ -597,7 +597,7 @@ export default function App() {
 
   // Redesigned pages render their own markup under .rd; the rest still use
   // Tailwind and sit in the same container with the new tokens.
-  const REDESIGNED: Partial<Record<ViewState, string>> = {};
+  const REDESIGNED: Partial<Record<ViewState, string>> = { dashboard: 'dash' };
   const rdPage = REDESIGNED[currentView];
 
   return (

@@ -48,3 +48,15 @@ input, textarea, select { font-size: max(16px, 1em); }
 .rd .rd-demo { max-width: var(--maxw); margin: 0 auto; padding: 10px var(--pad) 0; font-size: 13px; color: var(--text-3); display: flex; gap: 10px; align-items: center; }
 .rd .rd-demo b { color: var(--accent); font-weight: 500; }
 .rd .rd-demo button { margin-left: auto; color: var(--text-3); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--rule-strong); font-size: 13px; }
+
+/* Charts + legend + empty state, shared by every redesigned page */
+.rd .legend { display: flex; flex-wrap: wrap; flex-shrink: 0; gap: 18px; font-size: 13px; color: var(--text-2); }
+.rd .legend i { display: inline-block; width: 14px; height: 2px; vertical-align: middle; margin-right: 6px; background: var(--accent); }
+.rd .legend i.base { background: none; border-top: 2px dashed var(--baseline); height: 0; }
+.rd .chart-wrap { position: relative; }
+.rd svg.chart { width: 100%; display: block; overflow: visible; }
+.rd .tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--rule); box-shadow: var(--shadow); border-radius: 8px; padding: 8px 10px; font-size: 13px; line-height: 1.45; opacity: 0; transform: translateY(4px); transition: opacity .15s, transform .15s; white-space: nowrap; z-index: 3; }
+.rd .tip.on { opacity: 1; transform: none; }
+.rd .rd-empty { margin: 0; padding: 14px 0; font-size: 14px; color: var(--text-3); }
+.rd .btn:disabled { opacity: .5; cursor: default; }
+.rd .rd-err { color: var(--neg); font-size: 13.5px; margin: 8px 0 0; }

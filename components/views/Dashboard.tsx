@@ -1,24 +1,21 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell
-} from 'recharts';
-import { ArrowUpRight, ArrowDownRight, Calendar, Zap, TrendingUp, Sparkles, AlertTriangle, Users, BarChart2, CheckCircle, X, RefreshCw, SlidersHorizontal, Receipt, ChevronDown } from 'lucide-react';
+// Главная — redesigned per TRACE-mockups/dashboard-v2.html (Oct 2026).
+// One row of headline numbers, plan line, on-demand briefing, hourly chart
+// against a baseline, live hall, then what sells and the till feed.
+// Styles: styles/rd/dash.css (scoped .rd-dash).
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRealtimeData, RealtimeEvent, RealtimeOrderData } from '../../hooks/useRealtimeData';
-import { Card } from '../ui/Card';
-import { ChartTooltip } from '../ui/ChartTooltip';
-import { ComparisonSelector } from '../ui/ComparisonSelector';
-import { DateRangePicker } from '../ui/DateRangePicker';
-import { PLUGIN_ENABLED } from '../ui/ComingSoon';
-import { TRANSLATIONS, tr, formatMinutes, formatMinutesShort } from '../../constants';
-import { DashboardSkeleton } from '../ui/Skeleton';
-import { SlotText } from '../ui/SlotNumber';
-import { Language, TimeRange, Metric, ComparisonPeriod } from '../../types';
-import { useCountUp } from '../../hooks/useCountUp';
-import { traceApi, isDemoTenant, demoLiveOrderFeed, branchHeaders, RevenueRow, DishRow, IntegrationStatus, AIDailyBriefing, HourlyRow, RevenueType } from '../../services/traceApi';
-import { useOccupiedTables } from '../../hooks/useOccupiedTables';
+import { tr } from '../../constants';
+import { Language, ComparisonPeriod, ViewState } from '../../types';
+import {
+  traceApi, isDemoTenant, demoLiveOrderFeed, branchHeaders, RevenueRow, DishRow, IntegrationStatus,
+  AIDailyBriefing, HourlyRow, RevenueType, ActiveOrderRow, HallPlan,
+} from '../../services/traceApi';
+import type { ProgressResult } from '../../lib/planEngine';
 import { tashkentDateStr, tashkentHours } from '../../utils/tz';
-import { PlanWidget } from './plan/PlanWidget';
+import {
+  fmt, mln, sum, money, pctChange, Delta, Pop, Opt, PeriodSeg, PeriodValue, AiMeta, Skel, LineChart, Legend,
+  weekday, dayLabel, rangeLabel, isoShift, nowHM, periodDates, wdShort, MONTHS_NOM,
+} from '../rd/ui';
 
 interface DashboardProps {
   lang: Language;
@@ -26,1199 +23,614 @@ interface DashboardProps {
   branch?: string | null;
   onContextReady?: (ctx: string) => void;
   onOpenPlan?: () => void;
+  onNavigate?: (v: ViewState) => void;
 }
 
-function parseNum(value: string): { num: number; suffix: string; isDecimal: boolean } {
-  if (value.includes('%')) return { num: parseFloat(value), suffix: '%', isDecimal: true };
-  const parts = value.trim().split(/\s+/);
-  const num = parseFloat(parts[0].replace(/[,\s]/g, ''));
-  return { num: isNaN(num) ? 0 : num, suffix: parts.slice(1).join(' '), isDecimal: false };
-}
-
-
-
-// The big hero number — slot-machine reveal whenever the value changes
-// (filter toggled, period switched, branch changed), instead of freezing
-// on the old number then snapping straight to the new one.
-function HeroRevenue({ value, suffix, loading }: { value: number; suffix: string; loading?: boolean }) {
-  return (
-    <div className="flex items-end gap-3">
-      <SlotText
-        text={Math.round(value).toLocaleString('ru-RU')}
-        loading={loading}
-        className="font-display font-black text-text leading-none tracking-tight metric-number"
-        style={{ fontSize: 'clamp(36px, 9vw, 80px)' }}
-      />
-      {suffix && (
-        <span
-          className="font-display font-semibold text-muted mb-1.5"
-          style={{ fontSize: 'clamp(16px, 1.8vw, 24px)' }}
-        >
-          {suffix}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function StatBox({ label, value, suffix, pct, loading }: { label: string; value: string; suffix?: string; pct: number | null; loading?: boolean }) {
-  const up = pct !== null && pct >= 0;
-  return (
-    <div>
-      <p className="text-[13px] text-muted font-medium mb-1.5">{label}</p>
-      <p className="metric-number font-display font-bold text-text leading-none" style={{ fontSize: 'clamp(18px, 2vw, 26px)' }}>
-        <SlotText text={value} loading={loading} />
-        {suffix && <span className="text-muted ml-1" style={{ fontSize: '0.55em' }}>{suffix}</span>}
-      </p>
-      {pct !== null ? (
-        <p className={`text-[12px] font-semibold flex items-center gap-0.5 mt-1 ${up ? 'text-success' : 'text-danger'}`}>
-          {up ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-          {up ? '+' : ''}{pct}%
-        </p>
-      ) : (
-        <p className="text-[12px] text-muted mt-1">—</p>
-      )}
-    </div>
-  );
-}
-
-// Inline "real guest" filter — pick which table-plan sections (staff comp
-// tables, delivery/takeaway aggregator channels) don't count as real guests.
-// Lives next to revenue instead of a separate Settings page so picking a
-// filter and seeing the numbers update happen in the same place.
-function RealGuestFilterPopover({ lang, onClose, onSaved }: { lang: Language; onClose: () => void; onSaved: () => void }) {
-  const ru = lang === 'ru';
-  const isUz = lang === 'uz';
-  const [sections, setSections] = useState<{ name: string; tableCount: number; excluded: boolean }[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [hasPluginData, setHasPluginData] = useState(true);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    traceApi.settings.listRealGuestSections()
-      .then(r => { setSections(r.sections); setHasPluginData(r.hasPluginData); })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
-  }, [onClose]);
-
-  const toggle = (name: string) => setSections(prev => prev.map(s => s.name === name ? { ...s, excluded: !s.excluded } : s));
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      await traceApi.settings.saveRealGuestSections(sections.filter(s => s.excluded).map(s => s.name));
-      onSaved();
-    } catch {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div ref={ref} className="absolute z-30 mt-2 w-[min(300px,85vw)] max-w-[calc(100vw-2rem)] right-0 sm:right-auto bg-card border border-border rounded-2xl shadow-xl p-4" style={{ top: '100%' }}>
-      <p className="text-[13px] font-semibold text-text mb-1">
-        {tr(lang, 'Реальные гости', 'Real guests', 'Haqiqiy mehmonlar')}
-      </p>
-      <p className="text-[11px] text-muted mb-3">
-        {tr(lang, 'Выберите разделы, которые не считаются гостями (стафф, доставка и т.д.)', 'Pick sections that don\'t count as guests (staff, delivery, etc.)', "Mehmon hisoblanmaydigan bo'limlarni tanlang (xodimlar, yetkazib berish va h.k.)")}
-      </p>
-      {loading ? (
-        <div className="space-y-1.5">
-          {[0, 1, 2].map(i => <div key={i} className="h-8 bg-card-hover rounded-lg animate-pulse" />)}
-        </div>
-      ) : !hasPluginData ? (
-        <p className="text-[12px] text-muted">
-          {tr(lang, 'Нет данных — требуется плагин iikoFront', 'No data yet — requires the iikoFront plugin', 'Maʼlumot yoʻq — iikoFront plagini kerak')}
-        </p>
-      ) : sections.length === 0 ? (
-        <p className="text-[12px] text-muted">{tr(lang, 'Разделы не найдены', 'No sections found', "Bo'limlar topilmadi")}</p>
-      ) : (
-        <>
-          <div className="space-y-1 max-h-[240px] overflow-y-auto">
-            {sections.map(s => (
-              <label key={s.name} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-card-hover transition-colors cursor-pointer">
-                <input type="checkbox" checked={s.excluded} onChange={() => toggle(s.name)} className="accent-primary w-3.5 h-3.5 flex-shrink-0" />
-                <span className="text-[12px] text-text truncate flex-1">{s.name}</span>
-                <span className="text-[10px] text-muted flex-shrink-0">{s.tableCount}</span>
-              </label>
-            ))}
-          </div>
-          <button
-            onClick={save}
-            disabled={saving}
-            className="w-full mt-3 px-3 py-2 bg-primary text-white text-[12px] font-semibold rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
-          >
-            {saving ? (ru ? 'Сохранение...' : isUz ? 'Saqlanmoqda...' : 'Saving...') : (ru ? 'Применить' : isUz ? 'Qo\'llash' : 'Apply')}
-          </button>
-        </>
-      )}
-    </div>
-  );
-}
-
-// iiko surfaces roughly ten disagreeing "revenue" totals (with/without
-// discount, by category, by payment method, ...). Rather than pick one and
-// hide the rest, this lets the user choose which definition drives the
-// Dashboard's headline number — see RevenueType in traceApi.ts.
-const REVENUE_TYPE_LABELS: Record<RevenueType, { ru: string; en: string; uz: string; hint: { ru: string; en: string; uz: string } }> = {
-  net:       { ru: 'Со скидками',        en: 'After discounts', uz: 'Chegirmalar bilan',
-               hint: { ru: 'Сколько реально заплатили гости', en: 'What guests actually paid', uz: "Mehmonlar to'lagan summa" } },
-  gross:     { ru: 'Без скидок',         en: 'Before discounts', uz: 'Chegirmasiz',
-               hint: { ru: 'По ценам в меню, без учёта скидок', en: 'At menu price, ignoring discounts', uz: "Menyudagi narx bo'yicha" } },
-  food_only: { ru: 'Только еда и напитки', en: 'Food & drinks only', uz: "Faqat taom va ichimlik",
-               hint: { ru: 'Без сервисного сбора, чаевых, модификаторов', en: 'Excludes service charge, tips, modifiers', uz: "Xizmat haqi va choy pulisiz" } },
-  cash:      { ru: 'Наличными',          en: 'Cash only', uz: 'Naqd pul',
-               hint: { ru: 'Только оплаты наличными', en: 'Cash payments only', uz: 'Faqat naqd tolovlar' } },
-  card:      { ru: 'По картам',          en: 'Card only', uz: 'Karta orqali',
-               hint: { ru: 'Только безналичные оплаты', en: 'Card/cashless payments only', uz: "Faqat naqdsiz to'lovlar" } },
-  excl_comp: { ru: 'Без комплиментов',    en: 'Excl. comps', uz: 'Bepul buyurtmalarisiz',
-               hint: { ru: 'Без бесплатных и блогерских заказов', en: 'Excludes unpaid and blogger/comp orders', uz: "Bepul va blogger buyurtmalarisiz" } },
-  gl_kitchen:        { ru: 'Выручка Кухня (учёт)',   en: 'Kitchen revenue (GL)', uz: 'Oshxona tushumi (hisob)',
-                       hint: { ru: 'Из проводок iiko, счёт «Выручка Кухня»', en: 'From iiko GL account "Выручка Кухня"', uz: '"Выручка Кухня" hisobidan' } },
-  gl_bar:            { ru: 'Выручка Бар (учёт)',     en: 'Bar revenue (GL)', uz: 'Bar tushumi (hisob)',
-                       hint: { ru: 'Из проводок iiko, счёт «Выручка Бар»', en: 'From iiko GL account "Выручка Бар"', uz: '"Выручка Бар" hisobidan' } },
-  gl_pastry:         { ru: 'Выручка Кондитерка (учёт)', en: 'Pastry revenue (GL)', uz: 'Konditer tushumi (hisob)',
-                       hint: { ru: 'Из проводок iiko, счёт «Выручка Кондитеры»', en: 'From iiko GL account "Выручка Кондитеры"', uz: '"Выручка Кондитеры" hisobidan' } },
-  gl_service_charge: { ru: 'Надбавка за обслуживание', en: 'Service charge', uz: 'Xizmat haqi',
-                       hint: { ru: 'Только сервисный сбор, без остальной выручки', en: 'Service charge line only, no other revenue', uz: 'Faqat xizmat haqi' } },
-  gl_transfers:      { ru: 'От перемещения между филиалами', en: 'Inter-branch transfers', uz: 'Filiallar orasidagi ko\'chirish',
-                       hint: { ru: 'Выручка от перемещения товаров между филиалами', en: 'Revenue from goods transferred between branches', uz: "Filiallar orasida ko'chirilgan mahsulotlar tushumi" } },
-  gl_other_income:   { ru: 'Прочие доходы', en: 'Other income', uz: 'Boshqa daromadlar',
-                       hint: { ru: 'Разное — не основная выручка', en: 'Misc — not core revenue', uz: 'Aralash — asosiy tushum emas' } },
-  gl_no_discount:    { ru: 'Без скидочных позиций (учёт)', en: 'Non-discountable items (GL)', uz: 'Chegirmasiz pozitsiyalar (hisob)',
-                       hint: { ru: 'Счёт «Выручка без учета скидок» — товары, не участвующие в скидках', en: 'GL account for items never eligible for discounts', uz: 'Chegirmaga kirmaydigan mahsulotlar hisobi' } },
+// iiko surfaces ~10 disagreeing "revenue" totals; the owner picks which one
+// drives the headline. See RevenueType in traceApi.ts.
+const REV: Record<RevenueType, [string, string, string, string?, string?, string?]> = {
+  net: ['Со скидками', 'After discounts', 'Chegirmalar bilan', 'Сколько реально заплатили гости', 'What guests actually paid', "Mehmonlar to'lagan summa"],
+  gross: ['Без скидок', 'Before discounts', 'Chegirmasiz', 'По ценам в меню, без учёта скидок', 'At menu price, ignoring discounts', "Menyudagi narx bo'yicha"],
+  food_only: ['Только еда и напитки', 'Food & drinks only', 'Faqat taom va ichimlik', 'Без сервисного сбора, чаевых, модификаторов', 'Excludes service charge, tips, modifiers', 'Xizmat haqi va choy pulisiz'],
+  excl_comp: ['Без комплиментов', 'Excl. comps', 'Bepul buyurtmalarsiz', 'Без бесплатных и блогерских заказов', 'Excludes unpaid and blogger orders', 'Bepul va blogger buyurtmalarisiz'],
+  cash: ['Наличными', 'Cash', 'Naqd'],
+  card: ['По картам', 'Card', 'Karta'],
+  gl_kitchen: ['Выручка Кухня', 'Kitchen revenue', 'Oshxona tushumi'],
+  gl_bar: ['Выручка Бар', 'Bar revenue', 'Bar tushumi'],
+  gl_pastry: ['Выручка Кондитерка', 'Pastry revenue', 'Konditer tushumi'],
+  gl_service_charge: ['Надбавка за обслуживание', 'Service charge', 'Xizmat haqi'],
+  gl_transfers: ['От перемещения между филиалами', 'Inter-branch transfers', "Filiallararo ko'chirish"],
+  gl_other_income: ['Прочие доходы', 'Other income', 'Boshqa daromadlar'],
+  gl_no_discount: ['Без скидочных позиций', 'Non-discountable items', 'Chegirmasiz pozitsiyalar'],
 };
+const REV_GROUPS: { title?: [string, string, string]; keys: RevenueType[] }[] = [
+  { keys: ['net', 'gross', 'food_only', 'excl_comp'] },
+  { title: ['По оплате', 'By payment', "To'lov bo'yicha"], keys: ['cash', 'card'] },
+  { title: ['Из бухучёта iiko', 'From iiko accounting', 'iiko hisobidan'], keys: ['gl_kitchen', 'gl_bar', 'gl_pastry', 'gl_service_charge', 'gl_transfers', 'gl_other_income', 'gl_no_discount'] },
+];
+const rl = (lang: Language, k: RevenueType) => tr(lang, REV[k][0], REV[k][1], REV[k][2]);
 
-function RevenueTypePopover({ lang, value, onChange, onClose }: { lang: Language; value: RevenueType; onChange: (t: RevenueType) => void; onClose: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const onClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
-  }, [onClose]);
+// Comparison shift in days per option (matches the old ComparisonSelector).
+const SHIFT: Record<ComparisonPeriod, number> = { yesterday: 1, last_week: 7, last_month: 30, last_year: 365 };
+const CMP_OPTIONS: Record<'today' | '7days' | '30days', ComparisonPeriod[]> = {
+  today: ['yesterday', 'last_week', 'last_month', 'last_year'],
+  '7days': ['last_week', 'last_month', 'last_year'],
+  '30days': ['last_month', 'last_year'],
+};
+const DEFAULT_CMP: Record<'today' | '7days' | '30days', ComparisonPeriod> = { today: 'last_week', '7days': 'last_week', '30days': 'last_month' };
 
-  const GL_KEYS = new Set(['gl_kitchen', 'gl_bar', 'gl_pastry', 'gl_service_charge', 'gl_transfers', 'gl_other_income', 'gl_no_discount']);
+const FEED_TYPES = new Set([
+  'order_opened', 'order_bill_printed', 'order_closed', 'order_removed', 'order_bill_cancelled',
+  'order_printed_items_deleted', 'cashier_session_opened', 'cashier_session_closed',
+]);
+const TABLE_TYPES = new Set(['rect_table', 'round_table', 'stool']);
+const LONG_MIN = 90;
 
-  return (
-    <div
-      ref={ref}
-      className="fixed z-30 left-4 right-4 bottom-4 max-h-[60vh] sm:absolute sm:z-30 sm:top-full sm:mt-2 sm:left-auto sm:right-0 sm:bottom-auto sm:w-[min(280px,85vw)] sm:max-w-[calc(100vw-2rem)] sm:max-h-[70vh] overflow-y-auto bg-card border border-border rounded-2xl shadow-xl p-2"
-    >
-      <p className="text-[11px] text-muted px-2 pt-1 pb-2">
-        {tr(lang, 'Какую выручку показывать', 'Which revenue to show', "Qaysi tushumni ko'rsatish")}
-      </p>
-      {(Object.keys(REVENUE_TYPE_LABELS) as RevenueType[]).map((key, i, arr) => {
-        const l = REVENUE_TYPE_LABELS[key];
-        const active = value === key;
-        const isFirstGL = GL_KEYS.has(key) && !GL_KEYS.has(arr[i - 1]);
-        return (
-          <React.Fragment key={key}>
-            {isFirstGL && (
-              <p className="text-[9px] uppercase tracking-[0.1em] text-muted/50 px-2.5 pt-2 pb-1">
-                {tr(lang, 'Из бухучёта iiko', 'From iiko accounting', 'iiko hisobidan')}
-              </p>
-            )}
-            <button
-              onClick={() => { onChange(key); onClose(); }}
-              className={`w-full text-left px-2.5 py-2 rounded-lg transition-colors ${active ? 'bg-primary/10' : 'hover:bg-card-hover'}`}
-            >
-              <p className={`text-[12.5px] font-medium ${active ? 'text-primary' : 'text-text'}`}>{tr(lang, l.ru, l.en, l.uz)}</p>
-              <p className="text-[10.5px] text-muted mt-0.5">{tr(lang, l.hint.ru, l.hint.en, l.hint.uz)}</p>
-            </button>
-          </React.Fragment>
-        );
-      })}
-    </div>
-  );
-}
-
-// Small animated stat (no card)
-function Stat({ metric, lang }: { metric: Metric; lang: Language }) {
-  const t = TRANSLATIONS[lang];
-  const { num, suffix, isDecimal } = parseNum(metric.value);
-  const n = useCountUp(num, 900);
-  const label = t[metric.label as keyof typeof t] || metric.label;
-  const formatted = isDecimal ? n.toFixed(1) : Math.round(n).toLocaleString('ru-RU');
-  const up = metric.change > 0;
-
-  return (
-    <div>
-      <p className="text-[13px] text-muted font-medium mb-1.5">{label}</p>
-      <p className="metric-number font-display font-bold text-text leading-none"
-        style={{ fontSize: 'clamp(18px, 2vw, 26px)' }}>
-        {formatted}
-        {suffix && <span className="text-muted ml-1" style={{ fontSize: '0.55em' }}>{suffix}</span>}
-      </p>
-      <p className={`text-[12px] font-semibold flex items-center gap-0.5 mt-1 ${up ? 'text-success' : 'text-danger'}`}>
-        {up ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-        {metric.change > 0 ? '+' : ''}{metric.change}%
-      </p>
-    </div>
-  );
-}
-
-// ── AI Daily Briefing Card ────────────────────────────────────────────────────
-
-const BRIEFING_SECTIONS = [
-  { key: 'summary',  icon: BarChart2,    colorClass: 'text-primary',   labelRu: 'Итог дня',       labelEn: 'Day summary',   labelUz: 'Kun yakuni'      },
-  { key: 'actions',  icon: CheckCircle,  colorClass: 'text-success',   labelRu: 'Топ-3 действия', labelEn: 'Top 3 actions', labelUz: 'Top-3 amal'      },
-  { key: 'staff',    icon: Users,        colorClass: 'text-blue-400',  labelRu: 'Персонал',       labelEn: 'Staff',         labelUz: 'Xodimlar'        },
-  { key: 'forecast', icon: TrendingUp,   colorClass: 'text-amber-400', labelRu: 'Прогноз',        labelEn: 'Forecast',      labelUz: 'Bashorat'        },
-  { key: 'risk',     icon: AlertTriangle,colorClass: 'text-danger',    labelRu: 'Риск / шанс',    labelEn: 'Risk / opp.',   labelUz: 'Xavf / imkoniyat'},
-] as const;
-
-const BRIEFING_CACHE_KEY = 'trace_ai_briefing';
-
-function loadCachedBriefing(): AIDailyBriefing | null {
+// Daily briefing is generated on request and kept for the day.
+const BRIEF_KEY = 'trace_ai_briefing';
+const todayKey = () => tashkentDateStr();
+function loadBrief(): { data: AIDailyBriefing; at?: string } | null {
   try {
-    const raw = localStorage.getItem(BRIEFING_CACHE_KEY);
-    if (!raw) return null;
-    const { data, date } = JSON.parse(raw);
-    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-    return date === today ? data : null;
+    const raw = localStorage.getItem(BRIEF_KEY); if (!raw) return null;
+    const j = JSON.parse(raw);
+    return j.date === todayKey() ? { data: j.data, at: j.at } : null;
   } catch { return null; }
 }
-
-function saveCachedBriefing(b: AIDailyBriefing) {
-  try {
-    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-    localStorage.setItem(BRIEFING_CACHE_KEY, JSON.stringify({ data: b, date: today }));
-  } catch {}
+function saveBrief(b: AIDailyBriefing, at: string) {
+  try { localStorage.setItem(BRIEF_KEY, JSON.stringify({ data: b, date: todayKey(), at })); } catch {}
 }
+const clean = (v: unknown): string | null => {
+  if (typeof v !== 'string') return null;
+  const t = v.trim();
+  return t && !t.startsWith('{') && !t.startsWith('[') ? t : null;
+};
 
-function AIDailyBriefingCard({ lang, dataReady }: { lang: Language; dataReady: boolean }) {
-  const ru = lang === 'ru';
-  const isUz = lang === 'uz';
-  const [briefing, setBriefing] = useState<AIDailyBriefing | null>(() => loadCachedBriefing());
-  const [loading,  setLoading]  = useState(false);
-
-  const fetchBriefing = (force = false) => {
-    if (loading || !dataReady) return;
-    setLoading(true);
-    traceApi.ai.briefing(lang, force)
-      .then(b => { setBriefing(b); if (b.fromAI) saveCachedBriefing(b); })
-      .catch(() => setBriefing({ fromAI: false }))
-      .finally(() => setLoading(false));
-  };
-
-  return (
-    <div className="p-5 glass rounded-3xl">
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-2">
-          <Sparkles size={13} className="text-primary" />
-          <p className="text-[13px] text-muted font-medium">
-            {ru ? 'AI Брифинг дня' : isUz ? 'AI kunlik brifing' : 'AI Daily Briefing'}
-          </p>
-        </div>
-        {briefing?.fromAI && (
-          <div className="flex items-center gap-2">
-            {loading && (
-              <div className="flex gap-0.5">
-                {[0,1,2].map(i => (
-                  <span key={i} className="w-1 h-1 rounded-full bg-primary/50"
-                    style={{ animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite` }} />
-                ))}
-              </div>
-            )}
-            <button
-              onClick={() => fetchBriefing(true)}
-              disabled={loading}
-              className="flex items-center gap-1 text-[12px] text-muted hover:text-text transition-colors disabled:opacity-40"
-            >
-              <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
-              {ru ? 'Обновить' : isUz ? 'Yangilash' : 'Update'}
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Not yet fetched — show trigger button */}
-      {!briefing && !loading && (
-        <button
-          onClick={() => fetchBriefing()}
-          disabled={!dataReady}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed border-primary/30 text-primary hover:bg-primary/5 transition-colors text-[13px] font-medium disabled:opacity-40"
-        >
-          <Sparkles size={14} />
-          {ru ? 'Получить AI-брифинг' : isUz ? 'AI brifingini olish' : 'Get AI Briefing'}
-        </button>
-      )}
-
-      {/* Loading state */}
-      {loading && (
-        <div className="space-y-4">
-          {BRIEFING_SECTIONS.map(({ key, icon: Icon, colorClass, labelRu, labelEn, labelUz }) => (
-            <div key={key}>
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <Icon size={11} className={colorClass} />
-                <p className="text-[13px] text-muted font-medium">{ru ? labelRu : isUz ? labelUz : labelEn}</p>
-              </div>
-              <div className="h-3 bg-card-hover rounded animate-pulse w-4/5" />
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Content */}
-      {!loading && briefing?.fromAI && (
-        <div className="space-y-4">
-          {BRIEFING_SECTIONS.map(({ key, icon: Icon, colorClass, labelRu, labelEn, labelUz }) => {
-            const label = ru ? labelRu : isUz ? labelUz : labelEn;
-            const rawContent = (briefing as any)[key];
-            const content = (() => {
-              if (!rawContent) return null;
-              if (Array.isArray(rawContent)) return rawContent;
-              if (typeof rawContent === 'string') {
-                const trimmed = rawContent.trim();
-                if (trimmed.startsWith('{') || trimmed.startsWith('[')) return null;
-                return trimmed || null;
-              }
-              return null;
-            })();
-            return (
-              <div key={key}>
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <Icon size={11} className={colorClass} />
-                  <p className="text-[13px] text-muted font-medium">{label}</p>
-                </div>
-                {content ? (
-                  key === 'actions' && Array.isArray(content) ? (
-                    <ul className="space-y-1">
-                      {(content as string[]).map((a, i) => (
-                        <li key={i} className="flex items-start gap-2 text-[14px] text-text leading-relaxed">
-                          <span className="text-success mt-0.5 flex-shrink-0">→</span>
-                          <span>{a}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-[14px] text-text leading-relaxed">{content as string}</p>
-                  )
-                ) : (
-                  <p className="text-[13px] text-muted/40 italic">—</p>
-                )}
-              </div>
-            );
-          })}
-          <div className="pt-4 border-t border-border">
-            <p className="text-[11px] text-muted/30">TRACE AI</p>
-          </div>
-        </div>
-      )}
-
-    </div>
-  );
-}
-
-const TIME_RANGES: { key: TimeRange; ru: string; en: string; uz: string }[] = [
-  { key: 'today', ru: 'Сегодня', en: 'Today', uz: 'Bugun' },
-  { key: '7days', ru: '7 дней', en: '7 days', uz: '7 kun' },
-  { key: '30days', ru: '30 дней', en: '30 days', uz: '30 kun' },
-];
-
-function comparisonDateRange(timeRange: TimeRange, comparison: ComparisonPeriod): { from: string; to: string } {
-  const d = (offsetDays: number) => {
-    const dt = new Date(Date.now() - offsetDays * 86400_000);
-    return tashkentDateStr(dt);
-  };
-  const periodDays = timeRange === '30days' ? 30 : timeRange === '7days' ? 7 : 1;
-  const shifts: Record<ComparisonPeriod, number> = {
-    yesterday: 1,
-    last_week: 7,
-    last_month: 30,
-    last_year: 365,
-  };
-  const shift = shifts[comparison] ?? 1;
-  return { from: d(shift + periodDays - 1), to: d(shift) };
-}
-
-export const Dashboard: React.FC<DashboardProps> = ({ lang, onShowToast, branch, onContextReady, onOpenPlan }) => {
-  const t = TRANSLATIONS[lang];
-  const [timeRange, setTimeRange] = useState<TimeRange>('today');
-  const [comparison, setComparison] = useState<ComparisonPeriod>('yesterday');
-  const [dataLoaded, setDataLoaded] = useState(false);
-  const [renderKey, setRenderKey] = useState(0);
-  const [liveRevenue, setLiveRevenue] = useState(0);
-  const [liveOrderCount, setLiveOrderCount] = useState(0);
-  const [iikoRows, setIikoRows] = useState<RevenueRow[]>([]);
-  const [topDishes, setTopDishes] = useState<DishRow[]>([]);
-  const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatus>({});
-  const [aiInsightText, setAiInsightText] = useState<string | null>(null);
-  const [aiInsightLoading, setAiInsightLoading] = useState(false);
-  const [calendarOpen, setCalendarOpen] = useState(false);
-  const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null);
-  const calendarBtnRef = useRef<HTMLButtonElement>(null);
-  const [comparisonRows, setComparisonRows] = useState<RevenueRow[]>([]);
-  // Same-hour-cutoff comparison for 'today': the comparison day's hourly
-  // breakdown, so "10AM today" compares against "10AM yesterday" (actual
-  // accumulated hours) instead of a linear time-of-day estimate.
-  const [compHourlyRows, setCompHourlyRows] = useState<HourlyRow[]>([]);
-  const [realGuestRevenue, setRealGuestRevenue] = useState<{ available: boolean; revenue?: number; orders?: number; guests?: number; excludedRevenue?: number } | null>(null);
-  const [compRealGuestRevenue, setCompRealGuestRevenue] = useState<{ available: boolean; revenue?: number; orders?: number; guests?: number } | null>(null);
-  const [rgRefreshKey, setRgRefreshKey] = useState(0);
-  const [rgFilterOpen, setRgFilterOpen] = useState(false);
-  // Which of iiko's ~10 disagreeing revenue definitions drives the headline
-  // number — see RevenueType in traceApi.ts. Persisted so it survives a
-  // refresh instead of silently reverting to "net" every time.
-  const [revenueType, setRevenueType] = useState<RevenueType>(() => {
-    if (typeof window === 'undefined') return 'net';
-    return (localStorage.getItem('trace_revenue_type') as RevenueType) || 'net';
-  });
-  const [revenueTypeOpen, setRevenueTypeOpen] = useState(false);
-  useEffect(() => { localStorage.setItem('trace_revenue_type', revenueType); }, [revenueType]);
-  // Guards against a stale localStorage value from a previously-viewed iiko
-  // tenant carrying over — every non-"net" type 400s server-side for Poster.
-  useEffect(() => { if (integrationStatus.poster && revenueType !== 'net') setRevenueType('net'); }, [integrationStatus.poster]);
-  // Business hours — server-persisted per tenant (see Settings). Used only
-  // to scale "vs yesterday" for partial days; defaults match the same 9/23
-  // fallback used before this was backend-persisted.
-  const [businessHours, setBusinessHours] = useState<{ openHour: number; closeHour: number }>({ openHour: 9, closeHour: 23 });
-  useEffect(() => {
-    if (isDemoTenant()) return;
-    traceApi.settings.businessHours().then(h => {
-      setBusinessHours({ openHour: h.openHour ?? 9, closeHour: h.closeHour ?? 23 });
-    }).catch(() => {});
-  }, []);
-  // True for the whole span of a refetch (period change, branch switch,
-  // filter applied) — distinct from dataLoaded, which only guards the very
-  // first full-page skeleton. Numbers keep spinning for as long as this is
-  // true instead of sitting frozen on the old value until new data lands.
-  const [statsLoading, setStatsLoading] = useState(true);
-
-  useEffect(() => {
-    setStatsLoading(true);
-    const isCustom = timeRange === 'custom' && customRange;
-    const chartRange = timeRange === '30days' ? '30days' : timeRange === 'custom' ? 'custom' : '7days';
-    const dishRange = (timeRange === 'today' || timeRange === '7days' || timeRange === '30days') ? timeRange : 'custom';
-    Promise.all([
-      isCustom
-        ? traceApi.sales.revenue('custom', customRange.from, customRange.to, revenueType)
-        : traceApi.sales.revenue(chartRange as any, undefined, undefined, revenueType),
-      isCustom
-        ? traceApi.sales.topDishes('custom', 5, customRange.from, customRange.to)
-        : traceApi.sales.topDishes(dishRange as any, 5),
-      traceApi.sales.status(),
-      // Uses dishRange, not chartRange — chartRange deliberately collapses
-      // "today" into "7days" for the trend chart, but this tile shows a
-      // single aggregated total for whatever period is actually selected,
-      // so it must respect "today" literally instead of widening it.
-      isCustom
-        ? traceApi.sales.realGuestRevenue('custom', customRange.from, customRange.to)
-        : traceApi.sales.realGuestRevenue(dishRange as any),
-    ]).then(([rows, dishes, status, realGuest]) => {
-      setIikoRows(rows);
-      setTopDishes(dishes);
-      setIntegrationStatus(status);
-      setRealGuestRevenue(realGuest);
-      setDataLoaded(true);
-      setRenderKey(k => k + 1);
-      if (onContextReady && rows.length > 0) {
-        const todayStr = tashkentDateStr();
-        const todayRow = rows.find(r => r.date === todayStr) ?? rows[rows.length - 1];
-        const prevRow  = rows.length > 1 ? rows[rows.length - 2] : null;
-        const totalRev = rows.reduce((s, r) => s + r.revenue, 0);
-        const totalOrd = rows.reduce((s, r) => s + r.orders, 0);
-        const avgCheck = totalOrd > 0 ? Math.round(totalRev / totalOrd) : 0;
-        const pct = prevRow && prevRow.revenue > 0
-          ? Math.round(((todayRow.revenue - prevRow.revenue) / prevRow.revenue) * 100) : 0;
-        const fmt = (n: number) => n.toLocaleString('ru-RU');
-        const revenueTable = rows.map(r => `  ${r.date}: ${fmt(r.revenue)} UZS, ${r.orders} заказов, ср.чек ${r.orders > 0 ? fmt(Math.round(r.revenue / r.orders)) : 0} UZS`).join('\n');
-        const dishList = dishes.map((d, i) => `  ${i + 1}. ${d.name} [${d.category}] — ${d.quantity} шт., ${fmt(d.revenue)} UZS`).join('\n');
-        onContextReady(
-          `Раздел: Дашборд\n` +
-          `Период: ${rows.length > 1 ? rows[0].date + ' — ' + rows[rows.length - 1].date : todayStr}\n` +
-          `Итого выручка: ${fmt(totalRev)} UZS | Заказов: ${totalOrd} | Средний чек: ${fmt(avgCheck)} UZS\n` +
-          `Тренд к предыдущему дню: ${pct >= 0 ? '+' : ''}${pct}%\n` +
-          `\nВыручка по дням:\n${revenueTable}\n` +
-          `\nТоп блюд:\n${dishList || '  нет данных'}`
-        );
-      }
-    }).catch(() => {}).finally(() => setStatsLoading(false));
-  }, [timeRange, customRange, branch, onContextReady, rgRefreshKey, revenueType]);
-
-  // Fetch comparison period revenue whenever comparison or timeRange changes
-  useEffect(() => {
-    if (timeRange === 'custom') return;
-    const { from, to } = comparisonDateRange(timeRange, comparison);
-    traceApi.sales.revenue('custom', from, to, revenueType)
-      .then(setComparisonRows)
-      .catch(() => setComparisonRows([]));
-    // Same comparison window, filtered the same way as the current period —
-    // keeps % change meaningful once the real-guest filter is active.
-    traceApi.sales.realGuestRevenue('custom', from, to)
-      .then(setCompRealGuestRevenue)
-      .catch(() => setCompRealGuestRevenue(null));
-    if (timeRange === 'today') {
-      traceApi.sales.hourly(from) // from === to for 'today' comparisons (single day)
-        .then(setCompHourlyRows)
-        .catch(() => setCompHourlyRows([]));
-    } else {
-      setCompHourlyRows([]);
-    }
-  }, [timeRange, comparison, branch, rgRefreshKey, revenueType]);
-
+export const Dashboard: React.FC<DashboardProps> = ({ lang, branch, onContextReady, onOpenPlan, onNavigate }) => {
   const demo = isDemoTenant();
-  const [liveOrders, setLiveOrders] = useState<(RealtimeEvent & { id: string })[]>(() =>
-    demo ? demoLiveOrderFeed() as unknown as (RealtimeEvent & { id: string })[] : []
-  );
-  // Distinguishes "nothing has happened yet" from "still fetching persisted
-  // history" — without this, a refresh briefly shows the misleading
-  // "waiting for events" message before the real (non-empty) feed loads,
-  // reading as if all history got wiped.
-  const [feedLoading, setFeedLoading] = useState(!demo);
-  const [feedVisible, setFeedVisible] = useState(5);
+  const [period, setPeriod] = useState<PeriodValue>({ range: 'today', custom: null });
+  const cmpKey = (period.range === 'custom' ? '7days' : period.range) as 'today' | '7days' | '30days';
+  const [comparison, setComparison] = useState<ComparisonPeriod>('last_week');
+  useEffect(() => { if (!CMP_OPTIONS[cmpKey].includes(comparison)) setComparison(DEFAULT_CMP[cmpKey]); }, [cmpKey]);
 
-  const [totalTables, setTotalTables] = useState<number>(demo ? 14 : 0);
-  // Same source the Operations hall heatmap uses — keeps the two in sync
-  // instead of maintaining separate occupancy logic that can drift apart.
-  const { tables: occupiedTableNums } = useOccupiedTables(!demo);
+  const [revenueType, setRevenueType] = useState<RevenueType>(() => (localStorage.getItem('trace_revenue_type') as RevenueType) || 'net');
+  useEffect(() => { localStorage.setItem('trace_revenue_type', revenueType); }, [revenueType]);
 
-  // Denominator for occupancy %: tables in hall plans. Plans are seeded from
-  // iiko's real section list but curated by the owner — raw sections include
-  // virtual "tables" (delivery aggregators, staff) that would inflate the
-  // denominator, so the curated plans are the source of truth.
+  const [rows, setRows] = useState<RevenueRow[]>([]);
+  const [compRows, setCompRows] = useState<RevenueRow[]>([]);
+  const [hourly, setHourly] = useState<HourlyRow[]>([]);
+  const [compHourly, setCompHourly] = useState<HourlyRow[]>([]);
+  const [dishes, setDishes] = useState<DishRow[]>([]);
+  const [status, setStatus] = useState<IntegrationStatus>({});
+  const [rg, setRg] = useState<{ available: boolean; revenue?: number; orders?: number; guests?: number } | null>(null);
+  const [compRg, setCompRg] = useState<{ available: boolean; revenue?: number; orders?: number; guests?: number } | null>(null);
+  const [rgKey, setRgKey] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [hoursCfg, setHoursCfg] = useState({ openHour: 9, closeHour: 23 });
+  const poster = !!status.poster;
+  useEffect(() => { if (poster && revenueType !== 'net') setRevenueType('net'); }, [poster]);
   useEffect(() => {
     if (demo) return;
-    traceApi.halls.list()
-      .then(plans => {
-        const tableTypes = new Set(['rect_table', 'round_table', 'stool']);
-        let n = 0;
-        for (const p of plans) for (const el of (p.elements ?? [])) if (tableTypes.has(el.type)) n++;
-        if (n > 0) setTotalTables(n);
-      })
-      .catch(() => {});
-  }, [demo]);
+    traceApi.settings.businessHours().then(h => setHoursCfg({ openHour: h.openHour ?? 9, closeHour: h.closeHour ?? 23 })).catch(() => {});
+  }, []);
 
+  const { from, to } = periodDates(period.range, period.custom);
+  const today = tashkentDateStr();
+  const isToday = period.range === 'today';
+  const days = Math.round((Date.parse(to) - Date.parse(from)) / 86400_000) + 1;
+
+  // Current period
   useEffect(() => {
-    if (demo) return;
-    // Load the event feed for whatever period is selected — persisted
-    // server-side, so re-opening the app or switching periods always shows
-    // history instead of only whatever happened to be seeded at mount.
-    const base = import.meta.env.VITE_API_URL || '/api';
-    const FEED_TYPES = new Set([
-      'order_opened', 'order_bill_printed', 'order_closed',
-      'order_removed', 'order_bill_cancelled', 'order_printed_items_deleted',
-      'cashier_session_opened', 'cashier_session_closed',
-    ]);
-    const days = timeRange === '30days' ? 30 : timeRange === '7days' ? 7 : 1;
-    const from = timeRange === 'custom' && customRange ? customRange.from : tashkentDateStr(new Date(Date.now() - (days - 1) * 86400_000));
-    const to = timeRange === 'custom' && customRange ? customRange.to : tashkentDateStr();
+    setLoading(true);
+    const custom = period.range === 'custom' && period.custom;
+    const dishRange = custom ? 'custom' : period.range as 'today' | '7days' | '30days';
+    Promise.all([
+      custom ? traceApi.sales.revenue('custom', from, to, revenueType)
+        : isToday ? traceApi.sales.revenue('custom', today, today, revenueType)
+        : traceApi.sales.revenue(period.range as any, undefined, undefined, revenueType),
+      custom ? traceApi.sales.topDishes('custom', 7, from, to) : traceApi.sales.topDishes(dishRange, 7),
+      traceApi.sales.status(),
+      custom ? traceApi.sales.realGuestRevenue('custom', from, to) : traceApi.sales.realGuestRevenue(dishRange as any),
+      isToday ? traceApi.sales.hourly() : Promise.resolve([] as HourlyRow[]),
+    ]).then(([r, d, s, g, h]) => {
+      setRows(isToday ? r.filter(x => x.date === today) : r);
+      setDishes(d); setStatus(s); setRg(g); setHourly(h);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, [period, branch, revenueType, rgKey]);
 
-    setFeedLoading(true);
-    fetch(`${base}/realtime/events?limit=500&from=${from}&to=${to}`, { headers: branchHeaders() })
-      .then(r => r.ok ? r.json() : [])
-      .then((events: { type: string; payload?: any; created_at: string }[]) => {
-        const feed = events
-          .filter(ev => FEED_TYPES.has(ev.type))
-          .map(ev => ({
-            type: ev.type,
-            timestamp: ev.payload?.timestamp ?? ev.created_at,
-            data: ev.payload?.data ?? {},
-            id: `hist-${ev.created_at}-${Math.random()}`,
-          } as any));
-        setLiveOrders(feed);
-      })
-      .catch(() => {})
-      .finally(() => setFeedLoading(false));
-  }, [demo, timeRange, customRange]);
-
+  // Comparison period: same length, shifted back
+  const shift = period.range === 'custom' ? days : SHIFT[comparison];
+  const cFrom = isoShift(from, -shift), cTo = isoShift(to, -shift);
   useEffect(() => {
-    setLiveRevenue(0);
-    setLiveOrderCount(0);
-  }, [timeRange]);
+    traceApi.sales.revenue('custom', cFrom, cTo, revenueType).then(setCompRows).catch(() => setCompRows([]));
+    traceApi.sales.realGuestRevenue('custom', cFrom, cTo).then(setCompRg).catch(() => setCompRg(null));
+    if (isToday) traceApi.sales.hourly(cFrom).then(setCompHourly).catch(() => setCompHourly([]));
+    else setCompHourly([]);
+  }, [cFrom, cTo, branch, revenueType, rgKey]);
 
+  // ── Totals ──
+  const tot = (rs: RevenueRow[]) => rs.reduce((a, r) => ({ rev: a.rev + r.revenue, ord: a.ord + r.orders, gst: a.gst + (r.guests ?? 0) }), { rev: 0, ord: 0, gst: 0 });
+  const cur = tot(rows);
+  const rgOn = !demo && !!rg?.available;
+  const revenue = rgOn ? rg!.revenue ?? 0 : cur.rev;
+  const orders = rgOn ? rg!.orders ?? 0 : cur.ord;
+  const guests = rgOn ? rg!.guests ?? 0 : cur.gst;
+  const avg = orders ? revenue / orders : 0;
+  const perGuest = guests ? revenue / guests : 0;
+
+  // Today compares to the same time of day: comparison hours up to now.
+  const nowH = tashkentHours();
+  const compSoFar = useMemo(() => {
+    if (!isToday || !compHourly.length) return null;
+    const fl = Math.floor(nowH), fr = nowH - fl;
+    let rev = 0, ord = 0;
+    for (const r of compHourly) { if (r.hour < fl) { rev += r.revenue; ord += r.orders; } else if (r.hour === fl) { rev += r.revenue * fr; ord += r.orders * fr; } }
+    return { rev, ord };
+  }, [isToday, compHourly, nowH]);
+  const scale = useMemo(() => {
+    if (!isToday || demo) return 1;
+    const open = hoursCfg.openHour, close = hoursCfg.closeHour <= open ? hoursCfg.closeHour + 24 : hoursCfg.closeHour;
+    let c = nowH; if (c < open) c += 24;
+    return Math.min(1, Math.max(0, Math.min(c, close) - open) / Math.max(1, close - open));
+  }, [isToday, demo, hoursCfg, nowH]);
+  const cTot = tot(compRows);
+  const cRgOn = rgOn && !!compRg?.available;
+  const cRevFull = cRgOn ? compRg!.revenue ?? 0 : cTot.rev;
+  const cRev = compSoFar && !cRgOn ? compSoFar.rev : cRevFull * scale;
+  const cOrd = compSoFar && !cRgOn ? compSoFar.ord : (cRgOn ? compRg!.orders ?? 0 : cTot.ord) * scale;
+  const cGst = (cRgOn ? compRg!.guests ?? 0 : cTot.gst) * scale;
+  const dRev = pctChange(revenue, cRev), dOrd = pctChange(orders, cOrd), dGst = pctChange(guests, cGst);
+  const dAvg = cOrd ? pctChange(avg, cRev / cOrd) : null, dPg = cGst ? pctChange(perGuest, cRev / cGst) : null;
+
+  // Forecast to close (today): comparison day's full total scaled by today's pace.
+  const forecast = isToday && cRev > 0 && revenue > 0 && cRevFull > 0 ? cRevFull * (revenue / cRev) : null;
+  const best = !isToday && rows.length > 1 ? rows.reduce((a, b) => (b.revenue > a.revenue ? b : a)) : null;
+
+  // ── AI context ──
+  useEffect(() => {
+    if (!onContextReady || loading) return;
+    const f = (n: number) => Math.round(n).toLocaleString('ru-RU');
+    onContextReady(
+      `Раздел: Главная\nПериод: ${from} — ${to}\nВыручка: ${f(revenue)} UZS | Заказов: ${orders} | Гостей: ${guests} | Средний чек: ${f(avg)} UZS\n` +
+      `Изменение к сравнению: ${dRev == null ? 'нет данных' : dRev.toFixed(1) + '%'}\n` +
+      `\nВыручка по дням:\n${rows.map(r => `  ${r.date}: ${f(r.revenue)} UZS, ${r.orders} заказов`).join('\n')}\n` +
+      `\nТоп блюд:\n${dishes.map((d, i) => `  ${i + 1}. ${d.name} [${d.category}] — ${d.quantity} шт., ${f(d.revenue)} UZS`).join('\n') || '  нет данных'}`
+    );
+  }, [loading, rows, dishes, revenue]);
+
+  // ── Plan line ──
+  const month = today.slice(0, 7);
+  const [plan, setPlan] = useState<ProgressResult | null>(null);
+  useEffect(() => {
+    if (!onOpenPlan) return;
+    let alive = true;
+    traceApi.plan.meta().then(m => (m.supported ? traceApi.plan.progress(month) : null))
+      .then(r => { if (alive && r?.progress) setPlan(r.progress); }).catch(() => {});
+    return () => { alive = false; };
+  }, [month, branch, !!onOpenPlan]);
+
+  // ── Briefing ──
+  const cached = useMemo(loadBrief, []);
+  const [brief, setBrief] = useState<AIDailyBriefing | null>(cached?.data ?? null);
+  const [briefAt, setBriefAt] = useState<string | null>(cached?.at ?? null);
+  const [briefLoading, setBriefLoading] = useState(false);
+  const runBrief = (force = false) => {
+    if (briefLoading) return;
+    setBriefLoading(true);
+    traceApi.ai.briefing(lang, force)
+      .then(b => { const at = nowHM(); setBrief(b); setBriefAt(at); if (b.fromAI) saveBrief(b, at); })
+      .catch(() => setBrief({ fromAI: false }))
+      .finally(() => setBriefLoading(false));
+  };
+  const briefState = briefLoading ? 'loading' : brief?.fromAI ? 'done' : 'empty';
+
+  // ── Hall + feed (iikoFront plugin) ──
   const wsUrl = import.meta.env.VITE_BACKEND_WS_URL as string | undefined;
-  const { connected: wsConnected } = useRealtimeData({
+  const [feed, setFeed] = useState<(RealtimeEvent & { id: string })[]>(() => demo ? demoLiveOrderFeed() as unknown as (RealtimeEvent & { id: string })[] : []);
+  const [feedOpen, setFeedOpen] = useState(false);
+  const { connected } = useRealtimeData({
     backendWsUrl: wsUrl ?? '',
     enabled: !!wsUrl && !demo,
-    onEvent: useCallback((event: RealtimeEvent) => {
-      // Feed shows business moments only — order_updated fires on every item
-      // keystroke and stop_list/kitchen events have their own panels.
-      const FEED_TYPES = new Set([
-        'order_opened', 'order_bill_printed', 'order_closed',
-        'order_removed', 'order_bill_cancelled', 'order_printed_items_deleted',
-        'cashier_session_opened', 'cashier_session_closed', 'reserve_changed',
-      ]);
-      if (FEED_TYPES.has(event.type)) {
-        setLiveOrders(prev => [{ ...event, id: `${Date.now()}-${Math.random()}` }, ...prev].slice(0, 300));
-      }
-      // Accumulate today's revenue from plugin events
-      if (event.type === 'order_closed') {
-        const sum = (event.data as any)?.sum as number | undefined;
-        if (sum) {
-          setLiveRevenue(prev => prev + sum);
-          setLiveOrderCount(prev => prev + 1);
-        }
-      }
+    onEvent: useCallback((e: RealtimeEvent) => {
+      if (FEED_TYPES.has(e.type)) setFeed(p => [{ ...e, id: `${Date.now()}-${Math.random()}` }, ...p].slice(0, 300));
     }, []),
   });
-  // Poster has no TRACEPLUGIN equivalent (see docs/poster-unsupported-features.md)
-  // — AND'd in here so every widget gated on pluginConnected hides correctly
-  // instead of reading "connected" off a websocket that's just to TRACE's own
-  // backend, open regardless of POS type, with zero real events ever incoming.
-  const pluginConnected = !integrationStatus.poster && (demo || wsConnected);
+  const plugin = !poster && (demo || connected);
+  useEffect(() => {
+    if (demo) return;
+    const base = import.meta.env.VITE_API_URL || '/api';
+    fetch(`${base}/realtime/events?limit=300&from=${from}&to=${to}`, { headers: branchHeaders() })
+      .then(r => r.ok ? r.json() : [])
+      .then((evs: { type: string; payload?: any; created_at: string }[]) => setFeed(evs.filter(e => FEED_TYPES.has(e.type)).map(e => ({
+        type: e.type, timestamp: e.payload?.timestamp ?? e.created_at, data: e.payload?.data ?? {}, id: `h-${e.created_at}-${Math.random()}`,
+      } as any))))
+      .catch(() => {});
+  }, [from, to, branch]);
 
-  // Compute real totals from iiko rows filtered to selected range
-  const todayStr = tashkentDateStr();
-  const filteredRows = timeRange === 'today'
-    ? iikoRows.filter(r => r.date === todayStr)
-    : iikoRows; // custom + 7days + 30days: backend already filtered
-  const totalRevenue = filteredRows.reduce((s, r) => s + r.revenue, 0);
-  const totalOrders  = filteredRows.reduce((s, r) => s + r.orders, 0);
-  const totalGuests  = filteredRows.reduce((s, r) => s + r.guests, 0);
-  const avgCheck     = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
-  const avgCheckPerGuest = totalGuests > 0 ? Math.round(totalRevenue / totalGuests) : 0;
+  const [active, setActive] = useState<ActiveOrderRow[]>([]);
+  const [plans, setPlans] = useState<HallPlan[]>([]);
+  useEffect(() => {
+    if (poster) return;
+    traceApi.halls.list().then(setPlans).catch(() => {});
+    const load = () => traceApi.operations.activeOrders().then(setActive).catch(() => {});
+    load();
+    const id = setInterval(load, 30_000);
+    return () => clearInterval(id);
+  }, [poster, branch]);
 
-  // Compute data-driven insight from real iiko rows
-  const insight = useMemo(() => {
-    if (iikoRows.length < 2) return null;
-    const sorted = [...iikoRows].sort((a, b) => a.date.localeCompare(b.date));
-    const last  = sorted[sorted.length - 1];
-    const prev  = sorted[sorted.length - 2];
-    const pct   = prev.revenue > 0 ? Math.round(((last.revenue - prev.revenue) / prev.revenue) * 100) : 0;
-    const up    = pct >= 0;
-    const topDish = topDishes[0];
-    return { last, prev, pct, up, topDish };
-  }, [iikoRows, topDishes]);
-
-
-
-  // Comparison-aware percentages — use fetched comparison period rows when available
-  const rawCompRev    = comparisonRows.reduce((s, r) => s + r.revenue, 0);
-  const rawCompOrders = comparisonRows.reduce((s, r) => s + r.orders, 0);
-  const rawCompGuests = comparisonRows.reduce((s, r) => s + r.guests, 0);
-
-  // For 'today' range, compare against the SAME hour-of-day yesterday — sum
-  // yesterday's hourly buckets up through the current hour (with the
-  // in-progress hour weighted by elapsed minutes), instead of scaling
-  // yesterday's full-day total by a linear time estimate. "10AM today" now
-  // actually compares against "10AM yesterday", not an approximation.
-  const sameHourCutoff = useMemo(() => {
-    if (timeRange !== 'today' || compHourlyRows.length === 0) return null;
-    const current = tashkentHours();
-    const floorH = Math.floor(current);
-    const frac = current - floorH;
-    let revenue = 0, orders = 0;
-    for (const r of compHourlyRows) {
-      if (r.hour < floorH) { revenue += r.revenue; orders += r.orders; }
-      else if (r.hour === floorH) { revenue += r.revenue * frac; orders += r.orders * frac; }
+  const hall = useMemo(() => {
+    const byNum = new Map<number, ActiveOrderRow>();
+    for (const o of active) if (o.tableNum != null) {
+      const prev = byNum.get(o.tableNum);
+      if (!prev || Date.parse(o.openTime) > Date.parse(prev.openTime)) byNum.set(o.tableNum, o);
     }
-    return { revenue, orders };
-  }, [timeRange, compHourlyRows]);
+    const mins = (o: ActiveOrderRow) => Math.max(0, Math.floor((Date.now() - Date.parse(o.openTime)) / 60000));
+    let tiles: { key: string; label: string; title: string; state: '' | 'busy' | 'bill' | 'long' }[] = [];
+    const stateOf = (o?: ActiveOrderRow) => !o ? '' : mins(o) >= LONG_MIN ? 'long' : o.status === 'Bill' ? 'bill' : 'busy';
+    for (const p of plans) for (const el of p.elements ?? []) {
+      if (!TABLE_TYPES.has(el.type)) continue;
+      const num = el.iiko_table_number ?? (Number(el.label) || undefined);
+      const o = num != null ? byNum.get(num) : undefined;
+      tiles.push({ key: `${p.id}-${el.id}`, label: el.label, title: `${p.name}, ${el.label}`, state: stateOf(o) as any });
+    }
+    if (!tiles.length) tiles = [...byNum.entries()].sort((a, b) => a[0] - b[0]).map(([n, o]) => ({ key: String(n), label: String(n), title: o.table, state: stateOf(o) as any }));
+    const busy = [...byNum.values()];
+    const long = busy.filter(o => mins(o) >= LONG_MIN).sort((a, b) => mins(b) - mins(a));
+    const bill = busy.filter(o => o.status === 'Bill' && mins(o) < LONG_MIN).length;
+    const g = busy.reduce((a, o) => a + (o.guests ?? 0), 0);
+    const avgMin = busy.length ? Math.round(busy.reduce((a, o) => a + mins(o), 0) / busy.length) : 0;
+    const total = plans.length ? tiles.length : (demo ? 22 : 0);
+    return { tiles, occupied: busy.length, total, long, bill, eating: busy.length - bill - long.length, guests: g, avgMin, mins };
+  }, [active, plans]);
 
-  // Fallback linear time-of-day scale — used only when the hourly breakdown
-  // isn't available yet (still loading, or OLAP/plugin data missing), and
-  // for guests (hourly breakdown doesn't carry a guest count).
-  const compScale = useMemo(() => {
-    if (demo || timeRange !== 'today' || rawCompRev === 0) return 1;
-    const { openHour } = businessHours;
-    // closeHour of 0 (or anything <= openHour) means "past midnight" — treat
-    // as 24h+ so a café open 08:00-00:00 doesn't compute a negative/zero
-    // window and silently fall back to an unscaled full-day comparison.
-    const closeHour = businessHours.closeHour <= openHour ? businessHours.closeHour + 24 : businessHours.closeHour;
-    let current = tashkentHours();
-    if (current < openHour) current += 24;
-    const elapsed = Math.max(0, Math.min(current, closeHour) - openHour);
-    const total   = Math.max(1, closeHour - openHour);
-    return Math.min(1, elapsed / total);
-  }, [demo, timeRange, rawCompRev, businessHours]);
+  // ── Chart series ──
+  const chart = useMemo(() => {
+    if (isToday) {
+      const hs = [...new Set([...hourly, ...compHourly].map(r => r.hour))].sort((a, b) => a - b);
+      const lo = Math.min(hoursCfg.openHour, ...hs), hi = Math.max(...hs, Math.min(23, (hoursCfg.closeHour || 24) - 1));
+      const range = hs.length ? Array.from({ length: Math.max(0, hi - lo + 1) }, (_, i) => lo + i) : [];
+      const nowFl = Math.floor(nowH);
+      return {
+        labels: range.map(h => `${h}:00`),
+        cur: range.map(h => h > nowFl ? null : (hourly.find(r => r.hour === h)?.revenue ?? 0) / 1e6),
+        base: range.map(h => (compHourly.find(r => r.hour === h)?.revenue ?? 0) / 1e6),
+      };
+    }
+    const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
+    const cSorted = [...compRows].sort((a, b) => a.date.localeCompare(b.date));
+    const dates = Array.from({ length: days }, (_, i) => isoShift(from, i));
+    const byDate = new Map(sorted.map(r => [r.date, r.revenue]));
+    const cByDate = new Map(cSorted.map(r => [r.date, r.revenue]));
+    if (days > 31) {
+      // weeks
+      const weeks: { label: string; cur: number; base: number }[] = [];
+      for (let i = 0; i < dates.length; i += 7) {
+        const chunk = dates.slice(i, i + 7);
+        weeks.push({
+          label: rangeLabel(chunk[0], chunk[chunk.length - 1], lang),
+          cur: chunk.reduce((a, d) => a + (byDate.get(d) ?? 0), 0) / 1e6,
+          base: chunk.reduce((a, d) => a + (cByDate.get(isoShift(d, -shift)) ?? 0), 0) / 1e6,
+        });
+      }
+      return { labels: weeks.map(w => w.label), cur: weeks.map(w => w.cur), base: weeks.map(w => w.base) };
+    }
+    return {
+      labels: dates.map(d => days <= 7 ? wdShort(d, lang) : String(+d.slice(8))),
+      cur: dates.map(d => d > today ? null : (byDate.get(d) ?? 0) / 1e6),
+      base: dates.map(d => (cByDate.get(isoShift(d, -shift)) ?? 0) / 1e6),
+    };
+  }, [isToday, hourly, compHourly, rows, compRows, from, days, shift, lang]);
 
-  const compRev    = sameHourCutoff ? sameHourCutoff.revenue : rawCompRev    * compScale;
-  const compOrders = sameHourCutoff ? sameHourCutoff.orders  : rawCompOrders * compScale;
-  const compGuests = rawCompGuests * compScale;
+  // ── Labels ──
+  const title = isToday ? `${weekday(today, lang)}, ${dayLabel(today, lang)}` : rangeLabel(from, to, lang);
+  const sub = isToday
+    ? tr(lang, `Данные на ${nowHM()} · сравнение на то же время дня`, `As of ${nowHM()} · compared at the same time of day`, `${nowHM()} holatiga · kunning shu vaqtiga nisbatan`)
+    : period.range === 'custom' ? tr(lang, 'Свой период', 'Custom range', 'Boshqa davr')
+    : period.range === '7days' ? tr(lang, 'Неделя · сегодняшний день ещё идёт', 'Week · today is still running', 'Hafta · bugun hali davom etmoqda')
+    : tr(lang, '30 дней', '30 days', '30 kun');
+  const heroLabel = isToday ? tr(lang, 'Выручка сегодня', 'Revenue today', 'Bugungi tushum')
+    : period.range === '7days' ? tr(lang, 'Выручка за 7 дней', 'Revenue, 7 days', '7 kunlik tushum')
+    : period.range === '30days' ? tr(lang, 'Выручка за 30 дней', 'Revenue, 30 days', '30 kunlik tushum')
+    : tr(lang, 'Выручка за период', 'Revenue for the period', 'Davr tushumi');
+  const cmpLabel = (c: ComparisonPeriod) => {
+    if (cmpKey === 'today') {
+      const d = isoShift(today, -SHIFT[c]);
+      if (c === 'yesterday') return tr(lang, 'вчера', 'yesterday', 'kecha');
+      if (c === 'last_week') {
+        const RU_INS = ['прошлым воскресеньем', 'прошлым понедельником', 'прошлым вторником', 'прошлой средой', 'прошлым четвергом', 'прошлой пятницей', 'прошлой субботой'];
+        const dow = new Date(d + 'T00:00:00Z').getUTCDay();
+        return tr(lang, RU_INS[dow], `last ${weekday(d, 'en')}`, `o'tgan ${weekday(d, 'uz').toLowerCase()}`);
+      }
+      return c === 'last_year' ? `${dayLabel(d, lang)} ${d.slice(0, 4)}` : dayLabel(d, lang);
+    }
+    if (cmpKey === '7days') return c === 'last_week' ? tr(lang, 'прошлой неделей', 'the previous week', "o'tgan hafta") : c === 'last_month' ? tr(lang, 'неделей месяц назад', 'the same week a month ago', 'bir oy oldingi hafta') : tr(lang, `той же неделей в ${+today.slice(0, 4) - 1}`, `the same week in ${+today.slice(0, 4) - 1}`, `${+today.slice(0, 4) - 1} yilning shu haftasi`);
+    return c === 'last_month' ? tr(lang, 'предыдущими 30 днями', 'the previous 30 days', 'oldingi 30 kun') : tr(lang, `теми же днями в ${+today.slice(0, 4) - 1}`, `the same days in ${+today.slice(0, 4) - 1}`, `${+today.slice(0, 4) - 1} yilning shu kunlari`);
+  };
+  const chartTitle = isToday ? tr(lang, 'Выручка по часам', 'Revenue by hour', "Soatlar bo'yicha tushum")
+    : days > 31 ? tr(lang, 'Выручка по неделям', 'Revenue by week', "Haftalar bo'yicha tushum")
+    : tr(lang, 'Выручка по дням', 'Revenue by day', "Kunlar bo'yicha tushum");
+  const lgCur = isToday ? tr(lang, 'Сегодня', 'Today', 'Bugun') : period.range === 'custom' ? tr(lang, 'Этот период', 'This period', 'Shu davr') : period.range === '7days' ? tr(lang, 'Эта неделя', 'This week', 'Shu hafta') : tr(lang, 'Эти 30 дней', 'These 30 days', 'Shu 30 kun');
+  const lgBase = period.range === 'custom' ? tr(lang, 'Предыдущий период', 'Previous period', 'Oldingi davr') : cmpLabel(comparison).replace(/^./, s => s.toUpperCase());
 
+  // ── Guest-section filter ──
+  const [sections, setSections] = useState<{ name: string; tableCount: number; excluded: boolean }[] | null>(null);
+  const [sectionsPlugin, setSectionsPlugin] = useState(true);
+  const loadSections = () => traceApi.settings.listRealGuestSections()
+    .then(r => { setSections(r.sections); setSectionsPlugin(r.hasPluginData); }).catch(() => setSections([]));
+  const saveSections = (list: typeof sections) => traceApi.settings.saveRealGuestSections((list ?? []).filter(s => s.excluded).map(s => s.name))
+    .then(() => setRgKey(k => k + 1)).catch(() => {});
+  const excluded = (sections ?? []).filter(s => s.excluded);
+  useEffect(() => { if (!demo && !poster) loadSections(); }, [poster]);
 
-  // Real-guest filter active — hero + stat tiles switch from raw totals to
-  // the filtered numbers entirely (not a secondary line), per the exclusion
-  // list configured via the filter popover next to revenue.
-  const rgActive = !demo && !!realGuestRevenue?.available;
-  const displayRevenue = rgActive ? (realGuestRevenue!.revenue ?? 0) : totalRevenue;
-  const displayOrders  = rgActive ? (realGuestRevenue!.orders ?? 0) : totalOrders;
-  const displayGuests  = rgActive ? (realGuestRevenue!.guests ?? 0) : totalGuests;
-  const displayAvgCheck = displayOrders > 0 ? Math.round(displayRevenue / displayOrders) : 0;
-  const displayAvgCheckPerGuest = displayGuests > 0 ? Math.round(displayRevenue / displayGuests) : 0;
+  const feedRow = (ev: RealtimeEvent & { id: string }) => {
+    const d = ev.data as RealtimeOrderData;
+    const t = d.table?.number ?? d.tableNumber;
+    const tbl = t != null ? tr(lang, `Стол ${t}`, `Table ${t}`, `Stol ${t}`) : '';
+    const L: Record<string, [string, string, string]> = {
+      order_opened: ['открыт', 'opened', 'ochildi'], order_closed: ['закрыт', 'closed', 'yopildi'],
+      order_bill_printed: ['пречек', 'pre-bill', 'pre-chek'], order_removed: ['заказ удалён', 'order deleted', "buyurtma o'chirildi"],
+      order_bill_cancelled: ['пречек отменён', 'pre-bill cancelled', 'pre-chek bekor'], order_printed_items_deleted: ['удалена позиция', 'item voided', "pozitsiya o'chirildi"],
+      cashier_session_opened: ['Смена открыта', 'Shift opened', 'Smena ochildi'], cashier_session_closed: ['Смена закрыта', 'Shift closed', 'Smena yopildi'],
+    };
+    const l = L[ev.type] ?? [ev.type, ev.type, ev.type];
+    const isVoid = ev.type === 'order_removed' || ev.type === 'order_printed_items_deleted' || ev.type === 'order_bill_cancelled';
+    const verb = tr(lang, l[0], l[1], l[2]);
+    const what = tbl ? (ev.type === 'order_opened' || ev.type === 'order_closed' ? `${tbl} ${verb}` : `${tbl}, ${verb}`) : verb;
+    const time = new Date(ev.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' });
+    const amt = d.sum != null && d.sum > 0 ? (isVoid ? `−${fmt(d.sum)}` : fmt(d.sum)) : '';
+    return (
+      <li key={ev.id}>
+        <span className="when mono">{time}</span>
+        <span className={`what${isVoid ? ' void' : ''}`}>{what}{d.waiter && <span className="who">{d.waiter}</span>}</span>
+        <span className={`amt${isVoid ? ' void' : ev.type === 'order_bill_printed' ? ' faint' : ''}`}>{amt}</span>
+      </li>
+    );
+  };
 
-  const compDisplayRevenue = rgActive && compRealGuestRevenue?.available ? (compRealGuestRevenue.revenue ?? 0) * compScale : compRev;
-  const compDisplayOrders  = rgActive && compRealGuestRevenue?.available ? (compRealGuestRevenue.orders ?? 0) * compScale : compOrders;
-  const compDisplayGuests  = rgActive && compRealGuestRevenue?.available ? (compRealGuestRevenue.guests ?? 0) * compScale : compGuests;
-
-  // insight?.pct is a full-day-vs-full-day AI comparison — never valid as a
-  // fallback for 'today', where compDisplayRevenue can legitimately be 0 right
-  // at opening (compScale ~0) or before any orders land. Falling back there
-  // would compare all of yesterday against a sliver of today (the -90% bug).
-  const displayHeroPct = demo ? 12 : compDisplayRevenue > 0 && displayRevenue > 0
-    ? Math.round(((displayRevenue - compDisplayRevenue) / compDisplayRevenue) * 100)
-    : (rgActive || timeRange === 'today' ? null : (insight?.pct ?? null));
-  const displayHeroUp = displayHeroPct !== null ? displayHeroPct >= 0 : (insight?.up ?? true);
-  const displayOrdersPct = demo ? 8 : compDisplayOrders > 0 && displayOrders > 0
-    ? Math.round(((displayOrders - compDisplayOrders) / compDisplayOrders) * 100)
-    : null;
-  const displayGuestsPct = demo ? 11 : compDisplayGuests > 0 && displayGuests > 0
-    ? Math.round(((displayGuests - compDisplayGuests) / compDisplayGuests) * 100)
-    : null;
-  const compDisplayAvgCheck = compDisplayOrders > 0 ? compDisplayRevenue / compDisplayOrders : null;
-  const displayAvgPct = demo ? 4 : compDisplayAvgCheck && compDisplayAvgCheck > 0 && displayAvgCheck > 0
-    ? Math.round(((displayAvgCheck - compDisplayAvgCheck) / compDisplayAvgCheck) * 100)
-    : null;
-  const compDisplayAvgCheckPerGuest = compDisplayGuests > 0 ? compDisplayRevenue / compDisplayGuests : null;
-  const displayAvgPerGuestPct = demo ? 6 : compDisplayAvgCheckPerGuest && compDisplayAvgCheckPerGuest > 0 && displayAvgCheckPerGuest > 0
-    ? Math.round(((displayAvgCheckPerGuest - compDisplayAvgCheckPerGuest) / compDisplayAvgCheckPerGuest) * 100)
-    : null;
-
-  const heroNum    = iikoRows.length > 0 ? displayRevenue : 0;
-  const heroSuffix = iikoRows.length > 0 ? 'UZS' : '';
-
-
-  // Build chart data from iiko rows
-  const realChartData = iikoRows.map(r => ({
-    name: r.date.slice(5),
-    revenue: r.revenue,
-    visitors: r.orders,
-  }));
-
-  const revenueTooltip = (props: any) => <ChartTooltip {...props} valueFormatter={(v) => `${Math.round(v).toLocaleString('ru-RU')} UZS`} />;
-
-  if (!dataLoaded) return <DashboardSkeleton />;
+  const kpis: [string, string, number | null][] = [
+    [tr(lang, 'Заказы', 'Orders', 'Buyurtmalar'), fmt(orders), dOrd],
+    [tr(lang, 'Гости', 'Guests', 'Mehmonlar'), fmt(guests), dGst],
+    [tr(lang, 'Средний чек', 'Average check', "O'rtacha chek"), fmt(avg), dAvg],
+    [tr(lang, 'Чек на гостя', 'Per guest', 'Mehmonga chek'), fmt(perGuest), dPg],
+  ];
+  const showHall = !poster && (plugin || hall.occupied > 0 || plans.length > 0);
+  const showFeed = !poster && (demo || !!wsUrl || feed.length > 0);
+  const dimNums = loading ? { opacity: .45, transition: 'opacity .2s' } : { transition: 'opacity .2s' };
 
   return (
-    <div className="animate-fade-in pb-20 space-y-10">
-
-      {/* ── HERO ──────────────────────────────────────────────── */}
-      <div>
-        {/* Time range */}
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-7">
-          <p className="text-[13px] text-muted font-medium">
-            {tr(lang, 'Выручка за период', 'Revenue for period', 'Davr uchun tushum')}
-          </p>
-          <div className="relative flex items-center gap-px border border-border rounded-xl overflow-visible bg-card">
-            {TIME_RANGES.map(({ key, ru, en, uz }) => (
-              <button key={key} onClick={() => { setTimeRange(key); setCustomRange(null); setCalendarOpen(false); }}
-                className={`px-3 py-2 text-[13px] font-medium transition-colors ${
-                  timeRange === key ? 'bg-primary text-white' : 'text-muted hover:text-text hover:bg-card-hover'
-                }`}
-              >
-                {tr(lang, ru, en, uz)}
-              </button>
-            ))}
-            {timeRange === 'custom' && customRange && (
-              <span className="px-3 py-2 text-[13px] font-medium bg-primary text-white">
-                {customRange.from.slice(5)} – {customRange.to.slice(5)}
-              </span>
-            )}
-            <button
-              ref={calendarBtnRef}
-              onClick={() => setCalendarOpen(o => !o)}
-              className={`px-2.5 py-2 transition-colors border-l border-border ${
-                calendarOpen || timeRange === 'custom' ? 'text-primary' : 'text-muted hover:text-primary'
-              }`}
-            >
-              <Calendar size={12} />
-            </button>
-            <DateRangePicker
-              lang={lang}
-              value={customRange}
-              isOpen={calendarOpen}
-              onClose={() => setCalendarOpen(false)}
-              anchorRef={calendarBtnRef}
-              onApply={(range) => {
-                setCustomRange(range);
-                setTimeRange('custom');
-              }}
-              onClear={() => {
-                setCustomRange(null);
-                setTimeRange('7days');
-              }}
-            />
-          </div>
+    <>
+      <div className="page-head rise">
+        <div>
+          <h1>{title}</h1>
+          <div className="sub">{sub}</div>
         </div>
-
-        {/* Big number — buttons wrap below it on narrow phones instead of
-            overflowing off-screen next to an 8-digit number at 48px+ */}
-        <div className="flex flex-wrap items-start gap-x-2 gap-y-1.5 relative">
-          <HeroRevenue value={heroNum} suffix={heroSuffix} loading={statsLoading} />
-          <div className="flex items-center gap-2">
-            {/* Every non-"net" revenue type 400s server-side for Poster
-                (sales.ts only implements iiko's OLAP-derived variants) —
-                hide the selector rather than offer choices that error out. */}
-            {!integrationStatus.poster && (
-            <div className="relative">
-              <button
-                onClick={() => setRevenueTypeOpen(o => !o)}
-                title={tr(lang, 'Тип выручки', 'Revenue type', 'Tushum turi')}
-                className={`mt-2 p-2 rounded-lg border transition-colors flex-shrink-0 flex items-center gap-0.5 ${revenueType !== 'net' ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-muted hover:text-text hover:bg-card-hover'}`}
-              >
-                <Receipt size={15} />
-                <ChevronDown size={11} />
-              </button>
-              {revenueTypeOpen && (
-                <RevenueTypePopover
-                  lang={lang}
-                  value={revenueType}
-                  onChange={setRevenueType}
-                  onClose={() => setRevenueTypeOpen(false)}
-                />
-              )}
-            </div>
-            )}
-            {/* Real-guest section exclusion is purely TRACEPLUGIN-derived
-                (realtime_events) — always hasPluginData:false for Poster,
-                so the popover can only ever say "needs iikoFront plugin".
-                Hide the control instead of offering a permanent dead end. */}
-            {!demo && !integrationStatus.poster && (
-              <button
-                onClick={() => setRgFilterOpen(o => !o)}
-                title={tr(lang, 'Фильтр реальных гостей', 'Real-guest filter', 'Haqiqiy mehmonlar filtri')}
-                className={`mt-2 p-2 rounded-lg border transition-colors flex-shrink-0 relative ${rgActive ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-muted hover:text-text hover:bg-card-hover'}`}
-              >
-                <SlidersHorizontal size={15} />
-                {rgActive && <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-primary" />}
-              </button>
-            )}
-          </div>
-          {rgFilterOpen && (
-            <RealGuestFilterPopover
-              lang={lang}
-              onClose={() => setRgFilterOpen(false)}
-              onSaved={() => { setRgRefreshKey(k => k + 1); setRgFilterOpen(false); }}
-            />
-          )}
-        </div>
-
-        {revenueType !== 'net' && (
-          <p className="text-[11px] text-primary/80 mt-1.5">
-            {tr(lang, REVENUE_TYPE_LABELS[revenueType].ru, REVENUE_TYPE_LABELS[revenueType].en, REVENUE_TYPE_LABELS[revenueType].uz)}
-          </p>
-        )}
-
-        <div className="flex items-center gap-2 mt-2 flex-wrap">
-          {displayHeroPct !== null ? (
-            <span className={`text-[13px] font-semibold flex items-center gap-0.5 ${displayHeroUp ? 'text-success' : 'text-danger'}`}>
-              {displayHeroUp ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-              {displayHeroUp ? '+' : ''}{displayHeroPct}%
-            </span>
-          ) : (
-            <span className="text-[13px] font-semibold text-muted">—</span>
-          )}
-          <ComparisonSelector lang={lang} value={comparison} onChange={setComparison} />
-          {rgActive && (
-            <span className="text-[11px] text-muted/70">
-              {tr(lang, 'только реальные гости', 'real guests only', 'faqat haqiqiy mehmonlar')}
-            </span>
-          )}
-        </div>
-
-        {/* Stats row — real iiko data, switches to real-guest numbers when the filter above is active */}
-        <div className="flex items-start gap-x-8 gap-y-5 mt-8 flex-wrap">
-          {iikoRows.length > 0 ? (
-            <>
-              <StatBox label={tr(lang, 'Заказы', 'Orders', 'Buyurtmalar')} value={displayOrders.toLocaleString('ru-RU')} pct={displayOrdersPct} loading={statsLoading} />
-              <StatBox label={tr(lang, 'Гостей', 'Guests', 'Mehmonlar')} value={displayGuests.toLocaleString('ru-RU')} pct={displayGuestsPct} loading={statsLoading} />
-              <StatBox label={t.avg_check} value={displayAvgCheck.toLocaleString('ru-RU')} suffix="UZS" pct={displayAvgPct} loading={statsLoading} />
-              <StatBox label={tr(lang, 'Чек на гостя', 'Check/guest', 'Mehmonga chek')} value={displayAvgCheckPerGuest.toLocaleString('ru-RU')} suffix="UZS" pct={displayAvgPerGuestPct} loading={statsLoading} />
-            </>
-          ) : null}
-        </div>
+        <PeriodSeg lang={lang} value={period} onChange={setPeriod} />
       </div>
 
-      {onOpenPlan && <PlanWidget lang={lang} onOpen={onOpenPlan} />}
-
-      {/* ── CHART + TOP SELLING ───────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-        {/* Revenue chart */}
-        <div className="lg:col-span-2">
-          <p className="text-[13px] text-muted font-medium mb-4">{t.revenue_trend}</p>
-          <div className="h-[220px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={realChartData} margin={{ top: 4, right: 0, left: 8, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="gR" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#ff6b35" stopOpacity={0.14} />
-                    <stop offset="100%" stopColor="#ff6b35" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="0" vertical={false} stroke="rgb(var(--color-border))" />
-                <XAxis dataKey="name" stroke="transparent" tick={{ fill: 'rgb(var(--color-muted))', fontSize: 12, fontFamily: 'Onest' }} tickLine={false} axisLine={false} />
-                <YAxis stroke="transparent" tick={{ fill: 'rgb(var(--color-muted))', fontSize: 12, fontFamily: 'Onest' }} tickLine={false} axisLine={false} width={40} tickFormatter={v => v >= 1_000_000 ? `${Math.round(v / 1_000_000)}M` : v >= 1_000 ? `${Math.round(v / 1_000)}K` : String(v)} />
-                <Tooltip content={revenueTooltip} cursor={{ stroke: 'rgb(var(--color-border))', strokeWidth: 1 }} />
-                <Area type="monotone" dataKey="revenue" stroke="#ff6b35" strokeWidth={1.5} fill="url(#gR)" animationDuration={900} dot={false} activeDot={{ r: 3, fill: '#ff6b35', strokeWidth: 0 }} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Top selling — real iiko data */}
+      {/* 1. How is the period going */}
+      <section className="hero rise" style={{ animationDelay: '.05s' }} aria-label={tr(lang, 'Итоги периода', 'Period totals', 'Davr yakunlari')}>
         <div>
-          <p className="text-[13px] text-muted font-medium mb-4">{t.top_selling}</p>
-          <div className="space-y-1">
-            {topDishes.length === 0 ? (
-              <p className="py-4 text-muted text-[12px]">{tr(lang, 'Загрузка...', 'Loading...', 'Yuklanmoqda...')}</p>
-            ) : topDishes.map((dish, i) => (
-              <div key={dish.name} className="flex items-center justify-between py-2 border-b border-border last:border-0">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="metric-number text-[12px] text-muted w-4 flex-shrink-0">{i + 1}</span>
-                  <div className="min-w-0">
-                    <p className="text-[14px] font-medium text-text leading-none truncate">{dish.name}</p>
-                    <p className="text-[12px] text-muted mt-0.5">{dish.quantity} {t.orders}</p>
+          <div className="hero-label">
+            <span className="label">{heroLabel}</span>
+            {!poster && (
+              <Pop label={<span>{rl(lang, revenueType)}</span>} on={revenueType !== 'net'}>
+                {close => <>
+                  {REV_GROUPS.map((g, gi) => (
+                    <React.Fragment key={gi}>
+                      {gi > 0 && <hr />}
+                      <div className="pop-title">{g.title ? tr(lang, ...g.title) : tr(lang, 'Какую выручку показывать', 'Which revenue to show', "Qaysi tushumni ko'rsatish")}</div>
+                      {g.keys.map(k => (
+                        <Opt key={k} checked={revenueType === k} onClick={() => { setRevenueType(k); close(); }}
+                          hint={REV[k][3] ? tr(lang, REV[k][3]!, REV[k][4]!, REV[k][5]!) : undefined}>{rl(lang, k)}</Opt>
+                      ))}
+                    </React.Fragment>
+                  ))}
+                </>}
+              </Pop>
+            )}
+            {!demo && !poster && (
+              <Pop label={<span>{excluded.length ? `${tr(lang, 'Без', 'Excl.', 'Siz')}: ${excluded.map(s => s.name.toLowerCase()).join(', ')}` : tr(lang, 'Все гости', 'All guests', 'Barcha mehmonlar')}</span>}
+                on={excluded.length > 0} onOpen={loadSections}>
+                {close => <>
+                  <div className="pop-title">{tr(lang, 'Реальные гости', 'Real guests', 'Haqiqiy mehmonlar')}</div>
+                  <div className="pop-desc">{tr(lang, 'Отметьте разделы, которые не надо считать гостями: персонал, доставку. Разделы приходят с кассы iikoFront.', "Tick sections that shouldn't count as guests: staff, delivery. Sections come from the iikoFront till.", "Mehmon hisoblanmaydigan bo'limlarni belgilang: xodimlar, yetkazib berish. Bo'limlar iikoFront kassasidan keladi.")}</div>
+                  {sections == null ? <div style={{ padding: '4px 10px 10px' }}><Skel lines={['w7', 'w5', 'w7']} /></div>
+                    : !sectionsPlugin ? <div className="pop-desc">{tr(lang, 'Нет данных: нужен плагин iikoFront', 'No data yet: needs the iikoFront plugin', "Ma'lumot yo'q: iikoFront plagini kerak")}</div>
+                    : sections.length === 0 ? <div className="pop-desc">{tr(lang, 'Разделы не найдены', 'No sections found', "Bo'limlar topilmadi")}</div>
+                    : sections.map(s => (
+                      <Opt key={s.name} cb checked={s.excluded} count={s.tableCount}
+                        onClick={() => setSections(p => p!.map(x => x.name === s.name ? { ...x, excluded: !x.excluded } : x))}>{s.name}</Opt>
+                    ))}
+                  <div className="pop-foot">
+                    <button className="btn" onClick={() => { const r = (sections ?? []).map(s => ({ ...s, excluded: false })); setSections(r); saveSections(r); close(); }}>{tr(lang, 'Считать всех', 'Count everyone', 'Hammasini sanash')}</button>
+                    <button className="btn solid" onClick={() => { saveSections(sections); close(); }}>{tr(lang, 'Готово', 'Done', 'Tayyor')}</button>
                   </div>
-                </div>
-                <p className="metric-number text-[13px] font-semibold text-primary flex-shrink-0 ml-2">
-                  {dish.revenue.toLocaleString('ru-RU')}
-                </p>
-              </div>
-            ))}
+                </>}
+              </Pop>
+            )}
           </div>
+          <div className="big" style={dimNums}>{fmt(revenue)}<small>{sum(lang)}</small></div>
+          <div className="cmp-line">
+            <Delta v={dRev} className="delta-v" />
+            <span className="muted">{tr(lang, 'по сравнению с', 'compared with', 'bilan solishtirganda')}</span>
+            {period.range === 'custom'
+              ? <b>{rangeLabel(cFrom, cTo, lang)}</b>
+              : (
+                <label className="cmp">
+                  <select value={comparison} onChange={e => setComparison(e.target.value as ComparisonPeriod)} aria-label={tr(lang, 'Сравнить с', 'Compare with', 'Solishtirish')}>
+                    {CMP_OPTIONS[cmpKey].map(c => <option key={c} value={c}>{cmpLabel(c)}</option>)}
+                  </select>
+                  <i className="ph ph-caret-down cmp-caret" aria-hidden="true" />
+                </label>
+              )}
+          </div>
+          {forecast != null && (
+            <div className="forecast">{tr(lang, 'Прогноз к закрытию: около ', 'Forecast at close: about ', "Yopilishgacha prognoz: taxminan ")}<b>{money(forecast, lang)}</b></div>
+          )}
+          {best && (
+            <div className="forecast">{tr(lang, 'Лучший день: ', 'Best day: ', 'Eng yaxshi kun: ')}{period.range === '7days' ? weekday(best.date, lang).toLowerCase() : dayLabel(best.date, lang)}, <b>{money(best.revenue, lang)}</b></div>
+          )}
+          {forecast != null && <div className="fc-bar" aria-hidden="true"><span style={{ width: `${Math.min(100, revenue / forecast * 100)}%` }} /></div>}
         </div>
-      </div>
+        <div className="kpis kpis-4" style={dimNums}>
+          {kpis.map(([l, v, d]) => (
+            <div className="kpi" key={l}><div className="label">{l}</div><div className="v">{v}</div><div className="d"><Delta v={d} /></div></div>
+          ))}
+        </div>
+      </section>
 
-      {/* ── LIVE ORDERS FEED ─────────────────────────────────────
-          Fed entirely by TRACEPLUGIN (installed inside iikoFront on the
-          terminal) pushing realtime order/session/kitchen events — Poster
-          has no equivalent in-process hook, only a webhook system that
-          requires Marketplace app registration and only fires bare
-          change-pings (no live order/table/kitchen state). See
-          docs/poster-unsupported-features.md. Hidden rather than shown
-          "waiting for events" forever, which would never resolve. */}
-      {(wsUrl || demo) && !integrationStatus.poster && (
-        <div>
-          <div className="flex items-center gap-2.5 mb-4">
-            <p className="text-[13px] text-muted font-medium">
-              {tr(lang, 'Лента событий', 'Event Feed', 'Voqealar lentasi')}
+      {/* Plan for the month */}
+      {plan && onOpenPlan && (() => {
+        const r = plan.revenue;
+        const done = r.plan > 0 ? r.factMtd / r.plan * 100 : 0;
+        const elapsed = plan.daysInMonth ? (plan.closedDays / plan.daysInMonth) * 100 : 0;
+        return (
+          <section className="plan rise" style={{ animationDelay: '.08s' }} aria-label={tr(lang, 'План месяца', 'Monthly plan', 'Oylik reja')}>
+            <div className="plan-l"><span className="label">{tr(lang, `План на ${MONTHS_NOM.ru[+month.slice(5) - 1].toLowerCase()}`, `Plan for ${MONTHS_NOM.en[+month.slice(5) - 1]}`, `${MONTHS_NOM.uz[+month.slice(5) - 1]} rejasi`)}</span> <b>{money(r.plan, lang)}</b></div>
+            <div className="plan-bar" title={tr(lang, `Выполнено ${done.toFixed(1)}%, прошло ${elapsed.toFixed(1)}% месяца`, `Done ${done.toFixed(1)}%, ${elapsed.toFixed(1)}% of month passed`, `Bajarildi ${done.toFixed(1)}%, oyning ${elapsed.toFixed(1)}% o'tdi`)}>
+              <span style={{ width: `${Math.min(100, done)}%` }} /><i style={{ left: `${Math.min(100, elapsed)}%` }} />
+            </div>
+            <div className="plan-facts">
+              <span>{tr(lang, 'Выполнено', 'Done', 'Bajarildi')} <b>{Math.round(done)}%</b></span>
+              {r.forecastPct != null && <span>{tr(lang, 'Прогноз', 'Forecast', 'Prognoz')} <b>{Math.round(r.forecastPct)}% {tr(lang, 'плана', 'of plan', 'reja')}</b></span>}
+              {plan.remainingDays > 0 && <span>{tr(lang, 'Нужно в день', 'Needed a day', 'Kuniga kerak')} <b>{money(plan.needed.perDayAvg, lang)}</b></span>}
+              <a className="link" href="?view=plan" onClick={e => { e.preventDefault(); onOpenPlan(); }}>{tr(lang, 'План и факт', 'Plan vs actual', 'Reja va fakt')}</a>
+            </div>
+          </section>
+        );
+      })()}
+
+      {/* 2. Daily briefing: generated on request, cached for the day */}
+      <section className="brief rise" data-state={briefState} style={{ animationDelay: '.1s' }} aria-labelledby="h-brief">
+        <div className="brief-head">
+          <h2 id="h-brief">{tr(lang, 'Брифинг дня', 'Daily briefing', 'Kunlik brifing')}</h2>
+          {briefState === 'done' && <AiMeta lang={lang} when={briefAt ? tr(lang, `сегодня в ${briefAt}`, `today at ${briefAt}`, `bugun ${briefAt} da`) : null} onRerun={() => runBrief(true)} />}
+        </div>
+        {briefState === 'empty' && (
+          <div className="st-empty">
+            <p className="ai-desc">
+              {tr(lang, 'Разбор сегодняшнего дня: что идёт не так, что сделать до вечера и кого из персонала проверить. Сравнивает с обычным днём недели и не путает банкеты с обычными днями.',
+                "A read of today: what's off, what to do before the evening and which staff to check. Compares with a normal day of the week and doesn't confuse banquets with regular days.",
+                "Bugungi kun tahlili: nima noto'g'ri, kechgacha nima qilish kerak va qaysi xodimni tekshirish kerak.")}
+              <span className="ai-cost">{tr(lang, 'Готовится 15-25 секунд, сохраняется на весь день.', 'Takes 15-25 seconds, kept for the whole day.', '15-25 soniya tayyorlanadi, kun davomida saqlanadi.')}</span>
+              {brief && !brief.fromAI && <span className="rd-err">{tr(lang, 'Не получилось подготовить брифинг. Попробуйте ещё раз.', "Couldn't prepare the briefing. Try again.", "Brifingni tayyorlab bo'lmadi. Qayta urinib ko'ring.")}</span>}
             </p>
-            <div className="flex items-center gap-1.5">
-              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${pluginConnected ? 'bg-success animate-pulse' : 'bg-muted'}`} />
-              <span className="text-[12px] text-muted">
-                {pluginConnected
-                  ? tr(lang, 'Подключено', 'Connected', 'Ulangan')
-                  : tr(lang, 'Не подключено', 'Disconnected', 'Ulanmagan')}
-              </span>
+            <button className="btn solid" onClick={() => runBrief()} disabled={loading}>{tr(lang, 'Подготовить брифинг', 'Prepare briefing', 'Brifing tayyorlash')}</button>
+          </div>
+        )}
+        {briefState === 'loading' && (
+          <div className="st-loading" aria-live="polite">
+            <p className="ai-wait">{tr(lang, 'Смотрим продажи за 8 недель, смены и стоп-лист…', 'Reading 8 weeks of sales, shifts and the stop list…', "8 haftalik savdo, smenalar va stop-listni ko'rib chiqyapmiz…")}</p>
+            <Skel />
+          </div>
+        )}
+        {briefState === 'done' && brief && (
+          <div className="st-done">
+            <div className="brief-grid">
+              <div>
+                <h3>{tr(lang, 'Итог дня', 'The day so far', 'Kun yakuni')}</h3>
+                <p className="lead">{clean(brief.summary) ?? '—'}</p>
+                {Array.isArray(brief.actions) && brief.actions.length > 0 && <>
+                  <h3>{tr(lang, 'Что сделать сегодня', 'What to do today', 'Bugun nima qilish kerak')}</h3>
+                  <ol className="acts">
+                    {brief.actions.map((a, i) => <li key={i}><span className="n">{i + 1}</span><span>{a}</span></li>)}
+                  </ol>
+                </>}
+              </div>
+              <div className="brief-side">
+                {([['staff', 'Персонал', 'Staff', 'Xodimlar'], ['forecast', 'Прогноз', 'Forecast', 'Prognoz'], ['risk', 'Риск и шанс', 'Risk and opportunity', 'Xavf va imkoniyat']] as const).map(([k, ru, en, uz]) => {
+                  const v = clean(brief[k]);
+                  return v ? <div key={k}><h3>{tr(lang, ru, en, uz)}</h3><p>{v}</p></div> : null;
+                })}
+              </div>
             </div>
           </div>
+        )}
+      </section>
 
-          {feedLoading ? (
-            <div className="space-y-1.5 py-1">
-              {[0, 1, 2].map(i => <div key={i} className="h-9 bg-card-hover rounded-lg animate-pulse" />)}
-            </div>
-          ) : liveOrders.length === 0 ? (
-            <div className="flex items-center gap-2 text-muted py-4">
-              <Zap size={13} className="opacity-30" />
-              <span className="text-[13px]">
-                {pluginConnected
-                  ? tr(lang, 'Ждём событий от кассы...', 'Waiting for POS events...', 'Kassadan hodisalar kutilmoqda...')
-                  : tr(lang, 'Касса не подключена', 'POS not connected', "Kassa ulanmagan")}
-              </span>
-            </div>
-          ) : (
-            <div className="space-y-0 border border-border rounded-xl overflow-hidden">
-              {liveOrders.slice(0, feedVisible).map((ev) => {
-                const d = ev.data as RealtimeOrderData;
-                const typeLabel: Record<string, { ru: string; en: string; uz: string; color: string }> = {
-                  order_opened:              { ru: 'Открыт',         en: 'Opened',         uz: 'Ochildi',          color: 'text-success'    },
-                  order_updated:             { ru: 'Обновлён',       en: 'Updated',        uz: 'Yangilandi',       color: 'text-primary'    },
-                  order_closed:              { ru: 'Закрыт',         en: 'Closed',         uz: 'Yopildi',          color: 'text-muted'      },
-                  order_removed:             { ru: 'Удалён',         en: 'Removed',        uz: "O'chirildi",       color: 'text-danger'     },
-                  order_bill_printed:        { ru: 'Счёт',           en: 'Bill printed',   uz: 'Hisob chop etildi', color: 'text-amber-400'  },
-                  order_payment_page_opened: { ru: 'К оплате',       en: 'Payment',        uz: "To'lov",           color: 'text-amber-400'  },
-                  cashier_session_opened:    { ru: 'Смена открыта',  en: 'Session opened', uz: 'Smena ochildi',    color: 'text-success'    },
-                  cashier_session_closed:    { ru: 'Смена закрыта',  en: 'Session closed', uz: 'Smena yopildi',    color: 'text-muted'      },
-                  stop_list_updated:         { ru: 'Стоп-лист',      en: 'Stop list',      uz: "Stop-list",        color: 'text-danger'     },
-                  terminal_opened:           { ru: 'Терминал вкл',   en: 'Terminal up',    uz: 'Terminal yoqildi', color: 'text-success'    },
-                  terminal_closed:           { ru: 'Терминал выкл',  en: 'Terminal down',  uz: "Terminal o'chirildi", color: 'text-danger'     },
-                  kitchen_order_changed:     { ru: 'Кухня',          en: 'Kitchen',        uz: 'Oshxona',          color: 'text-blue-400'   },
-                  delivery_changed:          { ru: 'Доставка',       en: 'Delivery',       uz: 'Yetkazish',        color: 'text-primary'    },
-                  order_bill_cancelled:      { ru: 'Счёт отменён',   en: 'Bill cancelled', uz: 'Hisob bekor qilindi', color: 'text-danger'  },
-                  order_before_delete:       { ru: 'Удаление',       en: 'Deleting',       uz: "O'chirilmoqda",    color: 'text-danger'     },
-                  order_printed_items_deleted: { ru: 'Снятие позиций', en: 'Items voided', uz: 'Pozitsiyalar olib tashlandi', color: 'text-danger' },
-                };
-                const label = typeLabel[ev.type] ?? { ru: ev.type, en: ev.type, uz: ev.type, color: 'text-muted' };
-                const time = new Date(ev.timestamp).toLocaleTimeString(tr(lang, 'ru-RU', 'en-US', 'uz-Latn-UZ'), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      {/* 3. What is happening */}
+      <div className="grid" style={showHall ? undefined : { gridTemplateColumns: '1fr' }}>
+        <section className="rise" style={{ animationDelay: '.14s' }} aria-labelledby="h-chart">
+          <div className="sec-head">
+            <h2><span id="h-chart">{chartTitle}</span><span className="faint unit">, {tr(lang, 'млн сум', 'M UZS', "mln so'm")}</span></h2>
+            <Legend cur={lgCur} base={lgBase} />
+          </div>
+          <LineChart labels={chart.labels} cur={chart.cur} base={chart.base} curName={lgCur} baseName={lgBase}
+            tip={v => `${fmt(v * 1e6)} ${sum(lang)}`} />
+        </section>
 
-                return (
-                  <div key={ev.id} className="flex items-center justify-between px-4 py-2.5 border-b border-border last:border-0 bg-card hover:bg-card-hover transition-colors">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className={`text-[12px] font-semibold flex-shrink-0 ${label.color}`}>
-                        {tr(lang, label.ru, label.en, label.uz)}
-                      </span>
-                      {(d.table?.number ?? d.tableNumber) != null && (
-                        <span className="text-[13px] text-text">
-                          {tr(lang, `Стол ${d.table?.number ?? d.tableNumber}`, `Table ${d.table?.number ?? d.tableNumber}`, `Stol ${d.table?.number ?? d.tableNumber}`)}
-                        </span>
-                      )}
-                      {d.waiter && (
-                        <span className="text-[13px] text-muted truncate">{d.waiter}</span>
-                      )}
-                      {d.items?.length > 0 && (
-                        <span className="text-[12px] text-muted hidden sm:block">
-                          {d.items.length} {tr(lang, 'позиц.', 'items', 'mahsulot')}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-4 flex-shrink-0 ml-3">
-                      {d.sum != null && d.sum > 0 && (
-                        <span className="metric-number text-[13px] font-semibold text-text">
-                          {d.sum.toLocaleString('ru-RU')} UZS
-                        </span>
-                      )}
-                      <span className="text-[12px] text-muted font-mono">{time}</span>
-                    </div>
-                  </div>
-                );
-              })}
-              {(liveOrders.length > feedVisible || feedVisible > 5) && (
-                <div className="flex">
-                  {liveOrders.length > feedVisible && (
-                    <button
-                      onClick={() => setFeedVisible(v => v + 15)}
-                      className="flex-1 py-2.5 text-[11px] font-medium text-muted hover:text-text bg-card hover:bg-card-hover transition-colors"
-                    >
-                      {tr(lang, `Показать ещё (${liveOrders.length - feedVisible})`, `Show more (${liveOrders.length - feedVisible})`, `Ko'proq (${liveOrders.length - feedVisible})`)}
-                    </button>
-                  )}
-                  {feedVisible > 5 && (
-                    <button
-                      onClick={() => setFeedVisible(5)}
-                      className="flex-1 py-2.5 text-[11px] font-medium text-muted hover:text-text bg-card hover:bg-card-hover transition-colors border-l border-border"
-                    >
-                      {tr(lang, 'Свернуть', 'Collapse', "Yig'ish")}
-                    </button>
-                  )}
+        {showHall && (
+          <aside className="rise" style={{ animationDelay: '.18s' }} aria-labelledby="h-hall">
+            <div className="sec-head"><h2 id="h-hall">{tr(lang, 'Зал сейчас', 'Floor now', 'Zal hozir')}</h2></div>
+            <div className="hall-num"><span className="v">{hall.occupied}</span>{hall.total > 0 && <span className="muted">{tr(lang, `из ${hall.total} столов`, `of ${hall.total} tables`, `${hall.total} ta stoldan`)}</span>}</div>
+            <div className="hall-line muted">
+              {[hall.guests > 0 ? tr(lang, `${hall.guests} гостей`, `${hall.guests} guests`, `${hall.guests} mehmon`) : null,
+                hall.occupied > 0 ? tr(lang, `стол в среднем ${hall.avgMin} мин`, `avg table ${hall.avgMin} min`, `stol o'rtacha ${hall.avgMin} daq`) : tr(lang, 'Свободно', 'All free', "Bo'sh")].filter(Boolean).join(' · ')}
+            </div>
+            <div className="hall-ph">
+              {hall.total > 0 && (
+                <div className="hall-bar" aria-hidden="true">
+                  <span className="hb-busy" style={{ flex: hall.eating }} /><span className="hb-bill" style={{ flex: hall.bill }} />
+                  <span className="hb-long" style={{ flex: hall.long.length }} /><span className="hb-free" style={{ flex: Math.max(0, hall.total - hall.occupied) }} />
                 </div>
               )}
+              <div className="key">
+                <span className="k-busy">{tr(lang, 'Едят', 'Eating', 'Ovqatlanmoqda')} {hall.eating}</span>
+                <span className="k-bill">{tr(lang, 'Пречек', 'Pre-bill', 'Pre-chek')} {hall.bill}</span>
+                <span className="k-long">{tr(lang, `Дольше ${LONG_MIN} мин`, `Over ${LONG_MIN} min`, `${LONG_MIN} daqiqadan ko'p`)}: {hall.long.length}</span>
+              </div>
+              {hall.long.length > 0 && (
+                <ul className="hall-alerts" aria-label={tr(lang, 'Требуют внимания', 'Need attention', "E'tibor talab qiladi")}>
+                  {hall.long.slice(0, 3).map(o => {
+                    const m = hall.mins(o);
+                    return <li key={o.id}><span className="ha-t">{o.table}</span><span className="muted">{o.waiter}</span><span className="ha-m">{Math.floor(m / 60)} {tr(lang, 'ч', 'h', 'soat')} {m % 60} {tr(lang, 'мин', 'min', 'daq')}</span></li>;
+                  })}
+                </ul>
+              )}
             </div>
-          )}
-        </div>
-      )}
-
-      {/* ── AI DAILY BRIEFING ─────────────────────────────────── */}
-      <AIDailyBriefingCard lang={lang} dataReady={dataLoaded} />
-
-      {/* ── BOTTOM 2 CARDS ────────────────────────────────────── */}
-      <div className={`grid grid-cols-1 gap-5 ${integrationStatus.poster ? '' : 'md:grid-cols-2'}`}>
-
-        {/* Hall — table-occupancy count comes from TRACEPLUGIN's live
-            order/table events, same as the feed above. No Poster source:
-            occupancy would need a live table↔order mapping Poster's REST
-            API doesn't expose. See docs/poster-unsupported-features.md. */}
-        {!integrationStatus.poster && (
-        <Card>
-          <p className="text-[13px] text-muted font-medium mb-5">
-            {tr(lang, 'Загрузка зала', 'Hall Occupancy', 'Zal bandligi')}
-          </p>
-          {PLUGIN_ENABLED && pluginConnected ? (() => {
-            // Distinct occupied tables; orders without a table fall back to order count
-            const occupiedCount = demo ? 6 : occupiedTableNums.size;
-            const pct = totalTables > 0 ? Math.min(100, Math.round((occupiedCount / totalTables) * 100)) : null;
-            return (
-            <div className="flex items-center gap-5">
-              <div className="relative w-[72px] h-[72px] flex-shrink-0">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={occupiedCount > 0
-                        ? [{ value: pct ?? occupiedCount }, { value: pct != null ? 100 - pct : Math.max(0, 10 - occupiedCount) }]
-                        : [{ value: 1 }]}
-                      cx="50%" cy="50%" innerRadius={22} outerRadius={32}
-                      startAngle={90} endAngle={-270} paddingAngle={occupiedCount > 0 ? 4 : 0}
-                      dataKey="value" stroke="none" animationDuration={1000}>
-                      <Cell fill={occupiedCount > 0 ? '#ff6b35' : 'rgb(var(--color-border))'} />
-                      {occupiedCount > 0 && <Cell fill="rgb(var(--color-border))" />}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="metric-number font-display text-[14px] font-black text-text">
-                    {pct != null ? `${pct}%` : occupiedCount}
-                  </span>
+            {hall.tiles.length > 0 && (
+              <details className="hall-map" open={typeof window !== 'undefined' && window.innerWidth > 640}>
+                <summary>{tr(lang, 'Схема зала', 'Floor plan', 'Zal sxemasi')}<i className="ph ph-caret-down chev" aria-hidden="true" /></summary>
+                <div className="tables tables-all">
+                  {hall.tiles.map(t => <div key={t.key} className={`t ${t.state}`} title={t.title}>{t.label}</div>)}
                 </div>
-              </div>
-              <div>
-                <p className="metric-number font-display font-black text-[32px] text-text leading-none">
-                  {pct != null ? `${pct}%` : occupiedCount}
-                </p>
-                <p className="text-[13px] text-muted mt-1">
-                  {pct != null
-                    ? tr(lang, `${occupiedCount} из ${totalTables} столов занято`, `${occupiedCount} of ${totalTables} tables occupied`, `${totalTables} tadan ${occupiedCount} ta stol band`)
-                    : tr(lang, 'активных заказов', 'active orders', 'faol buyurtmalar')}
-                </p>
-                <p className="text-[12px] text-success font-medium mt-2 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse inline-block" />
-                  {tr(lang, 'Live', 'Live', 'Live')}
-                </p>
-              </div>
-            </div>
-            );
-          })() : (
-            <div className="flex items-center gap-2 py-4 text-muted">
-              <span className="w-1.5 h-1.5 rounded-full bg-muted inline-block flex-shrink-0" />
-              <span className="text-[12px]">{tr(lang, 'Нет активных заказов', 'No active orders', 'Faol buyurtmalar yo\'q')}</span>
-            </div>
-          )}
-        </Card>
+                <div className="key">
+                  <span className="k-busy">{tr(lang, 'Заняты', 'Busy', 'Band')}</span>
+                  <span className="k-bill">{tr(lang, 'Пречек', 'Pre-bill', 'Pre-chek')}</span>
+                  <span className="k-long">{tr(lang, `Дольше ${LONG_MIN} мин`, `Over ${LONG_MIN} min`, `${LONG_MIN} daqiqadan ko'p`)}</span>
+                </div>
+              </details>
+            )}
+          </aside>
         )}
-
-        {/* Integrations */}
-        <Card>
-          <p className="text-[13px] text-muted font-medium mb-5">{t.integrations}</p>
-          <div className="space-y-3">
-            {/* iikoFront Plugin — no equivalent for Poster-backed tenants (no terminal plugin), hide instead of showing a permanently-offline row */}
-            {!integrationStatus.poster && (
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${pluginConnected ? 'bg-success animate-pulse' : 'bg-muted'}`} />
-                  <span className="text-[13px] text-text">iikoFront Plugin</span>
-                </div>
-                {pluginConnected
-                  ? <span className="text-[12px] text-muted">{tr(lang, 'Подключено', 'Connected', 'Ulangan')}</span>
-                  : <span className="text-[12px] text-muted">{tr(lang, 'Не в сети', 'Offline', 'Oflayn')}</span>}
-              </div>
-            )}
-            {/* Poster */}
-            {integrationStatus.poster && (
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: integrationStatus.poster.ok ? 'rgb(var(--color-success))' : 'rgb(var(--color-danger))' }} />
-                  <span className="text-[13px] text-text">Poster</span>
-                </div>
-                <span className="text-[12px] text-muted truncate max-w-[100px]" title={integrationStatus.poster.label}>
-                  {integrationStatus.poster.ok ? tr(lang, 'Подключено', 'Connected', 'Ulangan') : tr(lang, 'Ошибка', 'Error', 'Xato')}
-                </span>
-              </div>
-            )}
-            {/* iiko Server */}
-            {integrationStatus.iikoServer && (
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: integrationStatus.iikoServer.ok ? 'rgb(var(--color-success))' : 'rgb(var(--color-danger))' }} />
-                  <span className="text-[13px] text-text">iiko Server</span>
-                </div>
-                <span className="text-[12px] text-muted truncate max-w-[100px]" title={integrationStatus.iikoServer.label}>
-                  {integrationStatus.iikoServer.ok ? tr(lang, 'Подключено', 'Connected', 'Ulangan') : tr(lang, 'Ошибка', 'Error', 'Xato')}
-                </span>
-              </div>
-            )}
-            {/* iiko Cloud API */}
-            {integrationStatus.iikoCloud && (
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: integrationStatus.iikoCloud.ok ? 'rgb(var(--color-success))' : 'rgb(var(--color-danger))' }} />
-                  <span className="text-[13px] text-text">iiko Cloud API</span>
-                </div>
-                <span className="text-[12px] text-muted">
-                  {integrationStatus.iikoCloud.ok ? tr(lang, 'Подключено', 'Connected', 'Ulangan') : tr(lang, 'Ошибка', 'Error', 'Xato')}
-                </span>
-              </div>
-            )}
-          </div>
-        </Card>
-
       </div>
-    </div>
+
+      {/* Details: quieter, below the fold */}
+      <div className="details" style={showFeed ? undefined : { gridTemplateColumns: '1fr' }}>
+        <section aria-labelledby="h-top">
+          <div className="sec-head">
+            <h3 id="h-top">{tr(lang, 'Что продаётся', 'What sells', 'Nima sotilmoqda')}</h3>
+            {onNavigate && <a className="link meta-link" href="?view=sales" onClick={e => { e.preventDefault(); onNavigate('sales'); }}>{tr(lang, 'Все позиции', 'All items', 'Barcha pozitsiyalar')}</a>}
+          </div>
+          {dishes.length === 0
+            ? <p className="rd-empty">{loading ? tr(lang, 'Загружаем…', 'Loading…', 'Yuklanmoqda…') : tr(lang, 'За этот период продаж нет', 'No sales in this period', "Bu davrda savdo yo'q")}</p>
+            : <table><tbody>
+              {dishes.slice(0, 5).map(d => (
+                <tr key={d.name}><td>{d.name}</td><td className="r muted">{fmt(d.quantity)} {tr(lang, 'шт', 'pcs', 'dona')}</td><td className="r">{fmt(d.revenue)}</td></tr>
+              ))}
+            </tbody></table>}
+        </section>
+        {showFeed && (
+          <section aria-labelledby="h-feed">
+            <div className="sec-head">
+              <h3 id="h-feed">{tr(lang, 'Касса', 'Till', 'Kassa')}</h3>
+              {feed.length > 5 && <button className="link meta-link" onClick={() => setFeedOpen(o => !o)}>{feedOpen ? tr(lang, 'Свернуть', 'Collapse', "Yig'ish") : tr(lang, 'Вся лента', 'Whole feed', "Butun lenta")}</button>}
+            </div>
+            {feed.length === 0
+              ? <p className="rd-empty">{plugin ? tr(lang, 'Ждём событий от кассы…', 'Waiting for till events…', 'Kassadan hodisalar kutilmoqda…') : tr(lang, 'Касса не подключена', 'Till not connected', 'Kassa ulanmagan')}</p>
+              : <ul className="feed">{feed.slice(0, feedOpen ? 60 : 5).map(feedRow)}</ul>}
+          </section>
+        )}
+      </div>
+    </>
   );
 };

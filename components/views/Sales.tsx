@@ -14,12 +14,20 @@ import { Language, TimeRange, ComparisonPeriod } from '../../types';
 import { ArrowUpRight, ArrowDownRight, ArrowLeftRight, Calendar, ChevronDown, ChevronUp, ChevronsUpDown, X, Sparkles, TrendingUp, TrendingDown, Minus, ExternalLink, Users, Download, FileText, FileSpreadsheet, Lock, SlidersHorizontal, Tags } from 'lucide-react';
 import { ComparisonSelector } from '../ui/ComparisonSelector';
 import { useRealtimeData, RealtimeEvent } from '../../hooks/useRealtimeData';
-import { traceApi, isDemoTenant, getTenantPlan, RevenueRow, HourlyRow, DishRow, CategoryPerfRow, AbcRow, AbcHistoryItem, DaypartData } from '../../services/traceApi';
+import { traceApi, isDemoTenant, getTenantPlan, RevenueRow, HourlyRow, DishRow, CategoryPerfRow, AbcRow, AbcHistoryItem, DaypartData, GoodsAbcRow } from '../../services/traceApi';
 import { ComingSoon } from '../ui/ComingSoon';
 
 type AbcFilter = 'all' | 'A' | 'B' | 'C';
-type AbcSort = 'revenue' | 'qty' | 'avgPrice' | 'velocity' | 'share' | 'cost' | 'costPerUnit' | 'recipeCostPerUnit' | 'costGapPct' | 'marginPct' | 'foodCostPct';
+type AbcSort = 'revenue' | 'qty' | 'avgPrice' | 'velocity' | 'share' | 'cost' | 'costPerUnit' | 'recipeCostPerUnit' | 'costGapPct' | 'marginPct' | 'foodCostPct' | 'cheques' | 'xyzCv';
 type AbcMetric = 'abcRevenue' | 'abcQty' | 'abcProfit';
+
+// XYZ: how steady sales are across days (weeks for long periods).
+function xyzBadgeCls(grade: string | null | undefined) {
+  return grade === 'X' ? 'bg-success/10 text-success'
+       : grade === 'Y' ? 'bg-amber-400/10 text-amber-400'
+       : grade === 'Z' ? 'bg-danger/10 text-danger'
+       : 'bg-[#1a1a1a] text-[#8a8a8a]';
+}
 
 function abcBadgeCls(grade: string) {
   return grade === 'A' ? 'bg-success/10 text-success'
@@ -478,8 +486,8 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
   const [detailItem, setDetailItem] = useState<AbcRow | null>(null);
 
   // Optional columns — toggleable, persisted so the choice sticks across visits
-  type OptCol = 'cat' | 'avgPrice' | 'cost' | 'costPerUnit' | 'recipeCost' | 'costGap' | 'foodCostPct' | 'marginPct' | 'velocity';
-  const OPT_COL_DEFAULTS: Record<OptCol, boolean> = { cat: true, avgPrice: true, cost: true, costPerUnit: true, recipeCost: true, costGap: true, foodCostPct: true, marginPct: true, velocity: true };
+  type OptCol = 'cat' | 'avgPrice' | 'cost' | 'costPerUnit' | 'recipeCost' | 'costGap' | 'foodCostPct' | 'marginPct' | 'velocity' | 'cheques' | 'xyz';
+  const OPT_COL_DEFAULTS: Record<OptCol, boolean> = { cat: true, avgPrice: true, cost: true, costPerUnit: true, recipeCost: true, costGap: true, foodCostPct: true, marginPct: true, velocity: true, cheques: true, xyz: true };
   const [visibleCols, setVisibleCols] = useState<Record<OptCol, boolean>>(() => {
     try {
       const saved = localStorage.getItem('trace_abc_cols');
@@ -570,6 +578,10 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
 
   // Recipe cost comes from iikoOffice and is absent for Poster or when the server refuses it.
   const hasRecipeCost = useMemo(() => items.some(i => i.recipeCostPerUnit != null), [items]);
+  // Checks and XYZ come with iiko's own report only.
+  const hasCheques = useMemo(() => items.some(i => i.cheques != null), [items]);
+  const hasXyz = useMemo(() => items.some(i => i.xyz != null), [items]);
+  const source = items[0]?.source;
   const filtered = useMemo(() => {
     let list = items;
     if (abcFilter !== 'all') list = list.filter(i => i[abcMetric] === abcFilter);
@@ -1031,6 +1043,8 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
                     { id: 'foodCostPct' as const, ru: 'Фудкост %', en: 'Food cost %', uz: 'Food cost %' },
                     { id: 'marginPct' as const, ru: 'Маржа', en: 'Margin', uz: 'Marja' },
                     { id: 'velocity' as const, ru: 'В день', en: '/day', uz: 'Kuniga' },
+                    ...(hasCheques ? [{ id: 'cheques' as const, ru: 'Чеков', en: 'Checks', uz: 'Cheklar' }] : []),
+                    ...(hasXyz ? [{ id: 'xyz' as const, ru: 'XYZ', en: 'XYZ', uz: 'XYZ' }] : []),
                   ]).map(c => (
                     <label key={c.id} className="flex items-center gap-2 px-1.5 py-1.5 rounded-lg hover:bg-card-hover cursor-pointer">
                       <input type="checkbox" checked={visibleCols[c.id]} onChange={() => toggleCol(c.id)} className="accent-primary" />
@@ -1181,7 +1195,15 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
               </button>
             )}
           </div>
-          <span className="text-[10px] text-muted ml-auto">{filtered.length} {ru ? 'позиций' : isUz ? 'pozitsiya' : 'items'}</span>
+          {(source === 'iiko' || source === 'olap') && (
+            <span className="text-[10px] text-muted ml-auto" title={tr(lang,
+              'Выручка без НДС после скидок, пороги A 80% · B 15% · C 5% — как в отчёте iiko «ABC/XYZ анализ блюд».' + (source === 'olap' ? ' Отчёт iiko сейчас недоступен — данные пересчитаны из OLAP и могут чуть отличаться.' : ''),
+              'Revenue without VAT after discounts, A 80% · B 15% · C 5% — as in iiko\'s "ABC/XYZ dish analysis".' + (source === 'olap' ? ' iiko\'s report is unavailable right now — rebuilt from OLAP, may differ slightly.' : ''),
+              "Tushum QQSsiz, chegirmadan keyin, A 80% · B 15% · C 5% — iiko'dagi kabi." + (source === 'olap' ? " iiko hisoboti hozir mavjud emas — OLAP'dan qayta hisoblandi." : ''))}>
+              {source === 'iiko' ? tr(lang, 'как в iiko', 'same as iiko', "iiko'dagi kabi") : tr(lang, '≈ iiko (OLAP)', '≈ iiko (OLAP)', '≈ iiko (OLAP)')}
+            </span>
+          )}
+          <span className={`text-[10px] text-muted ${source === 'iiko' || source === 'olap' ? '' : 'ml-auto'}`}>{filtered.length} {ru ? 'позиций' : isUz ? 'pozitsiya' : 'items'}</span>
         </div>
 
         {/* Mobile scroll hint */}
@@ -1223,9 +1245,22 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
                 {visibleCols.foodCostPct && <th className="pb-2.5 pr-4"><SortBtn col="foodCostPct" label={ru ? 'Фудкост %' : 'Food cost %'} /></th>}
                 {visibleCols.marginPct && <th className="pb-2.5 pr-4"><SortBtn col="marginPct" label={ru ? 'Маржа' : isUz ? 'Marja' : 'Margin'} /></th>}
                 {visibleCols.velocity && <th className="pb-2.5 pr-4"><SortBtn col="velocity" label={ru ? 'В день' : isUz ? 'Kuniga' : '/day'} /></th>}
+                {visibleCols.cheques && hasCheques && (
+                  <th className="pb-2.5 pr-4" title={tr(lang, 'Сколько чеков содержали блюдо', 'How many checks contained the dish', 'Taom nechta chekda bo\'lgan')}>
+                    <SortBtn col="cheques" label={ru ? 'Чеков' : isUz ? 'Cheklar' : 'Checks'} />
+                  </th>
+                )}
                 <th className="pb-2.5 pr-4 text-[10px] uppercase tracking-[0.12em] text-muted font-medium" title={ru ? 'Кол-во / Выручка / Маржа' : isUz ? 'Soni / Tushum / Marja' : 'Qty / Revenue / Margin'}>
                   ABC К·В·М
                 </th>
+                {visibleCols.xyz && hasXyz && (
+                  <th className="pb-2.5 pr-4" title={tr(lang,
+                    'Стабильность продаж по дням (по неделям, если период больше месяца). X — стабильно (колебание до 10%), Y — колеблется (до 25%), Z — нерегулярно. Как в iiko.',
+                    'How steady sales are day to day (week to week for periods over a month). X steady (variation under 10%), Y uneven (under 25%), Z irregular. Same as iiko.',
+                    "Sotuv barqarorligi. X — barqaror (10% gacha), Y — o'zgaruvchan (25% gacha), Z — notekis.")}>
+                    <SortBtn col="xyzCv" label="XYZ" />
+                  </th>
+                )}
                 <th className="pb-2.5" />
               </tr>
             </thead>
@@ -1269,6 +1304,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
                     )}
                     {visibleCols.marginPct && <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{item.marginPct != null ? item.marginPct + '%' : '—'}</td>}
                     {visibleCols.velocity && <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{item.velocity}</td>}
+                    {visibleCols.cheques && hasCheques && <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{item.cheques ?? '—'}</td>}
                     {/* 3 ABC badges */}
                     <td className="py-2.5 pr-4">
                       <div className="flex items-center gap-1">
@@ -1277,6 +1313,11 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
                         ))}
                       </div>
                     </td>
+                    {visibleCols.xyz && hasXyz && (
+                      <td className="py-2.5 pr-4" title={item.xyzCv != null ? `${tr(lang, 'Колебание', 'Variation', "O'zgarish")}: ${item.xyzCv}%` : undefined}>
+                        <span className={`px-1.5 py-0.5 rounded-[3px] text-[10px] font-black ${xyzBadgeCls(item.xyz)}`}>{item.xyz ?? '—'}</span>
+                      </td>
+                    )}
                     {/* Details button */}
                     <td className="py-2.5">
                       <button
@@ -1352,6 +1393,123 @@ function buildMatrixItems(items: AbcRow[]): MatrixItem[] {
     return { ...it, x, y, quadrant };
   });
 }
+
+// ── Ingredient ABC (iiko "Фудкост → ABC/XYZ анализ товаров") ────────────────
+// Which products eat the food-cost budget. iiko only: the card stays hidden
+// when the backend returns null (Poster, or iiko's report unavailable).
+
+const GoodsAbcCard: React.FC<{ lang: Language; timeRange: string }> = ({ lang, timeRange }) => {
+  type R = 'today' | '7days' | '30days';
+  const [range, setRange] = useState<R>((['today', '7days', '30days'] as const).includes(timeRange as any) ? timeRange as R : '30days');
+  const [rows, setRows] = useState<GoodsAbcRow[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+  const [grade, setGrade] = useState<'all' | 'A' | 'B' | 'C'>('all');
+  const [page, setPage] = useState(15);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    traceApi.sales.abcGoods(range).then(d => { if (alive) setRows(d); }).catch(() => { if (alive) setRows(null); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [range]);
+
+  const list = useMemo(() => {
+    let l = rows ?? [];
+    if (grade !== 'all') l = l.filter(r => r.abcCost === grade);
+    if (query.trim()) { const q = query.trim().toLowerCase(); l = l.filter(r => r.name.toLowerCase().includes(q)); }
+    return l;
+  }, [rows, grade, query]);
+
+  if (!loading && !rows) return null;
+  const fmtN = (n: number) => n.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+  const aShare = rows ? rows.filter(r => r.abcCost === 'A').reduce((s, r) => s + r.salesCostShare, 0) : 0;
+
+  return (
+    <Card
+      title={tr(lang, 'Фудкост: ABC продуктов', 'Food cost: ingredient ABC', 'Food cost: mahsulotlar ABC')}
+      action={
+        <div className="flex items-center gap-px border border-border rounded-xl overflow-hidden bg-card">
+          {ABC_TIME_RANGES.map(({ key, ru: rRu, en, uz }) => (
+            <button key={key} onClick={() => setRange(key)}
+              className={`px-2.5 py-1 text-[10px] font-medium transition-colors ${range === key ? 'bg-primary text-white' : 'text-muted hover:text-text hover:bg-[#1a1a1a]'}`}>
+              {tr(lang, rRu, en, uz)}
+            </button>
+          ))}
+        </div>
+      }
+    >
+      <p className="text-[11px] text-muted mb-3">
+        {tr(lang,
+          'Сколько каждый продукт стоил в проданных блюдах — как отчёт iiko «ABC/XYZ анализ товаров».',
+          'What each product cost in the dishes sold — same as iiko\'s "ABC/XYZ goods analysis".',
+          "Har bir mahsulot sotilgan taomlarda qancha turdi — iiko hisoboti kabi.")}
+        {rows && rows.length > 0 && <> {tr(lang, `Группа A — ${Math.round(aShare)}% затрат.`, `Group A is ${Math.round(aShare)}% of cost.`, `A guruhi — xarajatlarning ${Math.round(aShare)}%.`)}</>}
+      </p>
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        {(['all', 'A', 'B', 'C'] as const).map(g => (
+          <button key={g} onClick={() => { setGrade(g); setPage(15); }}
+            className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition-colors ${grade === g ? 'border-primary text-primary bg-primary/10' : 'border-border text-muted hover:text-text'}`}>
+            {g === 'all' ? tr(lang, 'Все', 'All', 'Hammasi') : g}
+          </button>
+        ))}
+        <input value={query} onChange={e => { setQuery(e.target.value); setPage(15); }}
+          placeholder={tr(lang, 'Поиск продукта', 'Search product', 'Mahsulot qidirish')}
+          className="flex-1 min-w-[140px] bg-transparent border border-border rounded-lg px-2.5 py-1 text-text placeholder:text-muted focus:outline-none focus:border-primary" />
+        <span className="text-[10px] text-muted">{list.length} {tr(lang, 'позиций', 'items', 'pozitsiya')}</span>
+      </div>
+      {loading ? (
+        <div className="h-24 flex items-center justify-center text-[11px] text-muted">{tr(lang, 'Загрузка из iiko…', 'Loading from iiko…', "iiko'dan yuklanmoqda…")}</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left min-w-[720px]">
+            <thead className="border-b border-border">
+              <tr className="text-[10px] uppercase tracking-[0.12em] text-muted">
+                <th className="pb-2.5 pr-3 font-medium w-6">#</th>
+                <th className="pb-2.5 pr-4 font-medium">{tr(lang, 'Продукт', 'Product', 'Mahsulot')}</th>
+                <th className="pb-2.5 pr-4 font-medium">{tr(lang, 'Затраты', 'Cost', 'Xarajat')}</th>
+                <th className="pb-2.5 pr-4 font-medium">%</th>
+                <th className="pb-2.5 pr-4 font-medium">{tr(lang, 'Расход', 'Used', 'Sarf')}</th>
+                <th className="pb-2.5 pr-4 font-medium" title={tr(lang, 'В скольких проданных блюдах используется', 'How many sold dishes use it', 'Nechta taomda ishlatiladi')}>{tr(lang, 'Блюд', 'Dishes', 'Taom')}</th>
+                <th className="pb-2.5 pr-4 font-medium" title={tr(lang, 'По затратам / по расходу', 'By cost / by amount', "Xarajat / sarf bo'yicha")}>ABC</th>
+                <th className="pb-2.5 font-medium">XYZ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.slice(0, page).map((r, i) => (
+                <tr key={r.id} className="border-b border-border last:border-0">
+                  <td className="py-2.5 pr-3 text-[11px] text-muted metric-number">{i + 1}</td>
+                  <td className="py-2.5 pr-4 max-w-[220px]"><p className="text-[12px] font-medium text-text truncate">{r.name}</p></td>
+                  <td className="py-2.5 pr-4 text-[12px] font-semibold text-text metric-number">{fmtN(r.salesCost)}</td>
+                  <td className="py-2.5 pr-4 text-[11px] text-muted metric-number">{r.salesCostShare}%</td>
+                  <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{fmtN(r.amount)} {r.unit}</td>
+                  <td className="py-2.5 pr-4 text-[12px] text-muted metric-number">{r.dishes}</td>
+                  <td className="py-2.5 pr-4">
+                    <div className="flex items-center gap-1">
+                      {[r.abcCost, r.abcAmount].map((g, gi) => (
+                        <span key={gi} className={`px-1.5 py-0.5 rounded-[3px] text-[10px] font-black ${abcBadgeCls(g ?? '—')}`}>{g ?? '—'}</span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="py-2.5" title={r.xyzCv != null ? `${tr(lang, 'Колебание', 'Variation', "O'zgarish")}: ${r.xyzCv}%` : undefined}>
+                    <span className={`px-1.5 py-0.5 rounded-[3px] text-[10px] font-black ${xyzBadgeCls(r.xyz)}`}>{r.xyz ?? '—'}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {!loading && list.length > page && (
+        <button onClick={() => setPage(p => p + 15)}
+          className="mt-3 w-full py-2 text-[11px] font-medium text-muted hover:text-text border border-border hover:border-primary/40 rounded-lg transition-all">
+          {tr(lang, `Показать ещё (${list.length - page})`, `Show more (${list.length - page})`, `Ko'proq ko'rsat (${list.length - page})`)}
+        </button>
+      )}
+    </Card>
+  );
+};
 
 const MenuMatrixCard: React.FC<{ items: AbcRow[]; lang: Language }> = ({ items, lang }) => {
   const ru = lang === 'ru';
@@ -2137,6 +2295,11 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
       {/* ── ABC ANALYSIS ── */}
       {abcItems.length > 0 && (
         <AbcTable items={abcItems} lang={lang} timeRange={timeRange} isBasePlan={isBasePlan} />
+      )}
+
+      {/* ── INGREDIENT ABC (iiko food cost) ── */}
+      {abcItems.length > 0 && abcItems[0]?.source !== 'poster' && (
+        <GoodsAbcCard lang={lang} timeRange={timeRange} />
       )}
 
       {/* ── MENU ENGINEERING MATRIX ── */}

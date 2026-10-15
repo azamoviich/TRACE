@@ -1686,6 +1686,11 @@ export const traceApi = {
             : (r.cost != null && r.revenue > 0 ? Math.round((r.cost / r.revenue) * 1000) / 10 : null)),
         })));
     },
+    abcGoods: (range: 'today' | '7days' | '30days' | 'custom', customFrom?: string, customTo?: string): Promise<GoodsAbcRow[] | null> => {
+      if (isDemoTenant()) return Promise.resolve(null);
+      const q = customFrom && customTo ? `from=${customFrom}&to=${customTo}` : `range=${range}`;
+      return apiFetch(`/sales/abc-goods?${q}`).then(r => r.json()).then(d => (Array.isArray(d) ? d : null));
+    },
     abcHistory: (dishName: string, lang: Language = 'ru'): Promise<AbcHistoryItem[]> =>
       isDemoTenant() ? Promise.resolve(demoAbcHistory(dishName, lang)) : apiFetch(`/sales/abc/history?dishName=${encodeURIComponent(dishName)}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     abcDaypart: (dishName: string, range = '30days', lang: Language = 'ru'): Promise<DaypartData> =>
@@ -1779,6 +1784,9 @@ export const traceApi = {
       isDemoTenant() ? Promise.resolve(demoInvoices()) : apiFetch(`/financial/invoices?range=${range}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     inventory: (range: 'today' | '7days' | '30days' = '30days'): Promise<(FinancialInventoryDoc | PosterInventoryItem)[] | null> =>
       isDemoTenant() ? Promise.resolve(getDemoPos() === 'poster' ? demoPosterInventory() : demoInventory()) : apiFetch(`/financial/inventory?range=${range}`).then(r => r.json()).then(d => (Array.isArray(d) && d.length ? d : null)),
+    // iiko only — live store balances (Склад).
+    stock: (): Promise<StockSnapshot | null> =>
+      isDemoTenant() ? Promise.resolve(null) : apiFetch(`/financial/stock`).then(r => r.json()).then(d => (d && Array.isArray(d.items) ? d : null)),
     // Poster only — doc-based stocktaking archive, a second view alongside inventory() above.
     inventoryDocs: (): Promise<PosterInventoryDoc[]> =>
       isDemoTenant() ? Promise.resolve(getDemoPos() === 'poster' ? demoPosterInventoryDocs() : []) : apiFetch(`/financial/inventory-docs`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
@@ -2518,6 +2526,57 @@ export interface AbcRow {
   abcRevenue: AbcGrade;
   abcQty: AbcGrade;
   abcProfit: AbcGrade;
+  /** Checks that contained the dish and their ABC grade (iiko only). */
+  cheques?: number | null;
+  abcCheques?: AbcGrade | null;
+  /** Sales stability: X steady, Y uneven, Z irregular. xyzCv is the variation in %. iiko only. */
+  xyz?: 'X' | 'Y' | 'Z' | null;
+  xyzCv?: number | null;
+  /** 'iiko' = iiko's own ABC report; 'olap' = rebuilt from the public API when that was unavailable. */
+  source?: 'iiko' | 'olap' | 'poster';
+}
+
+// One ingredient in iiko's "Фудкост → ABC/XYZ анализ товаров".
+export interface GoodsAbcRow {
+  id: string;
+  name: string;
+  unit: string;
+  type: string;
+  /** what the product cost in the dishes sold */
+  salesCost: number;
+  salesCostShare: number;
+  amount: number;
+  /** how many dishes use it */
+  dishes: number;
+  dishRevenue: number;
+  markup: number;
+  mainDishesProfit: number;
+  abcCost: AbcGrade | null;
+  abcAmount: AbcGrade | null;
+  xyz: 'X' | 'Y' | 'Z' | null;
+  xyzCv: number | null;
+}
+
+// iiko store balance — one product in one store, right now.
+export interface StockItem {
+  id: string;
+  name: string;
+  unit: string;
+  type: string;
+  storeId: string;
+  store: string;
+  qty: number;
+  unitCost: number;
+  totalValue: number;
+  /** min/max level from the product card in iiko, if set */
+  min: number | null;
+  max: number | null;
+  status: 'ok' | 'low' | 'over' | 'negative';
+}
+
+export interface StockSnapshot {
+  asOf: string;
+  items: StockItem[];
 }
 
 export interface AbcHistoryItem {

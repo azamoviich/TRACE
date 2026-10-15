@@ -20,6 +20,7 @@ import {
   MenuAnalysisRow,
 } from '../../services/traceApi';
 import { StocktakeList, StocktakeDrawer } from './InventoryStocktake';
+import { IikoStock } from './IikoStock';
 
 // ── Waste Impact Banner ───────────────────────────────────────────────────────
 
@@ -1249,16 +1250,17 @@ export const Financial: React.FC<{
 
       {/* ── INVENTORY TAB ── */}
       {tab === 'inventory' && (
-        <Card title={tr(lang, 'Инвентаризации', 'Inventory', 'Inventarizatsiyalar')}>
+        <Card title={tr(lang, 'Склад', 'Stock', 'Ombor')}>
           <p className="text-[10px] text-muted mb-3">
             {isPoster
               ? (inventoryView === 'live'
                 ? tr(lang, 'Текущие остатки склада · Poster', 'Current stock balance · Poster', 'Joriy ombor qoldig\'i · Poster')
                 : tr(lang, 'Архив инвентаризаций · Poster', 'Stocktaking archive · Poster', 'Inventarizatsiya arxivi · Poster'))
-              : tr(lang, 'Недостачи и излишки по каждой инвентаризации · iikoServer', 'Shortages and surpluses per stocktake · iikoServer', "Har bir inventarizatsiya bo'yicha kamomad va ortiqcha · iikoServer")}
+              : (inventoryView === 'live'
+                ? tr(lang, 'Что осталось на складах сейчас · iikoServer', 'What is in stock right now · iikoServer', "Hozir omborlarda nima qoldi · iikoServer")
+                : tr(lang, 'Недостачи и излишки по каждой инвентаризации · iikoServer', 'Shortages and surpluses per stocktake · iikoServer', "Har bir inventarizatsiya bo'yicha kamomad va ortiqcha · iikoServer"))}
           </p>
-          {isPoster && (
-            <div className="inline-flex items-center gap-1 bg-background border border-border rounded-lg p-0.5 mb-3">
+          <div className="inline-flex items-center gap-1 bg-background border border-border rounded-lg p-0.5 mb-3">
               <button
                 onClick={() => setInventoryView('live')}
                 className={`px-3 py-1.5 text-[11px] font-semibold rounded-[5px] transition-all ${inventoryView === 'live' ? 'bg-primary text-white shadow-sm' : 'text-muted hover:text-text'}`}>
@@ -1270,8 +1272,9 @@ export const Financial: React.FC<{
                 {tr(lang, 'Архив инвентаризаций', 'Count history', 'Inventarizatsiya arxivi')}
               </button>
             </div>
-          )}
-          {isPoster && inventoryView === 'docs' ? (
+          {!isPoster && inventoryView === 'live' ? (
+            <IikoStock lang={lang} />
+          ) : isPoster && inventoryView === 'docs' ? (
             inventoryDocsLoading ? <Skeleton /> : inventoryDocs.length === 0 ? (
               <div className="flex items-center gap-2 py-6 text-muted">
                 <Package size={15} />

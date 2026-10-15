@@ -19,6 +19,7 @@ import { ProLock } from '../ui/ProLock';
 import { Skel, rangeLabel, nowHM, AiState } from '../rd/ui';
 import { Trio, TrioTile } from '../rd/Trio';
 import { SlotText } from '../ui/SlotNumber';
+import { tashkentDateStr } from '../../utils/tz';
 
 // ── Hall floor plan ───────────────────────────────────────────────────────
 
@@ -147,7 +148,7 @@ const HEAT_PERIODS = ['today', 7, 30, 90] as const;
 type HeatPeriod = typeof HEAT_PERIODS[number];
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return tashkentDateStr();
 }
 
 function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster, onHasPlanChange }: { lang: Language; onToast?: (m: string, t: 'info') => void; occupiedTables?: Set<number>; tableInfo?: Map<number, { min: number; sum: number }>; branchId?: string; isPoster?: boolean; onHasPlanChange?: (hasPlan: boolean) => void }) {

@@ -119,8 +119,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ lang, branch, onContextRea
   const days = Math.round((Date.parse(to) - Date.parse(from)) / 86400_000) + 1;
 
   // Current period
+  const [loadErr, setLoadErr] = useState(false);
   useEffect(() => {
-    setLoading(true);
+    // `alive`: a slow answer for the previous period must not land under the new one.
+    let alive = true;
+    setLoading(true); setLoadErr(false);
     const custom = period.range === 'custom' && period.custom;
     const dishRange = custom ? 'custom' : period.range as 'today' | '7days' | '30days';
     Promise.all([
@@ -132,19 +135,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ lang, branch, onContextRea
       custom ? traceApi.sales.realGuestRevenue('custom', from, to) : traceApi.sales.realGuestRevenue(dishRange as any),
       isToday ? traceApi.sales.hourly() : Promise.resolve([] as HourlyRow[]),
     ]).then(([r, d, s, g, h]) => {
+      if (!alive) return;
       setRows(isToday ? r.filter(x => x.date === today) : r);
       setDishes(d); setStatus(s); setRg(g); setHourly(h);
-    }).catch(() => {}).finally(() => setLoading(false));
+    }).catch(() => { if (alive) { setRows([]); setDishes([]); setHourly([]); setLoadErr(true); } })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
   }, [period, branch, revenueType, rgKey]);
 
   // Comparison period: same length, shifted back
   const shift = period.range === 'custom' ? days : SHIFT[comparison];
   const cFrom = isoShift(from, -shift), cTo = isoShift(to, -shift);
   useEffect(() => {
-    traceApi.sales.revenue('custom', cFrom, cTo, revenueType).then(setCompRows).catch(() => setCompRows([]));
-    traceApi.sales.realGuestRevenue('custom', cFrom, cTo).then(setCompRg).catch(() => setCompRg(null));
-    if (isToday) traceApi.sales.hourly(cFrom).then(setCompHourly).catch(() => setCompHourly([]));
+    let alive = true;
+    const keep = <T,>(set: (v: T) => void) => (v: T) => { if (alive) set(v); };
+    traceApi.sales.revenue('custom', cFrom, cTo, revenueType).then(keep(setCompRows)).catch(() => keep(setCompRows)([]));
+    traceApi.sales.realGuestRevenue('custom', cFrom, cTo).then(keep(setCompRg)).catch(() => keep(setCompRg)(null));
+    if (isToday) traceApi.sales.hourly(cFrom).then(keep(setCompHourly)).catch(() => keep(setCompHourly)([]));
     else setCompHourly([]);
+    return () => { alive = false; };
   }, [cFrom, cTo, branch, revenueType, rgKey]);
 
   // ── Totals ──
@@ -355,11 +364,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ lang, branch, onContextRea
   // ── Guest-section filter ──
   const [sections, setSections] = useState<{ name: string; tableCount: number; excluded: boolean }[] | null>(null);
   const [sectionsPlugin, setSectionsPlugin] = useState(true);
+  // `sections` is the popover's draft; `savedSections` is what the server has.
+  // The chip reads the saved list, so ticks dropped by closing the popover
+  // without "Готово" never look applied.
+  const [savedSections, setSavedSections] = useState<typeof sections>(null);
   const loadSections = () => traceApi.settings.listRealGuestSections()
-    .then(r => { setSections(r.sections); setSectionsPlugin(r.hasPluginData); }).catch(() => setSections([]));
+    .then(r => { setSections(r.sections); setSavedSections(r.sections); setSectionsPlugin(r.hasPluginData); }).catch(() => setSections([]));
   const saveSections = (list: typeof sections) => traceApi.settings.saveRealGuestSections((list ?? []).filter(s => s.excluded).map(s => s.name))
-    .then(() => setRgKey(k => k + 1)).catch(() => {});
-  const excluded = (sections ?? []).filter(s => s.excluded);
+    .then(() => { setSavedSections(list); setRgKey(k => k + 1); }).catch(() => {});
+  const excluded = (savedSections ?? []).filter(s => s.excluded);
   useEffect(() => { if (!demo && !poster) loadSections(); }, [poster]);
 
   const feedRow = (ev: RealtimeEvent & { id: string }) => {
@@ -399,6 +412,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ lang, branch, onContextRea
 
   return (
     <>
+      {loadErr && <p className="rd-err" role="alert" style={{ margin: '0 0 14px' }}>{tr(lang, 'Не удалось загрузить данные. Показанные цифры могут быть неполными — обновите страницу.', "Couldn't load the data. Numbers shown may be incomplete — reload the page.", "Ma'lumotlarni yuklab bo'lmadi. Sahifani yangilang.")}</p>}
       <div className="page-head rise">
         <div>
           <h1>{title}</h1>

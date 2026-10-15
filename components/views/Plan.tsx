@@ -128,7 +128,7 @@ export const Plan: React.FC<Props> = ({ lang, onShowToast, onContextReady }) => 
           <div className="sub">
             {sub ?? (state.kind === 'ready' && <>
               <button className={`refresh${refreshing ? ' spin' : ''}`} type="button" onClick={() => load(month, true)} disabled={refreshing}>
-                <i className="ph ph-arrows-clockwise" aria-hidden="true" />{updatedAt ? `${tr(lang, 'Обновлено в', 'Updated at', 'Yangilandi')} ${updatedAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}` : tr(lang, 'Обновить', 'Refresh', 'Yangilash')}
+                <i className="ph ph-arrows-clockwise" aria-hidden="true" />{updatedAt ? `${tr(lang, 'Обновлено в', 'Updated at', 'Yangilandi')} ${updatedAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' })}` : tr(lang, 'Обновить', 'Refresh', 'Yangilash')}
               </button>
               <span className="faint">{tr(lang, 'Цифры iiko подтягиваются каждые 5 минут', 'iiko figures refresh every 5 minutes', "iiko raqamlari har 5 daqiqada yangilanadi")}</span>
             </>)}

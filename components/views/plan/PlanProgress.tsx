@@ -156,7 +156,8 @@ const Chart: React.FC<{ lang: Language; p: ProgressResult }> = ({ lang, p }) => 
   const be = cum ? p.breakEven.monthRevenue : p.breakEven.dayRevenue;
   const vals = [...planS, ...factS.filter((v): v is number => v != null), ...fcS, be ?? 0];
   const max = Math.max(1, ...vals) * 1.08;
-  const step = max > 1e9 ? 200e6 : max > 4e8 ? 100e6 : max > 6e7 ? 10e6 : max > 1.5e7 ? 5e6 : 1e6;
+  // ~5 gridlines: a 1-2-5 step from max/5.
+  const step = (() => { const raw = max / 5, p10 = 10 ** Math.floor(Math.log10(raw)), f = raw / p10; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p10; })();
   const x = (i: number) => L + (W0 - L - R) * (cum ? i / Math.max(1, n - 1) : (i + .5) / n);
   const y = (v: number) => T + (H - T - B) * (1 - v / max);
   const path = (a: (number | null)[], off = 0) => a.map((v, i) => v == null ? '' : `${i ? 'L' : 'M'}${x(i + off).toFixed(1)} ${y(v).toFixed(1)}`).join('');

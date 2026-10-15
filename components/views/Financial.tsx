@@ -314,18 +314,18 @@ export const Financial: React.FC<{
   useEffect(() => {
     if (tab === 'cashshifts') {
       setCashshiftsLoading(true);
-      traceApi.financial.cashshifts(range)
+      traceApi.financial.cashshifts(plRange, plCustomRange?.from, plCustomRange?.to)
         .then(setCashshifts).catch(() => setCashshifts([]))
         .finally(() => setCashshiftsLoading(false));
     }
     if (tab === 'gl' && isPoster) {
       setGlCategoriesLoading(true);
-      traceApi.financial.glCategories(range)
+      traceApi.financial.glCategories(plRange, plCustomRange?.from, plCustomRange?.to)
         .then(setGlCategories).catch(() => setGlCategories([]))
         .finally(() => setGlCategoriesLoading(false));
     } else if (tab === 'gl') {
       setGlLoading(true);
-      traceApi.financial.glSummary(range)
+      traceApi.financial.glSummary(plRange, plCustomRange?.from, plCustomRange?.to)
         .then(setGlSummary).catch(() => setGlSummary(null))
         .finally(() => setGlLoading(false));
     }
@@ -347,7 +347,7 @@ export const Financial: React.FC<{
         }).catch(() => setMenuRows([]))
         .finally(() => setMenuLoading(false));
     }
-  }, [tab, range, isPoster]);
+  }, [tab, range, plRange, plCustomRange, isPoster]);
 
 
   // ── Render helpers ──
@@ -689,9 +689,12 @@ export const Financial: React.FC<{
           <ul className="kv">
             <li><span>{tr(lang, 'Новые накладные', 'New invoices', 'Yangi hisob-fakturalar')}</span><span>+ {fmtN(g.payables.invoiced)}</span></li>
             <li><span>{tr(lang, 'Оплачено', 'Paid', "To'langan")}</span><span>− {fmtN(g.payables.paid)}</span></li>
-            <li className="total"><span>{tr(lang, 'Изменение долга', 'Change in debt', "Qarz o'zgarishi")}</span><span>{g.payables.netChange > 0 ? '+' : g.payables.netChange < 0 ? '−' : ''}{fmtN(Math.abs(g.payables.netChange))}</span></li>
+            {/* backend netChange = paid − invoiced; the debt moves the other way */}
+            <li className="total"><span>{tr(lang, 'Изменение долга', 'Change in debt', "Qarz o'zgarishi")}</span><span>{-g.payables.netChange > 0 ? '+ ' : -g.payables.netChange < 0 ? '− ' : ''}{fmtN(Math.abs(g.payables.netChange))}</span></li>
           </ul>
-          <p className={`debt-note ${g.payables.netChange < 0 ? 'neg' : ''}`}>{g.payables.netChange < 0 ? tr(lang, 'Долг перед поставщиками вырос за период.', 'Debt to suppliers grew this period.', "Ta'minotchilarga qarz o'sdi.") : tr(lang, 'Долг перед поставщиками снизился за период.', 'Debt to suppliers went down this period.', "Ta'minotchilarga qarz kamaydi.")}</p>
+          <p className={`debt-note ${g.payables.netChange < 0 ? 'neg' : ''}`}>{g.payables.netChange < 0 ? tr(lang, 'Долг перед поставщиками вырос за период.', 'Debt to suppliers grew this period.', "Ta'minotchilarga qarz o'sdi.")
+            : g.payables.netChange > 0 ? tr(lang, 'Долг перед поставщиками снизился за период.', 'Debt to suppliers went down this period.', "Ta'minotchilarga qarz kamaydi.")
+            : tr(lang, 'Долг перед поставщиками не изменился.', 'Debt to suppliers did not change.', "Ta'minotchilarga qarz o'zgarmadi.")}</p>
         </section>
         <section className="card-ph" aria-labelledby="h-tax">
           <div className="sec-head"><h2 id="h-tax">{tr(lang, 'Налоги', 'Taxes', 'Soliqlar')}</h2></div>

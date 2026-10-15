@@ -11,7 +11,7 @@ import { Language, ChecklistRole, ChecklistEmployee } from '../../types';
 import { checklistApi, traceApi, EmployeeDashboard, EmployeeDashboardRow, EmployeeStatus, PosCandidate } from '../../services/traceApi';
 import { statusBadge, relativeTimeShort } from './Checklists';
 import { PayrollTab, PayProfileEditor, RosterTab, GeofenceTab, AttendanceRulesCard } from './Workforce';
-import { Skel } from '../rd/ui';
+import { Skel, ruPl } from '../rd/ui';
 
 function tr(lang: Language, ru: string, en: string, uz: string) {
   return lang === 'ru' ? ru : lang === 'uz' ? uz : en;
@@ -74,7 +74,7 @@ export function Employees({ lang, onShowToast }: Props) {
       <div className="page-head rise">
         <div>
           <h1>{tr(lang, 'Сотрудники', 'Employees', 'Xodimlar')}</h1>
-          <div className="sub">{headCount != null ? tr(lang, `${headCount} человек в приложении TRACE`, `${headCount} people in the TRACE app`, `TRACE ilovasida ${headCount} kishi`) : ' '}</div>
+          <div className="sub">{headCount != null ? tr(lang, `${headCount} ${ruPl(headCount, 'человек', 'человека', 'человек')} в приложении TRACE`, `${headCount} ${headCount === 1 ? 'person' : 'people'} in the TRACE app`, `TRACE ilovasida ${headCount} kishi`) : ' '}</div>
         </div>
       </div>
       <nav className="tabs rise" role="tablist" aria-label={tr(lang, 'Разделы', 'Sections', "Bo'limlar")} style={{ animationDelay: '.04s' }}>
@@ -122,7 +122,8 @@ function TeamTab({ lang, onShowToast, onCount }: { lang: Language; onShowToast: 
   const [inviting, setInviting] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
 
-  const load = () => checklistApi.employees.dashboard().then(d => { setDashboard(d); onCount?.(d.summary.total); }).catch(() => onShowToast(tr(lang, 'Не удалось загрузить сотрудников', 'Failed to load employees', "Xodimlarni yuklab bo'lmadi"), 'error'));
+  const [loadFailed, setLoadFailed] = useState(false);
+  const load = () => checklistApi.employees.dashboard().then(d => { setDashboard(d); setLoadFailed(false); onCount?.(d.summary.total); }).catch(() => { setLoadFailed(true); onShowToast(tr(lang, 'Не удалось загрузить сотрудников', 'Failed to load employees', "Xodimlarni yuklab bo'lmadi"), 'error'); });
   const loadRoles = () => checklistApi.roles.list().then(setRoles).catch(() => {});
   useEffect(() => { load(); loadRoles(); }, []);
 
@@ -169,7 +170,9 @@ function TeamTab({ lang, onShowToast, onCount }: { lang: Language; onShowToast: 
       </div>
 
       <section className="card-ph" aria-label={tr(lang, 'Список сотрудников', 'Employee list', "Xodimlar ro'yxati")}>
-        {!dashboard ? <Skel lines={['w9', 'w9', 'w9', 'w7']} />
+        {!dashboard ? (loadFailed
+          ? <p className="rd-empty">{tr(lang, 'Не удалось загрузить сотрудников.', 'Failed to load employees.', "Xodimlarni yuklab bo'lmadi.")} <button className="link" type="button" onClick={load}>{tr(lang, 'Повторить', 'Retry', 'Qayta urinish')}</button></p>
+          : <Skel lines={['w9', 'w9', 'w9', 'w7']} />)
           : all.length === 0 ? (
             <div className="empty"><b>{tr(lang, 'Пока никого нет', 'No one here yet', "Hozircha hech kim yo'q")}</b>{tr(lang, 'Пригласите сотрудников из iiko: логин придёт им по SMS.', 'Invite staff from iiko: they get their login by SMS.', "Xodimlarni iiko'dan taklif qiling: login SMS orqali keladi.")}
               <div style={{ marginTop: 14 }}><button className="btn solid" onClick={() => setInviting(true)}><i className="ph ph-user-plus" aria-hidden="true" />{tr(lang, 'Пригласить первого', 'Invite the first one', 'Birinchisini taklif qilish')}</button></div></div>
@@ -204,7 +207,7 @@ function TeamTab({ lang, onShowToast, onCount }: { lang: Language; onShowToast: 
           )}
         {dashboard && all.length > 0 && (
           <div className="foot">
-            <span>{rows.length === all.length ? tr(lang, `${all.length} сотрудников`, `${all.length} employees`, `${all.length} xodim`) : tr(lang, `Показано ${rows.length} из ${all.length}`, `Showing ${rows.length} of ${all.length}`, `${all.length} dan ${rows.length}`)}</span>
+            <span>{rows.length === all.length ? tr(lang, `${all.length} ${ruPl(all.length, 'сотрудник', 'сотрудника', 'сотрудников')}`, `${all.length} ${all.length === 1 ? 'employee' : 'employees'}`, `${all.length} xodim`) : tr(lang, `Показано ${rows.length} из ${all.length}`, `Showing ${rows.length} of ${all.length}`, `${all.length} dan ${rows.length}`)}</span>
             <span className="hide-sm">{tr(lang, 'Начислено за текущий период, по ставкам из вкладки «Зарплата»', 'Accrued this period, at the rates in the Payroll tab', "Joriy davr uchun, «Ish haqi» stavkalari bo'yicha")}</span>
           </div>
         )}
@@ -629,7 +632,8 @@ function FaceSection({ lang, employeeId, onShowToast, onChanged }: { lang: Langu
 
   const remove = async () => {
     if (!window.confirm(tr(lang, 'Удалить фото лица? Сотрудник будет открывать смену только по геолокации.', 'Remove the face photo? They will clock in by location only.', "Yuz rasmini o'chirasizmi? Xodim faqat geolokatsiya bilan kiradi."))) return;
-    await checklistApi.employees.removeFace(employeeId).catch(() => {});
+    try { await checklistApi.employees.removeFace(employeeId); }
+    catch { window.alert(tr(lang, 'Не удалось удалить фото. Попробуйте ещё раз.', "Couldn't remove the photo. Try again.", "Rasmni o'chirib bo'lmadi. Qayta urinib ko'ring.")); return; }
     setFace({ enrolled: false, url: null });
     onChanged();
   };

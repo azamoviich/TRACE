@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Language } from '../../types';
 import { tr } from '../../constants';
 import { traceApi, StockItem, StockSnapshot } from '../../services/traceApi';
-import { Skel, mln, mlnUnit, sum } from '../rd/ui';
+import { Skel, mln, mlnUnit, sum, ruPl } from '../rd/ui';
 
 type StatusFilter = 'all' | 'negative' | 'low' | 'over';
 type SortKey = 'value' | 'qty' | 'name';
@@ -90,7 +90,7 @@ export const IikoStock: React.FC<{ lang: Language }> = ({ lang }) => {
       {counts.negative > 0 && status === 'all' && (
         <p className="stock-warn"><i className="ph ph-warning" aria-hidden="true" />
           {tr(lang,
-            `${counts.negative} позиций ушли в минус. Обычно это непроведённые приходные накладные или неверные техкарты.`,
+            `${counts.negative} ${ruPl(counts.negative, 'позиция ушла', 'позиции ушли', 'позиций ушли')} в минус. Обычно это непроведённые приходные накладные или неверные техкарты.`,
             `${counts.negative} lines are below zero. Usually unposted incoming invoices or wrong recipes.`,
             `${counts.negative} pozitsiya minusda. Odatda kirim yuk xatlari o'tkazilmagan yoki texkarta noto'g'ri.`)}
         </p>

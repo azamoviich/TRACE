@@ -123,7 +123,7 @@
 /* Entrance only: `backwards` fill, so no transform/opacity stays on the section
    afterwards — a lingering one makes a stacking context and buries popovers
    (and traps position:fixed sheets) under the next section. */
-.rd-dash .rise { animation: rise .5s cubic-bezier(.2,.7,.2,1) backwards; }
+.rd-dash .rise { animation: none; }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 @media (prefers-reduced-motion: reduce) {
   .rd-dash .rise { animation: none; }

@@ -12,7 +12,7 @@ import {
 import { tashkentDateStr, tashkentHours } from '../../utils/tz';
 import {
   fmt, mln, sum, pctChange, pctStr, Delta, Pop, Opt, PeriodSeg, PeriodValue, Skel, LineChart, Legend,
-  rangeLabel, dayLabel, isoShift, nowHM, periodDates, wdShort, WD_SHORT, AiMeta, AiState,
+  rangeLabel, dayLabel, isoShift, nowHM, periodDates, wdShort, WD_SHORT, AiMeta, AiState, ruPl,
 } from '../rd/ui';
 import { Trio, TrioTile } from '../rd/Trio';
 import { DishDetailModal } from './sales/DishDetailModal';
@@ -59,24 +59,30 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
   const [cAbc, setCAbc] = useState<AbcRow[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [loadErr, setLoadErr] = useState(false);
   useEffect(() => {
-    setLoading(true);
+    // `alive`: a slow answer for the previous period must not land under the new one.
+    let alive = true;
+    setLoading(true); setLoadErr(false);
     Promise.all([
       traceApi.sales.revenue('custom', from, to),
       isToday ? traceApi.sales.hourly() : Promise.resolve([] as HourlyRow[]),
       traceApi.sales.categoryPerf('custom', from, to),
       traceApi.sales.abc('custom', from, to),
-    ]).then(([r, h, c, a]) => { setRows(r); setHourly(h); setCats(c); setAbc(a); })
-      .catch(err => console.error('[sales] fetch failed', err))
-      .finally(() => setLoading(false));
+    ]).then(([r, h, c, a]) => { if (alive) { setRows(r); setHourly(h); setCats(c); setAbc(a); } })
+      .catch(err => { console.error('[sales] fetch failed', err); if (alive) { setRows([]); setHourly([]); setCats([]); setAbc([]); setLoadErr(true); } })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
   }, [from, to, branch]);
   useEffect(() => {
+    let alive = true;
     Promise.all([
       traceApi.sales.revenue('custom', cFrom, cTo).catch(() => [] as RevenueRow[]),
       isToday ? traceApi.sales.hourly(cFrom).catch(() => [] as HourlyRow[]) : Promise.resolve([] as HourlyRow[]),
       traceApi.sales.categoryPerf('custom', cFrom, cTo).catch(() => [] as CategoryPerfRow[]),
       traceApi.sales.abc('custom', cFrom, cTo).catch(() => [] as AbcRow[]),
-    ]).then(([r, h, c, a]) => { setCRows(r); setCHourly(h); setCCats(c); setCAbc(a); });
+    ]).then(([r, h, c, a]) => { if (alive) { setCRows(r); setCHourly(h); setCCats(c); setCAbc(a); } });
+    return () => { alive = false; };
   }, [cFrom, cTo, branch]);
   // Refresh today's hours every 5 minutes
   useEffect(() => {
@@ -117,6 +123,8 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
     ...(prof != null ? [{ k: 'prof' as Metric, label: tr(lang, 'Валовая прибыль', 'Gross profit', 'Yalpi foyda'), v: prof, unit: sum(lang), d: pctChange(prof, cProf), chartUnit: tr(lang, 'млн сум', 'M UZS', "mln so'm") }] : []),
   ];
   const m = METRICS.find(x => x.k === metric) ?? METRICS[0];
+  // Gross profit drops out when the period has no cost data — fall back to revenue.
+  useEffect(() => { if (metric !== m.k) setMetric(m.k); }, [metric, m.k]);
 
   // ── Chart series ──
   const lgCur = isToday ? tr(lang, 'Сегодня', 'Today', 'Bugun') : period.range === '7days' ? tr(lang, 'Эти 7 дней', 'These 7 days', 'Shu 7 kun') : period.range === '30days' ? tr(lang, 'Эти 30 дней', 'These 30 days', 'Shu 30 kun') : tr(lang, 'Этот период', 'This period', 'Shu davr');
@@ -166,6 +174,7 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
   const heatView = useMemo(() => {
     if (!heat || !heat.cells.length) return null;
     const hrs = heat.cells.filter(c => c.revenue > 0).map(c => c.hour);
+    if (!hrs.length) return null;
     const lo = Math.min(...hrs), hi = Math.max(...hrs);
     const hours = Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
     const val = (d: number, h: number) => heat.cells.find(c => c.dow === d && c.hour === h)?.revenue ?? 0;
@@ -315,7 +324,7 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
       desc: tr(lang, 'Какие цены поднять, какие снизить и где дешевле поменять рецепт. По продажам за 8 недель и себестоимости из техкарт.', 'Which prices to raise, which to lower and where changing the recipe is cheaper. From 8 weeks of sales and recipe costs.', "Qaysi narxlarni oshirish, qaysilarini tushirish va qayerda retseptni o'zgartirish arzonroq."),
       runLabel: tr(lang, 'Проверить цены', 'Check prices', 'Narxlarni tekshirish'), wait: tr(lang, 'Считаем прибыль с порции и как менялся спрос после прошлых изменений цен…', 'Working out profit per portion and how demand moved after past price changes…', "Porsiyadan foyda va oldingi narx o'zgarishlaridan keyingi talabni hisoblayapmiz…"),
       state: price.state, when: price.at, error: price.err, onRun: runPrice,
-      summary: <><b>{priceGain} {tr(lang, priceGain === 1 ? 'изменение' : priceGain < 5 ? 'изменения' : 'изменений', priceGain === 1 ? 'change' : 'changes', "o'zgarish")}</b></>,
+      summary: <><b>{priceGain} {tr(lang, ruPl(priceGain, 'изменение', 'изменения', 'изменений'), priceGain === 1 ? 'change' : 'changes', "o'zgarish")}</b></>,
       body: (
         <ol className="rec-list">
           {price.hints.map(h => {
@@ -338,7 +347,7 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
       desc: tr(lang, 'Какие позиции гости берут вместе и что официантам предлагать к заказу, с готовой фразой.', 'Which items guests order together and what waiters should suggest, with a ready-made line.', "Mehmonlar qaysi pozitsiyalarni birga oladi va ofitsiantlar nima taklif qilishi kerak."),
       runLabel: tr(lang, 'Найти связки', 'Find pairings', "Bog'lanishlarni topish"), wait: tr(lang, 'Смотрим, что берут в одном чеке…', 'Looking at what goes on the same check…', 'Bir chekda nima olinishini ko‘ryapmiz…'),
       state: combo.state, when: combo.at, error: combo.err, onRun: runCombo,
-      summary: combo.combos[0] ? <><b>{combo.combos.length} {tr(lang, 'связки', 'pairings', "bog'lanish")}</b>. {tr(lang, 'Лучшая', 'Best', 'Eng yaxshi')}: {combo.combos[0].items.join(' → ')}</> : null,
+      summary: combo.combos[0] ? <><b>{combo.combos.length} {tr(lang, ruPl(combo.combos.length, 'связка', 'связки', 'связок'), combo.combos.length === 1 ? 'pairing' : 'pairings', "bog'lanish")}</b>. {tr(lang, 'Лучшая', 'Best', 'Eng yaxshi')}: {combo.combos[0].items.join(' → ')}</> : null,
       body: <>{combo.combos.map((c, i) => (
         <div className="combo" key={i}>
           <div className="combo-h"><span>{c.items.join(' → ')}</span></div>
@@ -399,6 +408,7 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
   return (
     <>
       {detail && <DishDetailModal item={detail} allItems={abc} lang={lang} timeRange={period.range === 'custom' ? '7days' : period.range} isBasePlan={isBasePlan} onClose={() => setDetail(null)} />}
+      {loadErr && <p className="rd-err" role="alert" style={{ margin: '0 0 14px' }}>{tr(lang, 'Не удалось загрузить данные. Показанные цифры могут быть неполными — обновите страницу.', "Couldn't load the data. Numbers shown may be incomplete — reload the page.", "Ma'lumotlarni yuklab bo'lmadi. Sahifani yangilang.")}</p>}
       <div className="page-head rise">
         <div>
           <h1>{tr(lang, 'Продажи', 'Sales', 'Savdo')}</h1>
@@ -466,7 +476,7 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
         {!heatFailed && (
           <section className="card-ph" aria-labelledby="h-heat">
             <div className="sec-head"><h2 id="h-heat">{tr(lang, 'Когда продаём', 'When we sell', 'Qachon sotamiz')}</h2><span className="sec-note">{tr(lang, 'за 4 недели', 'last 4 weeks', 'oxirgi 4 hafta')}</span></div>
-            {!heatView ? <Skel lines={['w9', 'w9', 'w9', 'w9', 'w9', 'w9', 'w9']} /> : <>
+            {!heatView ? (heat ? <p className="rd-empty">{tr(lang, 'За последние 4 недели продаж нет — карте нечего показать.', 'No sales in the last 4 weeks — nothing to map.', "So'nggi 4 haftada savdo yo'q.")}</p> : <Skel lines={['w9', 'w9', 'w9', 'w9', 'w9', 'w9', 'w9']} />) : <>
               <div className="heat" style={{ gridTemplateColumns: `28px repeat(${heatView.hours.length}, 1fr)` }}>
                 {WD.map((d, di) => (
                   <React.Fragment key={d}>
@@ -588,7 +598,7 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
                   <td className="r c-rcost muted">{r.recipeCostPerUnit != null ? fmt(r.recipeCostPerUnit) : '—'}</td>
                   <td className={`r c-drift ${r.costGapPct != null && r.costGapPct >= 5 ? 'neg' : r.costGapPct != null && r.costGapPct <= -5 ? 'pos' : 'muted'}`}>{r.costGapPct != null ? pctStr(r.costGapPct) : '—'}</td>
                   <td className={`r c-fc ${r.fc != null && r.fc >= 40 ? 'fc-hi' : ''}`}>{r.fc != null ? `${Math.round(r.fc)}%` : '—'}</td>
-                  <td className="r c-profit">{r.unitCost != null ? fmt(r.profit) : '—'}</td>
+                  <td className="r c-profit"><span className="m-lbl">{tr(lang, 'приб. ', 'profit ', 'foyda ')}</span>{r.unitCost != null ? fmt(r.profit) : '—'}</td>
                   <td className="c-abc"><span className="abc" title={`${tr(lang, 'Количество', 'Quantity', 'Soni')} ${r.abcQty}, ${tr(lang, 'выручка', 'revenue', 'tushum')} ${r.abcRevenue}, ${tr(lang, 'прибыль', 'profit', 'foyda')} ${r.abcProfit}`}>
                     {(['abcQty', 'abcRevenue', 'abcProfit'] as const).map(k => <b key={k} className={`g${r[k]}${k === abcMetric ? ' cur' : ''}`}>{r[k]}</b>)}
                   </span></td>
@@ -659,7 +669,7 @@ const GoodsAbc: React.FC<{ lang: Language; from: string; to: string }> = ({ lang
     <>
       <p className="goods-lead">
         {tr(lang, 'Сколько каждый продукт стоил в проданных блюдах, как в отчёте iiko «ABC/XYZ анализ товаров».', 'What each product cost in the dishes sold, as in iiko’s “ABC/XYZ goods analysis”.', 'Har bir mahsulot sotilgan taomlarda qancha turdi, iiko hisobotidagi kabi.')}
-        {aRows.length > 0 && <> <b>{tr(lang, `${aRows.length} продуктов группы A — ${Math.round(aShare)}% затрат.`, `${aRows.length} group A products are ${Math.round(aShare)}% of cost.`, `A guruhidagi ${aRows.length} mahsulot — xarajatlarning ${Math.round(aShare)}%.`)}</b></>}
+        {aRows.length > 0 && <> <b>{tr(lang, `${aRows.length} ${ruPl(aRows.length, 'продукт', 'продукта', 'продуктов')} группы A — ${Math.round(aShare)}% затрат.`, `${aRows.length} group A products are ${Math.round(aShare)}% of cost.`, `A guruhidagi ${aRows.length} mahsulot — xarajatlarning ${Math.round(aShare)}%.`)}</b></>}
       </p>
       <div className="tools">
         <label className="search"><i className="ph ph-magnifying-glass" aria-hidden="true" /><input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder={tr(lang, 'Найти продукт', 'Find a product', 'Mahsulot topish')} aria-label={tr(lang, 'Найти продукт', 'Find a product', 'Mahsulot topish')} /></label>
@@ -693,7 +703,7 @@ const GoodsAbc: React.FC<{ lang: Language; from: string; to: string }> = ({ lang
         </tbody>
       </table>
       <div className="table-foot">
-        <span><span>{list.length > shown.length ? tr(lang, `${shown.length} из ${list.length} продуктов`, `${shown.length} of ${list.length} products`, `${list.length} tadan ${shown.length}`) : `${list.length} ${tr(lang, 'продуктов', 'products', 'mahsulot')}`}</span>
+        <span><span>{list.length > shown.length ? tr(lang, `${shown.length} из ${list.length} ${ruPl(list.length, 'продукта', 'продуктов', 'продуктов')}`, `${shown.length} of ${list.length} products`, `${list.length} tadan ${shown.length}`) : `${list.length} ${tr(lang, ruPl(list.length, 'продукт', 'продукта', 'продуктов'), list.length === 1 ? 'product' : 'products', 'mahsulot')}`}</span>
           <span className="foot-note">{tr(lang, 'XYZ: X — расход ровный, Y — колеблется, Z — нерегулярный.', 'XYZ: X steady use, Y uneven, Z irregular.', "XYZ: X — bir tekis, Y — o'zgaruvchan, Z — notekis.")}</span></span>
         {list.length > 15 && <button className="link" type="button" onClick={() => setAll(s => !s)}>{all ? tr(lang, 'Свернуть', 'Collapse', "Yig'ish") : tr(lang, 'Показать все', 'Show all', "Hammasini ko'rsatish")}</button>}
       </div>

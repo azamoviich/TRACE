@@ -6,6 +6,11 @@ import { tr } from '../../constants';
 import { tashkentDateStr } from '../../utils/tz';
 
 // ── Formatting ───────────────────────────────────────────────────────────
+/** Russian noun form for a count: ru(1,'отзыв','отзыва','отзывов') → 'отзыв'. */
+export const ruPl = (n: number, one: string, few: string, many: string) => {
+  const a = Math.abs(n) % 100, b = a % 10;
+  return a >= 11 && a <= 14 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many;
+};
 export const fmt = (n: number | null | undefined) => n == null || !isFinite(n) ? '—' : Math.round(n).toLocaleString('ru-RU');
 export const mln = (n: number, digits = 1) => (Math.round(n / 10 ** (6 - digits)) / 10 ** digits).toLocaleString('ru-RU');
 export const sum = (lang: Language) => tr(lang, 'сум', 'UZS', "so'm");

@@ -8,7 +8,8 @@ import { ShiftReports } from './ShiftReports';
 import { Waiters } from './Waiters';
 import { ProLock } from '../ui/ProLock';
 import { DateRangePicker } from '../ui/DateRangePicker';
-import { Skel, AiMeta, Pop, Opt } from '../rd/ui';
+import { Skel, AiMeta, Pop, Opt, ruPl } from '../rd/ui';
+import { tashkentDateStr } from '../../utils/tz';
 
 const BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -141,7 +142,8 @@ export const Reviews: React.FC<{ lang: Language; onContextReady?: (ctx: string) 
         setLoading(false);
         return;
       }
-      const safeJson = (r: Response) => r.ok ? r.json().catch(() => null) : Promise.resolve(null);
+      // A failed request is an error, not "no reviews" — let the catch below say so.
+      const safeJson = (r: Response) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json().catch(() => null); };
       const headers = { 'X-Tenant': sub, ...branchHeaders() };
       // Server-side platform filter — the API's 200-row window is sorted by
       // review_date across ALL platforms, so client-filtering that shared
@@ -237,8 +239,8 @@ export const Reviews: React.FC<{ lang: Language; onContextReady?: (ctx: string) 
   const lastDays = dateRange ? Math.round((Date.now() - Date.parse(dateRange.from)) / 86400000) : 0;
   const setDays = (d: number) => {
     if (!d) { setDateRange(null); return; }
-    const to = new Date().toISOString().slice(0, 10);
-    const from = new Date(Date.now() - (d - 1) * 86400000).toISOString().slice(0, 10);
+    const to = tashkentDateStr();
+    const from = new Date(Date.parse(`${to}T00:00:00Z`) - (d - 1) * 86400000).toISOString().slice(0, 10);
     setDateRange({ from, to });
   };
   const ago = (iso: string) => {
@@ -250,7 +252,7 @@ export const Reviews: React.FC<{ lang: Language; onContextReady?: (ctx: string) 
     <span className="stars" aria-label={`${r} / 5`}>{[1, 2, 3, 4, 5].map(i => <i key={i} className={`${i <= r ? 'ph-fill' : 'ph'} ph-star`} aria-hidden="true" />)}<b>{r}</b></span>
   ) : <span className="stars faint">—</span>;
   const tabs: { id: typeof mainTab; label: string; n?: string }[] = [
-    { id: 'reviews', label: ru ? 'Отзывы гостей' : isUz ? 'Mehmonlar sharhlari' : 'Guest reviews', n: negCount ? (ru ? `${negCount} негативных` : isUz ? `${negCount} salbiy` : `${negCount} negative`) : undefined },
+    { id: 'reviews', label: ru ? 'Отзывы гостей' : isUz ? 'Mehmonlar sharhlari' : 'Guest reviews', n: negCount ? (ru ? `${negCount} ${ruPl(negCount, 'негативный', 'негативных', 'негативных')}` : isUz ? `${negCount} salbiy` : `${negCount} negative`) : undefined },
     { id: 'shifts', label: ru ? 'Отчёты смен' : isUz ? 'Smena hisobotlari' : 'Shift reports' },
     { id: 'waiters', label: ru ? 'QR официантов' : isUz ? 'Ofitsiant QR' : 'Waiter QR' },
   ];
@@ -375,9 +377,9 @@ export const Reviews: React.FC<{ lang: Language; onContextReady?: (ctx: string) 
             <aside className="side">
               <section className="card-ph" aria-labelledby="h-pl"><h3 id="h-pl">{T('По площадкам', 'By platform', "Platformalar bo'yicha")}</h3>
                 {platStats.length === 0 ? <p className="rd-empty">{T('Нет данных', 'No data', "Ma'lumot yo'q")}</p> : <ul className="plat">
-                  <li><button type="button" aria-pressed={filter === 'all'} onClick={() => setFilter('all')}><span className="nm">{T('Все площадки', 'All platforms', 'Barcha platformalar')}</span><span>{stats?.avg_rating ? stats.avg_rating.toFixed(1).replace('.', ',') : ''}</span><span className="sub2">{allReviews.length} {T('отзывов', 'reviews', 'sharh')}</span><span /></button></li>
+                  <li><button type="button" aria-pressed={filter === 'all'} onClick={() => setFilter('all')}><span className="nm">{T('Все площадки', 'All platforms', 'Barcha platformalar')}</span><span>{stats?.avg_rating ? stats.avg_rating.toFixed(1).replace('.', ',') : ''}</span><span className="sub2">{allReviews.length} {T(ruPl(allReviews.length, 'отзыв', 'отзыва', 'отзывов'), allReviews.length === 1 ? 'review' : 'reviews', 'sharh')}</span><span /></button></li>
                   {platStats.map(p => (
-                    <li key={p.p}><button type="button" aria-pressed={filter === p.p} onClick={() => setFilter(p.p)}><span className="nm">{p.p}</span><span>{p.avg != null ? p.avg.toFixed(1).replace('.', ',') : ''}</span><span className="sub2">{p.n} {T('отзывов', 'reviews', 'sharh')}</span><span /><span className="bar"><i style={{ width: `${p.n / maxPlat * 100}%` }} /></span></button></li>
+                    <li key={p.p}><button type="button" aria-pressed={filter === p.p} onClick={() => setFilter(p.p)}><span className="nm">{p.p}</span><span>{p.avg != null ? p.avg.toFixed(1).replace('.', ',') : ''}</span><span className="sub2">{p.n} {T(ruPl(p.n, 'отзыв', 'отзыва', 'отзывов'), p.n === 1 ? 'review' : 'reviews', 'sharh')}</span><span /><span className="bar"><i style={{ width: `${p.n / maxPlat * 100}%` }} /></span></button></li>
                   ))}
                 </ul>}
               </section>

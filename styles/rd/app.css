@@ -71,3 +71,9 @@ input, textarea, select { font-size: max(16px, 1em); }
 .rd .pop-wrap > .chip { max-width: min(360px, calc(100vw - 32px)); }
 .rd .pop-wrap > .chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (min-width: 641px) { .rd .pop { max-height: min(70vh, 560px); overflow-y: auto; } }
+.rd.rd-contents { display: contents; }
+/* Phone: the period bar is sticky with a backdrop blur, which would trap its
+   bottom-sheet popover (z-index and containing block) under the tab bar. */
+.rd .seg-wrap:has(.pop) { z-index: 50; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.rd-ops .periods { position: relative; }
+.rd-main > [hidden] { display: none !important; }

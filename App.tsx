@@ -168,7 +168,17 @@ export default function App() {
   };
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [aiOpen, setAiOpen] = useState(false);
-  const [aiContext, setAiContext] = useState<string>('');
+  // AI context per page: kept pages report theirs once, so remember each.
+  const [aiContexts, setAiContexts] = useState<Partial<Record<ViewState, string>>>({});
+  // Pages opened so far (kept mounted, see the page container below).
+  const [visited, setVisited] = useState<{ key: string; views: ViewState[] }>({ key: '', views: [] });
+  const ctxSetters = React.useRef(new Map<ViewState, (c: string) => void>());
+  const ctxSetter = (v: ViewState) => {
+    let f = ctxSetters.current.get(v);
+    if (!f) { f = (c: string) => setAiContexts(m => (m[v] === c ? m : { ...m, [v]: c })); ctxSetters.current.set(v, f); }
+    return f;
+  };
+
   const [demoBannerVisible, setDemoBannerVisible] = useState(!LIVE_MODE);
 
   const [selectedBranch] = useState<string | null>(null);
@@ -199,7 +209,7 @@ export default function App() {
   }, []);
 
   // Reset AI context when switching views so stale data doesn't bleed across sections
-  useEffect(() => { setAiContext(''); }, [currentView]);
+
 
   // Only "booking_off" hides it — other errors (e.g. "All branches" selected) keep the section.
   useEffect(() => {
@@ -280,12 +290,13 @@ export default function App() {
     return <RdThemePicker lang={lang} onChoose={setTheme} />;
   }
 
-  const renderContent = () => {
+  const effectiveView = (v: ViewState): ViewState => isMarketing && v !== 'loyalty' ? 'reviews' : isHostess ? 'booking' : v;
+  const renderContent = (view: ViewState) => {
     const branchKey = activeBranchId ?? 'self';
     // Add-on off (or flag still loading on a ?view= deep link) — never mount
     // these views, they'd only fire requests the backend refuses.
-    if (EMPLOYEE_APP_PAGE_IDS.includes(currentView) && !employeeAppEnabled) return null;
-    const view: ViewState = isMarketing && currentView !== 'loyalty' ? 'reviews' : isHostess ? 'booking' : currentView;
+    if (EMPLOYEE_APP_PAGE_IDS.includes(view) && !employeeAppEnabled) return null;
+    const setAiContext = ctxSetter(view);
     switch (view) {
       case 'dashboard':   return <Dashboard key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} onOpenPlan={planAvailable && !hiddenPages.includes('plan') ? () => setCurrentView('plan') : undefined} onNavigate={setCurrentView} />;
       case 'sales':       return <Sales key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} />;
@@ -328,13 +339,21 @@ export default function App() {
   // Redesigned pages render their own markup under .rd; the rest still use
   // Tailwind and sit in the same container with the new tokens.
   const REDESIGNED: Partial<Record<ViewState, string>> = { dashboard: 'dash', sales: 'sales', operations: 'ops', financial: 'fin', employees: 'staff', plan: 'plan', reviews: 'reviews', booking: 'book' };
-  const rdPage = REDESIGNED[currentView];
+  // Pages stay mounted once opened (hidden when not current), so going back
+  // to one is instant instead of a fresh load behind skeletons.
+  const shownView = effectiveView(currentView);
+  const aiContext = aiContexts[shownView] ?? '';
+  const branchKeyNow = activeBranchId ?? 'self';
+  const visitedViews = visited.key === branchKeyNow ? visited.views : [];
+  if (!visitedViews.includes(shownView)) setVisited({ key: branchKeyNow, views: [...visitedViews, shownView] });
 
   return (
     <div className="rd-app">
       <ToastContainer toasts={toasts} removeToast={removeToast} />
 
-      <div className="rd">
+      {/* display:contents — the sticky header must sit directly in .rd-app,
+          or sticky can't outlive this wrapper and the bar scrolls away. */}
+      <div className="rd rd-contents">
         <RdHeader
           currentView={currentView}
           onNavigate={setCurrentView}
@@ -361,9 +380,14 @@ export default function App() {
       </div>
 
       <main id="content" className="rd-main">
-        <div className={rdPage ? `rd-page rd rd-${rdPage}` : 'rd-page rd-legacy'}>
-          {renderContent()}
-        </div>
+        {(visitedViews.includes(shownView) ? visitedViews : [...visitedViews, shownView]).map(v => {
+          const rd = REDESIGNED[v];
+          return (
+            <div key={`${v}|${branchKeyNow}`} hidden={v !== shownView} className={rd ? `rd-page rd rd-${rd}` : 'rd-page rd-legacy'}>
+              {renderContent(v)}
+            </div>
+          );
+        })}
       </main>
 
       <div className="rd">

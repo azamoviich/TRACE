@@ -484,6 +484,8 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
   const [sort, setSort] = useState<{ key: AbcSort; dir: 'desc' | 'asc' }>({ key: 'revenue', dir: 'desc' });
   const [page, setPage] = useState(10);
   const [detailItem, setDetailItem] = useState<AbcRow | null>(null);
+  // Dishes, or products by what they cost (iiko only).
+  const [view, setView] = useState<'dishes' | 'products'>('dishes');
 
   // Optional columns — toggleable, persisted so the choice sticks across visits
   type OptCol = 'cat' | 'avgPrice' | 'cost' | 'costPerUnit' | 'recipeCost' | 'costGap' | 'foodCostPct' | 'marginPct' | 'velocity' | 'cheques' | 'xyz';
@@ -623,8 +625,8 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
       ? (ru ? ' (день ещё не закончился — данные неполные, выводы о спросе делай осторожно)' : ' (day still in progress — partial data, be careful with demand conclusions)')
       : '';
     const ctx = ru
-      ? `Период данных: ${periodLabel}${periodNote}.\nТы аналитик меню ресторана. Ниже список позиций меню с их категорией (модификаторы, сервисный сбор и чаевые уже исключены из этого списка — считай всё ниже реальными продаваемыми позициями, будь то блюдо, напиток или предмет типа "кальян"/"попкорн" — определяй тип по названию и категории). Всего позиций: ${filtered.length}, из них ${aCount} формируют 70% выручки.\n\nВыручка по категориям:\n${catLines}\n\nТоп-40 позиций по выручке:\n${itemLines}`
-      : `Data period: ${periodLabel}${periodNote}.\nYou are a restaurant menu analyst. Below are menu items with category (modifiers/service charge/tips are already excluded — treat everything below as a real sellable item, whether a dish, drink, or something like hookah/popcorn — infer the type from name and category). Total items: ${filtered.length}, ${aCount} of which make up 70% of revenue.\n\nRevenue by category:\n${catLines}\n\nTop 40 items by revenue:\n${itemLines}`;
+      ? `Период данных: ${periodLabel}${periodNote}.\nТы аналитик меню ресторана. Ниже список позиций меню с их категорией (модификаторы, сервисный сбор и чаевые уже исключены из этого списка — считай всё ниже реальными продаваемыми позициями, будь то блюдо, напиток или предмет типа "кальян"/"попкорн" — определяй тип по названию и категории). Всего позиций: ${filtered.length}, из них ${aCount} формируют 80% выручки.\n\nВыручка по категориям:\n${catLines}\n\nТоп-40 позиций по выручке:\n${itemLines}`
+      : `Data period: ${periodLabel}${periodNote}.\nYou are a restaurant menu analyst. Below are menu items with category (modifiers/service charge/tips are already excluded — treat everything below as a real sellable item, whether a dish, drink, or something like hookah/popcorn — infer the type from name and category). Total items: ${filtered.length}, ${aCount} of which make up 80% of revenue.\n\nRevenue by category:\n${catLines}\n\nTop 40 items by revenue:\n${itemLines}`;
     const prompt = ru
       ? 'Дай общий анализ меню: 1) какие категории/позиции недооценены или переоценены по цене, 2) что стоит убрать или продвигать, 3) любые аномалии (например, позиция с высокой выручкой но низкой маржой). 4-6 конкретных пунктов.'
       : 'Give an overall menu analysis: 1) which categories/items are under- or over-priced, 2) what to cut or promote, 3) any anomalies (e.g. high revenue but low margin). 4-6 specific points.';
@@ -678,9 +680,9 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
     const scopeDeadWeight = scope.filter(i => i.abcRevenue === 'C' && i.velocity < 0.5).length;
     const aPct = Math.round((scopeACount / total) * 100);
     list.push(
-      ru ? `${scopeACount} из ${total} позиций (${aPct}%) формируют ~70% выручки — классическое ядро Парето, держите их в наличии всегда.`
-        : isUz ? `${scopeACount}/${total} taom (${aPct}%) tushumning ~70% ini beradi — doim yetkazib turing.`
-        : `${scopeACount} of ${total} items (${aPct}%) drive ~70% of revenue — the Pareto core. Never let these run out.`
+      ru ? `${scopeACount} из ${total} позиций (${aPct}%) формируют ~80% выручки — классическое ядро Парето, держите их в наличии всегда.`
+        : isUz ? `${scopeACount}/${total} taom (${aPct}%) tushumning ~80% ini beradi — doim yetkazib turing.`
+        : `${scopeACount} of ${total} items (${aPct}%) drive ~80% of revenue — the Pareto core. Never let these run out.`
     );
     if (scopeDeadWeight > 0) {
       list.push(
@@ -987,7 +989,24 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
       )}
 
       <Card
-        title={ru ? 'ABC-анализ меню' : isUz ? 'Menyu ABC tahlili' : 'Menu ABC Analysis'}
+        title={
+          <span className="flex flex-wrap items-center gap-2">
+            {ru ? 'ABC-анализ' : isUz ? 'ABC tahlili' : 'ABC Analysis'}
+            {(source === 'iiko' || source === 'olap') && (
+              <span className="inline-flex items-center gap-px border border-border rounded-lg p-0.5 bg-background">
+                {([
+                  { id: 'dishes' as const, label: tr(lang, 'Блюда', 'Dishes', 'Taomlar') },
+                  { id: 'products' as const, label: tr(lang, 'Продукты', 'Products', 'Mahsulotlar') },
+                ]).map(v => (
+                  <button key={v.id} onClick={() => setView(v.id)}
+                    className={`px-2.5 py-0.5 rounded-[5px] text-[10px] font-semibold normal-case tracking-normal transition-colors ${view === v.id ? 'bg-primary text-white' : 'text-muted hover:text-text'}`}>
+                    {v.label}
+                  </button>
+                ))}
+              </span>
+            )}
+          </span>
+        }
         action={
           <div className="flex items-center gap-2">
             <div className="relative flex items-center gap-px border border-border rounded-xl overflow-visible bg-card">
@@ -1024,6 +1043,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
                 onClear={() => { setCustomRange(null); setRange('7days'); }}
               />
             </div>
+            {view === 'dishes' && <>
             <div ref={colsBtnRef} className="relative">
               <button onClick={() => setColsOpen(o => !o)}
                 className={`p-1.5 rounded-lg border transition-colors ${colsOpen ? 'border-primary text-primary' : 'border-border text-muted hover:text-text hover:bg-card-hover'}`}
@@ -1108,15 +1128,19 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
                 </div>
               )}
             </div>
+            </>}
           </div>
         }
       >
+        {view === 'products' ? (
+          <GoodsAbcBody lang={lang} range={range} customRange={customRange} />
+        ) : (
         <div className={`transition-opacity ${abcLoading ? 'opacity-40 pointer-events-none' : ''}`}>
         {/* Insight summary */}
         <div className="flex flex-wrap gap-3 mb-4 -mt-1">
           <div className="flex items-center gap-1.5 bg-success/8 border border-success/20 rounded-lg px-2.5 py-1.5">
             <span className="text-success text-[11px] font-bold">{aCount}</span>
-            <span className="text-[10px] text-muted">{ru ? 'блюд = 70% выручки' : isUz ? "taom = tushumning 70%" : 'dishes = 70% revenue'}</span>
+            <span className="text-[10px] text-muted">{ru ? 'блюд = 80% выручки' : isUz ? "taom = tushumning 80%" : 'dishes = 80% revenue'}</span>
           </div>
           <div className="flex items-center gap-1.5 bg-primary/8 border border-primary/20 rounded-lg px-2.5 py-1.5">
             <span className="text-primary text-[11px] font-bold">#1</span>
@@ -1342,6 +1366,7 @@ const AbcTable: React.FC<{ items: AbcRow[]; lang: Language; timeRange: string; i
           </button>
         )}
         </div>
+        )}
       </Card>
     </>
   );
@@ -1398,9 +1423,7 @@ function buildMatrixItems(items: AbcRow[]): MatrixItem[] {
 // Which products eat the food-cost budget. iiko only: the card stays hidden
 // when the backend returns null (Poster, or iiko's report unavailable).
 
-const GoodsAbcCard: React.FC<{ lang: Language; timeRange: string }> = ({ lang, timeRange }) => {
-  type R = 'today' | '7days' | '30days';
-  const [range, setRange] = useState<R>((['today', '7days', '30days'] as const).includes(timeRange as any) ? timeRange as R : '30days');
+const GoodsAbcBody: React.FC<{ lang: Language; range: 'today' | '7days' | '30days' | 'custom'; customRange: { from: string; to: string } | null }> = ({ lang, range, customRange }) => {
   const [rows, setRows] = useState<GoodsAbcRow[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -1410,10 +1433,13 @@ const GoodsAbcCard: React.FC<{ lang: Language; timeRange: string }> = ({ lang, t
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    traceApi.sales.abcGoods(range).then(d => { if (alive) setRows(d); }).catch(() => { if (alive) setRows(null); })
+    const req = range === 'custom' && customRange
+      ? traceApi.sales.abcGoods('custom', customRange.from, customRange.to)
+      : traceApi.sales.abcGoods(range === 'custom' ? '30days' : range);
+    req.then(d => { if (alive) setRows(d); }).catch(() => { if (alive) setRows(null); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [range]);
+  }, [range, customRange]);
 
   const list = useMemo(() => {
     let l = rows ?? [];
@@ -1422,24 +1448,14 @@ const GoodsAbcCard: React.FC<{ lang: Language; timeRange: string }> = ({ lang, t
     return l;
   }, [rows, grade, query]);
 
-  if (!loading && !rows) return null;
+  if (!loading && !rows) {
+    return <div className="h-24 flex items-center justify-center text-[11px] text-muted">{tr(lang, 'Отчёт по продуктам из iiko сейчас недоступен', 'iiko\'s product report is unavailable right now', 'iiko mahsulot hisoboti hozir mavjud emas')}</div>;
+  }
   const fmtN = (n: number) => n.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
   const aShare = rows ? rows.filter(r => r.abcCost === 'A').reduce((s, r) => s + r.salesCostShare, 0) : 0;
 
   return (
-    <Card
-      title={tr(lang, 'Фудкост: ABC продуктов', 'Food cost: ingredient ABC', 'Food cost: mahsulotlar ABC')}
-      action={
-        <div className="flex items-center gap-px border border-border rounded-xl overflow-hidden bg-card">
-          {ABC_TIME_RANGES.map(({ key, ru: rRu, en, uz }) => (
-            <button key={key} onClick={() => setRange(key)}
-              className={`px-2.5 py-1 text-[10px] font-medium transition-colors ${range === key ? 'bg-primary text-white' : 'text-muted hover:text-text hover:bg-[#1a1a1a]'}`}>
-              {tr(lang, rRu, en, uz)}
-            </button>
-          ))}
-        </div>
-      }
-    >
+    <>
       <p className="text-[11px] text-muted mb-3">
         {tr(lang,
           'Сколько каждый продукт стоил в проданных блюдах — как отчёт iiko «ABC/XYZ анализ товаров».',
@@ -1507,7 +1523,7 @@ const GoodsAbcCard: React.FC<{ lang: Language; timeRange: string }> = ({ lang, t
           {tr(lang, `Показать ещё (${list.length - page})`, `Show more (${list.length - page})`, `Ko'proq ko'rsat (${list.length - page})`)}
         </button>
       )}
-    </Card>
+    </>
   );
 };
 
@@ -2295,11 +2311,6 @@ export const Sales: React.FC<{ lang: Language; onShowToast?: (msg: string, type:
       {/* ── ABC ANALYSIS ── */}
       {abcItems.length > 0 && (
         <AbcTable items={abcItems} lang={lang} timeRange={timeRange} isBasePlan={isBasePlan} />
-      )}
-
-      {/* ── INGREDIENT ABC (iiko food cost) ── */}
-      {abcItems.length > 0 && abcItems[0]?.source !== 'poster' && (
-        <GoodsAbcCard lang={lang} timeRange={timeRange} />
       )}
 
       {/* ── MENU ENGINEERING MATRIX ── */}

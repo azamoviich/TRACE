@@ -1,13 +1,15 @@
+// Plan vs actual for the last 12 months; clicking a month opens it.
+// Redesigned per TRACE-mockups/plan.html (styles/rd/plan.css).
 import React, { useEffect, useState } from 'react';
-import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Language } from '../../../types';
 import { tr } from '../../../constants';
-import { Card } from '../../ui/Card';
-import { ChartTooltip } from '../../ui/ChartTooltip';
 import { traceApi, PlanHistoryRow } from '../../../services/traceApi';
-import { money, full, pct, monthName, statusColor } from './format';
+import { full, pct, monthName } from './format';
 
-// Plan vs actual for the last 12 months; clicking a month opens it.
+const M = (n: number) => (Math.round(n / 1e5) / 10).toLocaleString('ru-RU');
+import { LineChart } from '../../rd/ui';
+import { tone } from './PlanProgress';
+
 export const PlanHistory: React.FC<{ lang: Language; selected: string; onSelect: (month: string) => void; reloadKey?: unknown }> = ({ lang, selected, onSelect, reloadKey }) => {
   const [rows, setRows] = useState<PlanHistoryRow[] | null>(null);
 
@@ -17,67 +19,41 @@ export const PlanHistory: React.FC<{ lang: Language; selected: string; onSelect:
     return () => { alive = false; };
   }, [reloadKey]);
 
-  if (rows === null) return <div className="glass rounded-3xl p-5"><div className="h-52 bg-border/50 rounded-xl animate-pulse" /></div>;
+  if (rows === null) return <section className="band"><div className="sk w9" /><div className="sk w7" /></section>;
   if (!rows.some(r => r.fact.revenue > 0 || r.plan)) return null;
 
-  const data = rows.map(r => ({
-    month: r.month,
-    label: monthName(r.month, lang).slice(0, 3),
-    fact: r.fact.revenue,
-    plan: r.plan?.revenue ?? null,
-  }));
-  const axis = (v: number) => (v >= 1e9 ? `${(v / 1e9).toFixed(1)}B` : v >= 1e6 ? `${Math.round(v / 1e6)}M` : full(v));
   const withPlan = rows.filter(r => r.pct != null);
   const hit = withPlan.filter(r => (r.pct ?? 0) >= 100).length;
 
   return (
-    <Card
-      title={tr(lang, 'История: план и факт', 'History: plan vs actual', 'Tarix: reja va fakt')}
-      subtitle={withPlan.length
-        ? tr(lang, `План выполнен в ${hit} из ${withPlan.length} мес.`, `Plan hit in ${hit} of ${withPlan.length} months`, `Reja ${withPlan.length} oydan ${hit} tasida bajarildi`)
-        : tr(lang, 'Выручка по месяцам', 'Revenue by month', 'Oylar bo‘yicha tushum')}
-    >
-      <div className="h-[220px] -ml-2">
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }} onClick={(e: any) => { const m = e?.activePayload?.[0]?.payload?.month; if (m) onSelect(m); }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--color-border))" vertical={false} />
-            <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'rgb(var(--color-muted))' }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 11, fill: 'rgb(var(--color-muted))' }} axisLine={false} tickLine={false} width={52} tickFormatter={axis} />
-            <Tooltip content={<ChartTooltip valueFormatter={v => money(v, lang)} />} cursor={{ fill: 'rgb(var(--color-border) / 0.3)' }} />
-            <Bar dataKey="fact" name={tr(lang, 'Факт', 'Actual', 'Fakt')} fill="rgb(var(--color-primary))" radius={[4, 4, 0, 0]} maxBarSize={28} style={{ cursor: 'pointer' }} />
-            <Line type="monotone" dataKey="plan" name={tr(lang, 'План', 'Plan', 'Reja')} stroke="rgb(var(--color-text))" strokeWidth={1.5} strokeDasharray="5 4" dot={{ r: 3 }} connectNulls={false} />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
-
-      <div className="overflow-x-auto -mx-1 mt-4">
-        <table className="w-full min-w-[600px] text-left">
-          <thead>
-            <tr className="border-b border-border">
-              {[tr(lang, 'Месяц', 'Month', 'Oy'), tr(lang, 'План', 'Plan', 'Reja'), tr(lang, 'Факт', 'Actual', 'Fakt'), '%', tr(lang, 'Ср. чек', 'Avg check', 'O‘rt. chek'), tr(lang, 'Фудкост', 'Food cost', 'Tannarx'), tr(lang, 'Прибыль', 'Profit', 'Foyda')].map((h, i) => (
-                <th key={h} className={`pb-2.5 px-1 text-[10px] uppercase tracking-[0.12em] text-muted font-medium ${i > 0 ? 'text-right' : ''}`}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {[...rows].reverse().map(r => (
-              <tr
-                key={r.month}
-                onClick={() => onSelect(r.month)}
-                className={`border-b border-border/50 last:border-0 cursor-pointer hover:bg-card-hover/60 transition-colors ${r.month === selected ? 'bg-primary/5' : ''}`}
-              >
-                <td className="py-2 px-1 text-[12px] text-text">{monthName(r.month, lang)} {r.month.slice(2, 4)}{r.partial && <span className="text-muted"> · {tr(lang, 'идёт', 'running', 'davom etmoqda')}</span>}</td>
-                <td className="py-2 px-1 text-[12px] font-mono text-right text-muted">{r.plan ? money(r.plan.revenue, lang) : '—'}</td>
-                <td className="py-2 px-1 text-[12px] font-mono text-right text-text">{r.fact.revenue > 0 ? money(r.fact.revenue, lang) : '—'}</td>
-                <td className={`py-2 px-1 text-[12px] font-mono text-right ${statusColor(r.pct)}`}>{pct(r.pct)}</td>
-                <td className="py-2 px-1 text-[12px] font-mono text-right text-text">{r.fact.avgCheck > 0 ? full(r.fact.avgCheck) : '—'}</td>
-                <td className="py-2 px-1 text-[12px] font-mono text-right text-text">{pct(r.fact.foodCostPct)}</td>
-                <td className={`py-2 px-1 text-[12px] font-mono text-right ${r.fact.netProfit == null ? 'text-muted' : r.fact.netProfit >= 0 ? 'text-text' : 'text-danger'}`}>{r.fact.netProfit == null ? '—' : money(r.fact.netProfit, lang)}</td>
+    <section className="band rise" aria-labelledby="h-hist" style={{ animationDelay: '.12s' }}>
+      <div className="sec-head"><h2 id="h-hist">{tr(lang, 'История: план и факт', 'History: plan vs actual', 'Tarix: reja va fakt')}</h2>
+        <span className="sec-note">{tr(lang, 'млн сум · ', 'M UZS · ', "mln so'm · ")}{withPlan.length ? tr(lang, `План выполнен в ${hit} из ${withPlan.length} мес.`, `Plan hit in ${hit} of ${withPlan.length} months`, `Reja ${withPlan.length} oydan ${hit} tasida bajarildi`) : tr(lang, 'Выручка по месяцам', 'Revenue by month', "Oylar bo'yicha tushum")}</span></div>
+      <div className="two-col">
+        <div className="card-ph">
+          <LineChart bars labels={rows.map(r => monthName(r.month, lang).slice(0, 3).toLowerCase())}
+            cur={rows.map(r => r.fact.revenue > 0 ? r.fact.revenue / 1e6 : null)} base={rows.map(r => r.plan ? r.plan.revenue / 1e6 : null)}
+            curName={tr(lang, 'Факт', 'Actual', 'Fakt')} baseName={tr(lang, 'План', 'Plan', 'Reja')} height={240}
+            tip={v => `${(Math.round(v * 10) / 10).toLocaleString('ru-RU')} ${tr(lang, 'млн', 'M', 'mln')}`} />
+          <div className="key"><span><i className="bar" />{tr(lang, 'Факт', 'Actual', 'Fakt')}</span><span><i className="p" />{tr(lang, 'План', 'Plan', 'Reja')}</span></div>
+        </div>
+        <div className="card-ph">
+          <table className="dt">
+            <thead><tr><th>{tr(lang, 'Месяц', 'Month', 'Oy')}</th><th className="r hide-sm">{tr(lang, 'План', 'Plan', 'Reja')}</th><th className="r">{tr(lang, 'Факт', 'Actual', 'Fakt')}</th><th className="r">%</th><th className="r hide-sm">{tr(lang, 'Ср. чек', 'Avg check', "O'rt. chek")}</th><th className="r hide-sm">{tr(lang, 'Фудкост', 'Food cost', 'Fudkost')}</th><th className="r">{tr(lang, 'Прибыль', 'Profit', 'Foyda')}</th></tr></thead>
+            <tbody>{[...rows].reverse().map(r => (
+              <tr key={r.month} className={`click${r.month === selected ? ' sel' : ''}`} tabIndex={0} onClick={() => onSelect(r.month)} onKeyDown={e => { if (e.key === 'Enter') onSelect(r.month); }}>
+                <td>{monthName(r.month, lang)} {r.month.slice(2, 4)}{r.partial && <span className="faint"> · {tr(lang, 'идёт', 'running', 'davom etmoqda')}</span>}</td>
+                <td className="r hide-sm muted">{r.plan ? M(r.plan.revenue) : '—'}</td>
+                <td className="r">{r.fact.revenue > 0 ? M(r.fact.revenue) : '—'}</td>
+                <td className={`r ${tone(r.pct)}`}>{pct(r.pct)}</td>
+                <td className="r hide-sm">{r.fact.avgCheck > 0 ? full(r.fact.avgCheck) : '—'}</td>
+                <td className="r hide-sm">{pct(r.fact.foodCostPct)}</td>
+                <td className={`r ${r.fact.netProfit != null && r.fact.netProfit < 0 ? 'neg' : ''}`}>{r.fact.netProfit == null ? '—' : M(r.fact.netProfit)}</td>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            ))}</tbody>
+          </table>
+        </div>
       </div>
-    </Card>
+    </section>
   );
 };

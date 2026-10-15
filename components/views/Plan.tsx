@@ -11,7 +11,7 @@ import { PlanEditor, EditorStep } from './plan/PlanEditor';
 import { PlanProgress } from './plan/PlanProgress';
 import { DrilldownDrawer } from './plan/DrilldownDrawer';
 import { PlanHistory } from './plan/PlanHistory';
-import { WarningList } from './plan/Warnings';
+import { warningText } from './plan/Warnings';
 import { money, pct, monthLabel, monthName, full } from './plan/format';
 
 const REFRESH_MS = 5 * 60 * 1000;
@@ -114,66 +114,54 @@ export const Plan: React.FC<Props> = ({ lang, onShowToast, onContextReady }) => 
 
   const plan = state.kind === 'ready' ? state.plan : null;
 
+  const sub = !plan ? (state.kind === 'empty' ? tr(lang, 'Плана на этот месяц ещё нет', 'No plan for this month yet', "Bu oy uchun reja hali yo'q") : '')
+    : month === currentMonth ? null
+    : month < currentMonth ? tr(lang, 'Месяц закрыт, цифры из учёта iiko', 'Month closed, figures from iiko books', "Oy yopilgan, iiko hisobidan raqamlar")
+    : tr(lang, 'Месяц ещё не начался', 'The month has not started', 'Oy hali boshlanmagan');
+
   return (
-    <div className="space-y-5 animate-fade-in pb-24">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
-          <h1 className="font-display text-[22px] font-bold text-text tracking-tight">{tr(lang, 'План и факт', 'Plan vs actual', 'Reja va fakt')}</h1>
-          {plan && (
-            <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-[0.08em] ${plan.status === 'active' ? 'bg-success/10 text-success' : 'bg-amber-500/10 text-amber-500'}`}>
-              {plan.status === 'active' ? tr(lang, 'Утверждён', 'Approved', 'Tasdiqlangan') : tr(lang, 'Черновик', 'Draft', 'Qoralama')}
-            </span>
-          )}
+    <>
+      <div className="page-head rise">
+        <div>
+          <div className="h-row"><h1>{tr(lang, 'План и факт', 'Plan vs actual', 'Reja va fakt')}</h1>
+            {plan && <span className={`tag ${plan.status === 'active' ? 'ok' : 'draft'}`}>{plan.status === 'active' ? tr(lang, 'Утверждён', 'Approved', 'Tasdiqlangan') : tr(lang, 'Черновик', 'Draft', 'Qoralama')}</span>}</div>
+          <div className="sub">
+            {sub ?? (state.kind === 'ready' && <>
+              <button className={`refresh${refreshing ? ' spin' : ''}`} type="button" onClick={() => load(month, true)} disabled={refreshing}>
+                <i className="ph ph-arrows-clockwise" aria-hidden="true" />{updatedAt ? `${tr(lang, 'Обновлено в', 'Updated at', 'Yangilandi')} ${updatedAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}` : tr(lang, 'Обновить', 'Refresh', 'Yangilash')}
+              </button>
+              <span className="faint">{tr(lang, 'Цифры iiko подтягиваются каждые 5 минут', 'iiko figures refresh every 5 minutes', "iiko raqamlari har 5 daqiqada yangilanadi")}</span>
+            </>)}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {state.kind !== 'unsupported' && (
-            <div className="flex items-center border border-border rounded-xl bg-card overflow-hidden">
-              <button onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Previous month" className="p-2 text-muted hover:text-text hover:bg-card-hover transition-colors"><ChevronLeft size={15} /></button>
-              <span className="px-2 text-[13px] font-medium text-text min-w-[120px] text-center">{monthLabel(month, lang)}</span>
-              <button onClick={() => setMonth(shiftMonth(month, 1))} aria-label="Next month" className="p-2 text-muted hover:text-text hover:bg-card-hover transition-colors"><ChevronRight size={15} /></button>
+        {state.kind !== 'unsupported' && (
+          <div className="seg-wrap"><div className="head-act">
+            <div className="mon">
+              <button type="button" onClick={() => setMonth(shiftMonth(month, -1))} aria-label={tr(lang, 'Предыдущий месяц', 'Previous month', 'Oldingi oy')}><i className="ph ph-caret-left" aria-hidden="true" /></button>
+              <span>{monthLabel(month, lang)}</span>
+              <button type="button" onClick={() => setMonth(shiftMonth(month, 1))} aria-label={tr(lang, 'Следующий месяц', 'Next month', 'Keyingi oy')}><i className="ph ph-caret-right" aria-hidden="true" /></button>
             </div>
-          )}
-          {plan && (
-            <button onClick={() => openEditor({})} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-medium border border-border bg-card text-text hover:bg-card-hover transition-colors">
-              <Pencil size={13} /><span className="hidden sm:inline">{tr(lang, 'Изменить план', 'Edit plan', 'Rejani o‘zgartirish')}</span>
-            </button>
-          )}
-        </div>
+            {plan && <button className="btn" type="button" onClick={() => openEditor({})}><i className="ph ph-pencil-simple" aria-hidden="true" /><span>{tr(lang, 'Изменить план', 'Edit plan', "Rejani o'zgartirish")}</span></button>}
+          </div></div>
+        )}
       </div>
 
-      {state.kind === 'ready' && (
-        <div className="flex items-center gap-2 text-[11px] text-muted -mt-2">
-          <button onClick={() => load(month, true)} disabled={refreshing} className="flex items-center gap-1 hover:text-text transition-colors disabled:opacity-50">
-            <RefreshCw size={11} className={refreshing ? 'animate-spin' : ''} />
-            {updatedAt ? `${tr(lang, 'Обновлено', 'Updated', 'Yangilandi')} ${updatedAt.toLocaleTimeString(lang === 'en' ? 'en-GB' : 'ru-RU', { hour: '2-digit', minute: '2-digit' })}` : ''}
-          </button>
-          {month === currentMonth && <span>· {tr(lang, 'обновляется каждые 5 минут', 'refreshes every 5 minutes', 'har 5 daqiqada yangilanadi')}</span>}
-        </div>
-      )}
-
-      {state.kind === 'loading' && <LoadingSkeleton />}
-
-      {state.kind === 'unsupported' && <Unsupported lang={lang} reason={state.reason} />}
-
-      {state.kind === 'error' && (
-        <Card>
-          <p className="text-[13px] text-text mb-1">{tr(lang, 'Не удалось загрузить данные из iiko', 'Could not load data from iiko', 'iiko’dan ma’lumot yuklab bo‘lmadi')}</p>
-          <p className="text-[11px] text-muted mb-3 font-mono">{state.message}</p>
-          <button onClick={() => load(month)} className="px-3 py-2 rounded-xl text-[12px] font-medium border border-border hover:bg-card-hover">{tr(lang, 'Повторить', 'Retry', 'Qayta urinish')}</button>
-        </Card>
-      )}
-
-      {state.kind === 'empty' && (
-        <SuggestionCard
-          lang={lang} month={month} suggestion={state.suggestion} accepting={accepting}
-          onAccept={acceptSuggestion}
-          onTune={() => openEditor({ step: 0 })}
-          onManual={() => openEditor({ manual: true })}
-        />
-      )}
-
-      {state.kind === 'ready' && <PlanProgress lang={lang} plan={state.plan} progress={state.progress} variance={state.variance} onDrill={setDrill} />}
+      <div className="rise" style={{ animationDelay: '.06s' }}>
+        {state.kind === 'loading' && <div className="hero"><div><div className="sk w5" /><div className="sk w7" style={{ height: 40 }} /><div className="sk w9" /></div><div><div className="sk w7" /><div className="sk w5" /></div></div>}
+        {state.kind === 'unsupported' && <Unsupported lang={lang} reason={state.reason} />}
+        {state.kind === 'error' && (
+          <div className="sugg-card">
+            <h2>{tr(lang, 'Не удалось загрузить данные из iiko', 'Could not load data from iiko', "iiko'dan ma'lumot yuklab bo'lmadi")}</h2>
+            <p className="exp mono">{state.message}</p>
+            <div className="acts"><button className="btn" type="button" onClick={() => load(month)}>{tr(lang, 'Повторить', 'Retry', 'Qayta urinish')}</button></div>
+          </div>
+        )}
+        {state.kind === 'empty' && (
+          <SuggestionCard lang={lang} month={month} suggestion={state.suggestion} accepting={accepting}
+            onAccept={acceptSuggestion} onTune={() => openEditor({ step: 0 })} onManual={() => openEditor({ manual: true })} />
+        )}
+        {state.kind === 'ready' && <PlanProgress lang={lang} plan={state.plan} progress={state.progress} variance={state.variance} onDrill={setDrill} />}
+      </div>
 
       {(state.kind === 'ready' || state.kind === 'empty') && (
         <>
@@ -194,7 +182,7 @@ export const Plan: React.FC<Props> = ({ lang, onShowToast, onContextReady }) => 
           onShowToast={onShowToast}
         />
       )}
-    </div>
+    </>
   );
 };
 
@@ -206,14 +194,11 @@ const SuggestionCard: React.FC<{
 }> = ({ lang, month, suggestion: s, accepting, onAccept, onTune, onManual }) => {
   if (!s) {
     return (
-      <Card>
-        <div className="flex flex-col items-center text-center py-8 gap-3">
-          <Target size={28} className="text-muted/50" />
-          <p className="text-[14px] font-semibold text-text">{tr(lang, 'Плана на этот месяц нет', 'No plan for this month', 'Bu oy uchun reja yo‘q')}</p>
-          <p className="text-[12px] text-muted max-w-sm">{tr(lang, 'Не удалось собрать историю продаж из iiko для автоплана. Введите свой план — всё остальное TRACE посчитает сам.', 'Could not pull sales history from iiko for an automatic plan. Enter your own plan and TRACE will do the rest.', 'Avtomatik reja uchun iiko’dan savdo tarixini olib bo‘lmadi. O‘z rejangizni kiriting — qolganini TRACE hisoblaydi.')}</p>
-          <button onClick={onManual} className="mt-2 flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-semibold bg-primary text-white hover:bg-primary-hover"><PenLine size={14} />{tr(lang, 'Ввести свой план', 'Enter my own plan', 'O‘z rejamni kiritish')}</button>
-        </div>
-      </Card>
+      <section className="sugg-card" aria-labelledby="h-sugg">
+        <h2 id="h-sugg">{tr(lang, 'Плана на этот месяц нет', 'No plan for this month', "Bu oy uchun reja yo'q")}</h2>
+        <p className="exp">{tr(lang, 'Не удалось собрать историю продаж из iiko для автоплана. Введите свой план, остальное TRACE посчитает сам.', 'Could not pull sales history from iiko for an automatic plan. Enter your own plan and TRACE will do the rest.', "Avtomatik reja uchun iiko'dan savdo tarixini olib bo'lmadi. O'z rejangizni kiriting.")}</p>
+        <div className="acts"><button className="btn solid" type="button" onClick={onManual}><i className="ph ph-pencil-simple-line" aria-hidden="true" />{tr(lang, 'Ввести свой план', 'Enter my own plan', "O'z rejamni kiritish")}</button></div>
+      </section>
     );
   }
 
@@ -238,41 +223,21 @@ const SuggestionCard: React.FC<{
   ];
 
   return (
-    <Card>
-      <div className="flex items-start gap-3 mb-4">
-        <div className="p-2 rounded-xl bg-primary/10 text-primary flex-shrink-0"><Sparkles size={18} /></div>
-        <div>
-          <h2 className="text-[16px] font-semibold text-text tracking-tight">
-            {tr(lang, `Мы подготовили план на ${monthName(month, lang).toLowerCase()}`, `We prepared a plan for ${monthName(month, lang)}`, `${monthName(month, lang)} uchun reja tayyorladik`)}
-          </h2>
-          <p className="text-[12px] text-muted mt-0.5">{explanation}</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
+    <section className="sugg-card" aria-labelledby="h-sugg">
+      <h2 id="h-sugg">{tr(lang, `Мы подготовили план на ${monthName(month, lang).toLowerCase()}`, `We prepared a plan for ${monthName(month, lang)}`, `${monthName(month, lang)} uchun reja tayyorladik`)}</h2>
+      <p className="exp">{explanation}</p>
+      <div className="tiles">
         {tiles.map(t => (
-          <div key={t.label} className="rounded-2xl bg-background border border-border p-3">
-            <p className="text-[10px] uppercase tracking-[0.14em] text-muted font-medium mb-1">{t.label}</p>
-            <p className={`text-[17px] font-bold font-mono ${t.tone ?? 'text-text'}`}>{t.value}</p>
-            {t.sub && <p className="text-[11px] text-muted">{t.sub}</p>}
-          </div>
+          <div key={t.label}><div className="s-l">{t.label}</div><div className={`s-v${t.tone === 'text-success' ? ' pos' : t.tone === 'text-danger' ? ' neg' : ''}`}>{t.value}</div>{t.sub && <div className="s-d">{t.sub}</div>}</div>
         ))}
       </div>
-
-      <div className="mb-5"><WarningList lang={lang} warnings={s.warnings} /></div>
-
-      <div className="flex flex-wrap gap-2">
-        <button onClick={() => onAccept(s)} disabled={accepting} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-semibold bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-50">
-          <Check size={15} />{tr(lang, 'Принять план', 'Accept plan', 'Rejani qabul qilish')}
-        </button>
-        <button onClick={onTune} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-medium border border-border text-text hover:bg-card-hover transition-colors">
-          <Pencil size={14} />{tr(lang, 'Настроить', 'Adjust', 'Sozlash')}
-        </button>
-        <button onClick={onManual} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-medium text-muted hover:text-text hover:bg-card-hover transition-colors">
-          <PenLine size={14} />{tr(lang, 'Ввести свой план', 'Enter my own plan', 'O‘z rejamni kiritish')}
-        </button>
+      {s.warnings?.length > 0 && <ul className="warns">{s.warnings.map((w, i) => <li key={i}><i className="ph ph-warning" aria-hidden="true" /><span>{warningText(w, lang)}</span></li>)}</ul>}
+      <div className="acts">
+        <button className="btn solid" type="button" onClick={() => onAccept(s)} disabled={accepting}><i className="ph ph-check" aria-hidden="true" />{tr(lang, 'Принять план', 'Accept plan', 'Rejani qabul qilish')}</button>
+        <button className="btn" type="button" onClick={onTune}><i className="ph ph-sliders-horizontal" aria-hidden="true" />{tr(lang, 'Настроить', 'Adjust', 'Sozlash')}</button>
+        <button className="btn" type="button" onClick={onManual}><i className="ph ph-pencil-simple-line" aria-hidden="true" />{tr(lang, 'Ввести свой план', 'Enter my own plan', "O'z rejamni kiritish")}</button>
       </div>
-    </Card>
+    </section>
   );
 };
 
@@ -291,27 +256,13 @@ const TelegramToggle: React.FC<{ lang: Language; onShowToast?: Props['onShowToas
   };
 
   return (
-    <div className="glass rounded-3xl p-4 flex items-center gap-3">
-      <div className="p-2 rounded-xl bg-secondary/10 text-secondary flex-shrink-0"><Send size={16} /></div>
-      <div className="flex-1 min-w-0">
-        <p className="text-[13px] font-semibold text-text">{tr(lang, 'Утренняя сводка в Telegram', 'Morning summary in Telegram', 'Telegram’da ertalabki xulosa')}</p>
-        <p className="text-[11px] text-muted">
-          {s.telegramConnected
-            ? tr(lang, 'Каждый день в 9:00: вчера, темп месяца, прогноз, сколько нужно сегодня и предупреждение, если план под угрозой.', 'Every day at 9:00: yesterday, month pace, forecast, today’s target and a warning if the plan is at risk.', 'Har kuni 9:00 da: kecha, oy sur’ati, prognoz, bugungi maqsad va reja xavf ostida bo‘lsa ogohlantirish.')
-            : tr(lang, 'Подключите Telegram в Настройках → Отчёты, чтобы получать сводку по плану каждое утро.', 'Connect Telegram in Settings → Reports to get the plan summary every morning.', 'Har kuni ertalab reja xulosasini olish uchun Sozlamalar → Hisobotlar’da Telegram’ni ulang.')}
-        </p>
-      </div>
-      {s.telegramConnected && (
-        <button
-          role="switch"
-          aria-checked={s.telegramDaily}
-          onClick={toggle}
-          disabled={saving}
-          className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${s.telegramDaily ? 'bg-primary' : 'bg-border'}`}
-        >
-          <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${s.telegramDaily ? 'translate-x-5' : ''}`} />
-        </button>
-      )}
+    <div className="tg rise" style={{ animationDelay: '.1s' }}>
+      <i className="ph ph-telegram-logo" aria-hidden="true" />
+      <div><b>{tr(lang, 'Утренняя сводка в Telegram', 'Morning summary in Telegram', "Telegram'da ertalabki xulosa")}</b>
+        <p>{s.telegramConnected
+          ? tr(lang, 'Каждый день в 9:00: вчера, темп месяца, прогноз, сколько нужно сегодня, и предупреждение, если план под угрозой.', "Every day at 9:00: yesterday, month pace, forecast, today's target and a warning if the plan is at risk.", "Har kuni 9:00 da: kecha, oy sur'ati, prognoz, bugungi maqsad.")
+          : tr(lang, 'Подключите Telegram в Настройках → Отчёты, чтобы получать сводку каждое утро.', 'Connect Telegram in Settings → Reports to get the summary every morning.', "Sozlamalar → Hisobotlar'da Telegram'ni ulang.")}</p></div>
+      {s.telegramConnected && <button className="sw" role="switch" aria-checked={s.telegramDaily} onClick={toggle} disabled={saving} aria-label={tr(lang, 'Утренняя сводка в Telegram', 'Morning summary in Telegram', 'Ertalabki xulosa')} />}
     </div>
   );
 };
@@ -324,22 +275,6 @@ const Unsupported: React.FC<{ lang: Language; reason: PlanUnsupportedReason }> =
       : reason === 'no_credentials'
         ? tr(lang, 'Подключите iiko, чтобы строить план по реальным продажам.', 'Connect iiko to build plans from real sales.', 'Haqiqiy savdo bo‘yicha reja tuzish uchun iiko’ni ulang.')
         : tr(lang, 'План и факт пока работает только с iiko.', 'Plan vs actual works with iiko only for now.', 'Reja va fakt hozircha faqat iiko bilan ishlaydi.');
-  return (
-    <Card>
-      <div className="flex flex-col items-center text-center py-10 gap-3">
-        <Target size={28} className="text-muted/50" />
-        <p className="text-[13px] text-muted max-w-md">{text}</p>
-      </div>
-    </Card>
-  );
+  return <section className="sugg-card"><p className="exp" style={{ margin: 0 }}>{text}</p></section>;
 };
 
-const LoadingSkeleton: React.FC = () => (
-  <div className="space-y-5">
-    <div className="glass rounded-3xl p-5"><div className="h-28 bg-border/50 rounded-xl animate-pulse" /></div>
-    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-      {[0, 1, 2, 3, 4, 5].map(i => <div key={i} className="glass rounded-3xl p-4"><div className="h-14 bg-border/50 rounded-lg animate-pulse" /></div>)}
-    </div>
-    <div className="glass rounded-3xl p-5"><div className="h-60 bg-border/50 rounded-xl animate-pulse" /></div>
-  </div>
-);

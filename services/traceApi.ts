@@ -297,6 +297,19 @@ function demoGuestReturn(lang: Language) {
   };
 }
 
+function demoHeatmap(): HeatmapResult {
+  // Breakfast bump, lunch, big evening peak; weekends busier.
+  const shape = [0, 0, 0, 0, 0, 0, 0, 0, .35, .55, .7, .62, .78, .82, .6, .42, .38, .5, .78, .95, 1, .86, .55, .25];
+  const dayK = [.82, .8, .84, .88, 1, 1.22, 1.12];
+  const cells: HeatmapResult['cells'] = [];
+  for (let dow = 0; dow < 7; dow++) for (let hour = 8; hour < 24; hour++) {
+    const wobble = 1 + (((dow * 31 + hour * 17) % 11) - 5) / 60;
+    const revenue = Math.round(5_200_000 * shape[hour] * dayK[dow] * wobble / 1000) * 1000;
+    cells.push({ dow, hour, revenue, orders: Math.round(revenue / 108_000 * 10) / 10 });
+  }
+  return { from: '', to: '', days: 28, cells };
+}
+
 function demoPriceElasticity(lang: Language) {
   const uz = lang === 'uz';
   const en = lang === 'en';
@@ -1658,6 +1671,9 @@ export const traceApi = {
         : `range=${range}`;
       return apiFetch(`/sales/real-guest-revenue?${q}`).then(r => r.json()).catch(() => ({ available: false }));
     },
+    // Average revenue per weekday (Mon=0) × hour, last N closed days.
+    heatmap: (days = 28): Promise<HeatmapResult> =>
+      isDemoTenant() ? Promise.resolve(demoHeatmap()) : apiFetch(`/sales/heatmap?days=${days}`).then(r => { if (!r.ok) throw new Error('heatmap'); return r.json(); }),
     hourly: (date?: string): Promise<HourlyRow[]> =>
       isDemoTenant() ? Promise.resolve(demoHourly()) : apiFetch(`/sales/hourly${date ? `?date=${date}` : ''}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     topDishes: (range: 'today' | '7days' | '30days' | 'custom', limit = 10, customFrom?: string, customTo?: string): Promise<DishRow[]> => {
@@ -2548,6 +2564,13 @@ export interface RevenueRow {
 // This picks which one drives the Dashboard headline number.
 export type RevenueType = 'net' | 'gross' | 'food_only' | 'cash' | 'card' | 'excl_comp'
   | 'gl_kitchen' | 'gl_bar' | 'gl_pastry' | 'gl_service_charge' | 'gl_transfers' | 'gl_other_income' | 'gl_no_discount';
+
+export interface HeatmapResult {
+  from: string;
+  to: string;
+  days: number;
+  cells: { dow: number; hour: number; revenue: number; orders: number }[];
+}
 
 export interface HourlyRow {
   hour: number;

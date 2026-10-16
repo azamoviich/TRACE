@@ -623,6 +623,14 @@ function SmartAlerts({ lang, pluginConnected }: { lang: Language; pluginConnecte
 // Deletions per waiter today, straight from plugin order_before_delete events.
 // High counts = mistakes or unauthorized voids — theft-control signal.
 
+// iiko events journal: written off or not, or removed before printing.
+function voidWoLabel(lang: Language, e: VoidEvent) {
+  return e.unprinted ? tr(lang, 'до печати', 'before printing', 'chop etishdan oldin')
+    : e.writeoff === 'with' ? tr(lang, 'со списанием', 'written off', 'hisobdan chiqarilgan')
+    : e.writeoff === 'without' ? tr(lang, 'без списания', 'not written off', 'hisobdan chiqarilmagan')
+    : e.writeoff === 'mixed' ? tr(lang, 'частично списано', 'partly written off', 'qisman chiqarilgan') : '';
+}
+
 function VoidDetailModal({ event, lang, onClose }: { event: VoidEvent; lang: Language; onClose: () => void }) {
   const ru = lang === 'ru';
   const isUz = lang === 'uz';
@@ -641,7 +649,7 @@ function VoidDetailModal({ event, lang, onClose }: { event: VoidEvent; lang: Lan
             <h2 className="font-display text-[15px] font-bold text-text">
               {event.type === 'order_before_delete'
                 ? tr(lang, 'Заказ удалён', 'Order deleted', 'Buyurtma oʻchirildi')
-                : tr(lang, 'Позиции сняты', 'Items voided', 'Pozitsiyalar olib tashlandi')}
+                : tr(lang, 'Блюда удалены из заказа', 'Dishes removed from the order', "Buyurtmadan taomlar o'chirildi")}
             </h2>
             <p className="text-[11px] text-muted mt-0.5">
               {event.orderNum ? `#${event.orderNum}` : ''}{event.table ? ` · ${event.table}` : ''} · {event.waiter}
@@ -663,6 +671,37 @@ function VoidDetailModal({ event, lang, onClose }: { event: VoidEvent; lang: Lan
               <span className="text-muted">{tr(lang, 'Сумма', 'Sum', 'Summa')}</span>
               <span className="text-danger font-bold metric-number">{event.sum.toLocaleString('ru-RU')} UZS</span>
             </div>
+          )}
+          {(event.unprinted || event.writeoff) && (
+            <div className="flex items-center justify-between text-[12px]">
+              <span className="text-muted">{tr(lang, 'Списание', 'Write-off', 'Hisobdan chiqarish')}</span>
+              <span className={`font-semibold ${event.writeoff === 'with' || event.writeoff === 'mixed' ? 'text-danger' : 'text-text'}`}>{voidWoLabel(lang, event)}</span>
+            </div>
+          )}
+          {event.reason && (
+            <div className="flex items-center justify-between text-[12px]">
+              <span className="text-muted">{tr(lang, 'Причина', 'Reason', 'Sabab')}</span>
+              <span className="text-text">{event.reason}</span>
+            </div>
+          )}
+          {event.comment && (
+            <div className="flex items-center justify-between gap-3 text-[12px]">
+              <span className="text-muted">{tr(lang, 'Комментарий', 'Comment', 'Izoh')}</span>
+              <span className="text-text text-right">{event.comment}</span>
+            </div>
+          )}
+          {event.authorizedBy && (
+            <div className="flex items-center justify-between text-[12px]">
+              <span className="text-muted">{tr(lang, 'Разрешил', 'Authorised by', 'Ruxsat bergan')}</span>
+              <span className="text-text">{event.authorizedBy}</span>
+            </div>
+          )}
+          {(event.unprinted || event.writeoff) && (
+            <p className="text-[11px] text-muted leading-relaxed">{event.unprinted
+              ? tr(lang, 'Сняли до печати: на кухню не ушло, продукты не списаны.', 'Removed before printing: nothing went to the kitchen, no stock written off.', "Chop etishdan oldin olib tashlandi: oshxonaga bormagan, mahsulot chiqarilmagan.")
+              : event.writeoff === 'without'
+              ? tr(lang, 'Без списания: продукты остались на складе.', 'Not written off: the stock stayed in the store.', "Hisobdan chiqarilmagan: mahsulot omborda qoldi.")
+              : tr(lang, 'Со списанием: продукты ушли со склада — это потеря себестоимости.', 'Written off: the ingredients left the store — a cost loss.', "Hisobdan chiqarilgan: mahsulot ombordan chiqdi — bu yo'qotish.")}</p>
           )}
           {event.items.length > 0 ? (
             <div className="pt-2 border-t border-border">
@@ -689,7 +728,7 @@ function VoidDetailModal({ event, lang, onClose }: { event: VoidEvent; lang: Lan
   );
 }
 
-function VoidTrackerCard({ lang, pluginConnected }: { lang: Language; pluginConnected: boolean }) {
+function VoidTrackerCard({ lang, pluginConnected, iikoTenant }: { lang: Language; pluginConnected: boolean; iikoTenant: boolean }) {
   const ru = lang === 'ru';
   const isUz = lang === 'uz';
   const [events, setEvents] = useState<VoidEvent[]>([]);
@@ -701,11 +740,12 @@ function VoidTrackerCard({ lang, pluginConnected }: { lang: Language; pluginConn
     // pluginConnected is always false for Poster, so the card never renders
     // (see the early return below); skip the fetch entirely rather than
     // polling for data that will always come back empty.
-    if (!pluginConnected) return;
+    // iiko: deletions come from iiko's events journal, so no plugin needed.
+    if (!pluginConnected && !iikoTenant) return;
     traceApi.operations.voidEvents().then(setEvents).catch(() => {});
     const id = setInterval(() => traceApi.operations.voidEvents().then(setEvents).catch(() => {}), 120_000);
     return () => clearInterval(id);
-  }, [pluginConnected]);
+  }, [pluginConnected, iikoTenant]);
 
   const byWaiter = useMemo(() => {
     const m = new Map<string, VoidEvent[]>();
@@ -717,7 +757,7 @@ function VoidTrackerCard({ lang, pluginConnected }: { lang: Language; pluginConn
     return Array.from(m.entries()).sort((a, b) => b[1].length - a[1].length);
   }, [events]);
 
-  if (!pluginConnected || events.length === 0) return null;
+  if ((!pluginConnected && !iikoTenant) || events.length === 0) return null;
 
   return (
     <>
@@ -766,6 +806,7 @@ function VoidTrackerCard({ lang, pluginConnected }: { lang: Language; pluginConn
                           {ev.table ? ` · ${ev.table}` : ''}
                           {ev.items.length > 0 ? ` · ${ev.items.length} ${tr(lang, 'поз.', 'items', 'pozitsiya')}` : ''}
                         </span>
+                        {(ev.unprinted || ev.writeoff) && <span className={`text-[10px] flex-shrink-0 ${ev.writeoff === 'with' || ev.writeoff === 'mixed' ? 'text-danger' : 'text-muted'}`}>{voidWoLabel(lang, ev)}</span>}
                         {ev.sum > 0 && <span className="text-[10px] text-danger metric-number flex-shrink-0">{ev.sum.toLocaleString('ru-RU')}</span>}
                         <span className="text-[10px] text-muted font-mono flex-shrink-0">
                           {new Date(ev.at).toLocaleTimeString(ru ? 'ru-RU' : 'en-US', { hour: '2-digit', minute: '2-digit' })}
@@ -778,7 +819,7 @@ function VoidTrackerCard({ lang, pluginConnected }: { lang: Language; pluginConn
             );
           })}
           <p className="text-[10px] text-muted pt-1 border-t border-border">
-            {ru ? 'Нажмите на официанта, затем на заказ — детали · iikoFront' : isUz ? "Ofitsiantni, so'ng buyurtmani bosing — tafsilotlar · iikoFront" : 'Tap a waiter, then an order — details · iikoFront'}
+            {ru ? 'Нажмите на официанта, затем на заказ — детали · журнал событий iiko' : isUz ? "Ofitsiantni, so'ng buyurtmani bosing — tafsilotlar · iiko voqealar jurnali" : "Tap a waiter, then an order — details · iiko events journal"}
           </p>
         </div>
       </Card>
@@ -2031,7 +2072,7 @@ export const Operations: React.FC<{
       />
 
       {/* ── VOID TRACKER ── */}
-      <VoidTrackerCard lang={lang} pluginConnected={pluginConnected} />
+      <VoidTrackerCard lang={lang} pluginConnected={pluginConnected} iikoTenant={!isPoster && !isAllBranches} />
 
       {/* ── AI INSIGHTS ── */}
       {isBasePlan ? (

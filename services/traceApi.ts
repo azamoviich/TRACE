@@ -2338,8 +2338,15 @@ export interface VoidEvent {
   table: string | null;
   orderNum: number | null;
   sum: number;
-  items: { name: string; quantity: number; sum?: number }[];
+  items: { name: string; quantity: number; sum?: number; writeoff?: 'with' | 'without' | null }[];
   at: string;
+  /** From iiko's events journal: was the food written off (cooked, a cost loss) or not. */
+  writeoff?: 'with' | 'without' | 'mixed' | null;
+  reason?: string | null;
+  comment?: string | null;
+  /** removed before printing — nothing reached the kitchen */
+  unprinted?: boolean;
+  authorizedBy?: string | null;
 }
 
 export interface DeliveryRow {

@@ -2529,6 +2529,12 @@ export interface VoidEvent {
   writeoff?: 'with' | 'without' | 'mixed' | null;
   reason?: string | null;
   comment?: string | null;
+  /** iiko journal: a whole order deleted with nothing in it */
+  empty?: boolean;
+  /** iiko journal: items removed before printing — nothing reached the kitchen */
+  unprinted?: boolean;
+  /** who authorised a printed deletion */
+  authorizedBy?: string | null;
 }
 
 export interface DeliveryRow {

@@ -476,9 +476,11 @@ function VoidDetailModal({ event, lang, onClose }: { event: VoidEvent; lang: Lan
             <span>{event.writeoff ? <span className={`wo wo-${event.writeoff}`}>{woLabel(lang, event.writeoff)}</span>
               : <span className="faint">{tr(lang, 'iiko ещё не передал', 'not reported by iiko yet', "iiko hali yubormadi")}</span>}</span></li>
           {event.reason && <li><span>{tr(lang, 'Причина', 'Reason', 'Sabab')}</span><span>{event.reason}</span></li>}
+          {event.authorizedBy && <li><span>{tr(lang, 'Разрешил', 'Authorised by', 'Ruxsat bergan')}</span><span>{event.authorizedBy}</span></li>}
           {event.comment && <li><span>{tr(lang, 'Комментарий', 'Comment', 'Izoh')}</span><span>{event.comment}</span></li>}
         </ul>
-        {event.writeoff && <p className="vd-note">{event.writeoff === 'without'
+        {event.unprinted ? <p className="vd-note">{tr(lang, 'Сняли до печати: на кухню не ушло, продукты не списаны.', 'Removed before printing: nothing went to the kitchen, no stock written off.', "Chop etishdan oldin olib tashlandi: oshxonaga bormagan, mahsulot chiqarilmagan.")}</p>
+          : event.writeoff && <p className="vd-note">{event.writeoff === 'without'
           ? tr(lang, 'Без списания: блюдо не готовили, продукты остались на складе.', 'Not written off: nothing was cooked, stock stayed in the store.', "Hisobdan chiqarilmagan: taom tayyorlanmagan, mahsulot omborda qoldi.")
           : tr(lang, 'Со списанием: продукты ушли со склада — это прямая потеря себестоимости.', 'Written off: the ingredients left the store — a direct cost loss.', "Hisobdan chiqarilgan: mahsulot ombordan chiqdi — bu to'g'ridan-to'g'ri yo'qotish.")}</p>}
         <h3 className="vd-sub">{tr(lang, 'Позиции', 'Items', 'Pozitsiyalar')}{event.items.length > 0 && <span className="faint"> {event.items.length}</span>}</h3>
@@ -491,7 +493,9 @@ function VoidDetailModal({ event, lang, onClose }: { event: VoidEvent; lang: Lan
               </li>
             ))}
           </ul>
-        ) : <p className="rd-empty">{event.type === 'order_before_delete'
+        ) : <p className="rd-empty">{event.empty
+          ? tr(lang, 'Пустой заказ: блюд в нём не было (по журналу событий iiko).', 'Empty order: it had no dishes (iiko events journal).', "Bo'sh buyurtma: unda taom bo'lmagan (iiko voqealar jurnali).")
+          : event.type === 'order_before_delete'
           ? tr(lang, 'Заказ удалён целиком — касса не передала состав на момент удаления.', 'The whole order was deleted — the till did not send its items.', "Buyurtma butunlay o'chirildi — kassa tarkibini yubormadi.")
           : tr(lang, 'Список позиций недоступен.', 'Item list unavailable.', "Pozitsiyalar ro'yxati yo'q.")}</p>}
       </div>
@@ -606,11 +610,12 @@ function Voids({ lang, events }: { lang: Language; events: VoidEvent[] }) {
             <button key={v.id} className="void" onClick={() => setDetail(v)}>
               <span className="when">{hm(v.at)}</span>
               <span className="what">
-                {v.table ? `${v.table}, ` : ''}{v.type === 'order_before_delete' ? tr(lang, 'заказ удалён', 'order deleted', "buyurtma o'chirildi") : v.items.map(i => i.name).join(', ') || tr(lang, 'позиции сняты', 'items voided', 'pozitsiyalar olindi')}
+                {v.table ? `${v.table}, ` : ''}{v.empty ? tr(lang, 'пустой заказ удалён', 'empty order deleted', "bo'sh buyurtma o'chirildi") : v.type === 'order_before_delete' && !v.items.length ? tr(lang, 'заказ удалён', 'order deleted', "buyurtma o'chirildi") : v.items.map(i => i.name).join(', ') || tr(lang, 'позиции сняты', 'items voided', 'pozitsiyalar olindi')}
                 <span>{v.waiter}{v.orderNum ? `, ${tr(lang, 'заказ', 'order', 'buyurtma')} #${v.orderNum}` : ''}</span>
               </span>
               <span className="amt">{v.sum > 0 ? `−${Math.round(v.sum).toLocaleString('ru-RU')}` : ''}
-                {v.writeoff && <span className={`wo wo-${v.writeoff}`}>{woLabel(lang, v.writeoff)}</span>}</span>
+                {v.unprinted ? <span className="wo">{tr(lang, 'до печати', 'before printing', 'chop etishdan oldin')}</span>
+                  : v.writeoff && <span className={`wo wo-${v.writeoff}`}>{woLabel(lang, v.writeoff)}</span>}</span>
             </button>
           ))}
         </div>

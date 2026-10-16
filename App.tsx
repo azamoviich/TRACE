@@ -3,7 +3,7 @@ import { ViewState, Language } from './types';
 import { TopNav } from './components/TopNav';
 import { RdHeader, RdFooter, RdTabbar } from './components/rd/Shell';
 import { RdSplash, RdLogin, RdDemoPosPicker, RdThemePicker } from './components/rd/Gate';
-import { AskAI } from './components/AskAI';
+import { RdChat } from './components/rd/Chat';
 import { ToastContainer, ToastMessage, ToastType } from './components/Toast';
 import { Dashboard } from './components/views/Dashboard';
 import { Reviews } from './components/views/Reviews';
@@ -396,12 +396,14 @@ export default function App() {
           hasBranches={branches.length > 1} onOpenAI={isRestricted ? undefined : () => setAiOpen(true)} />
       </div>
 
-      {!isRestricted && <AskAI
+      {!isRestricted && <div className="rd rd-contents"><RdChat
         context={aiContext || (t[currentView as keyof typeof t] as string) || 'General'}
         lang={lang}
-        isOpen={aiOpen}
+        view={shownView}
+        open={aiOpen}
+        onOpen={() => setAiOpen(true)}
         onClose={() => setAiOpen(false)}
-      />}
+      /></div>}
 
       {!isDemoTenant() && <PWAInstallGuide lang={lang} />}
     </div>

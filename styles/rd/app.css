@@ -77,3 +77,7 @@ input, textarea, select { font-size: max(16px, 1em); }
 .rd .seg-wrap:has(.pop) { z-index: 50; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .rd-ops .periods { position: relative; }
 .rd-main > [hidden] { display: none !important; }
+.rd .msg.bot strong { font-weight: 600; }
+.rd .chat-quote.pending { border-style: dashed; }
+.rd .chat-form button:disabled { opacity: .5; }
+.rd .chat-head .chat-x .ph { font-size: 16px; }

@@ -577,21 +577,39 @@ function demoDateStr(daysAgo: number): string {
   return tzDateStr(d);
 }
 
-function demoRevenueRows(days: number): RevenueRow[] {
+// One demo day, decided by its date alone — so the same day always reads the
+// same and a period compared with an earlier one shows a real difference.
+function demoRevenueDay(date: string): RevenueRow {
+  const n = Math.round(Date.parse(`${date}T00:00:00Z`) / 86400_000);
+  const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
+  const weekendBoost = (dow === 5 || dow === 6) ? 1.28 : 1;
+  const trend = 1 + (n - 20300) * 0.0012;          // slow growth over the year
+  const wave = 1 + 0.06 * Math.sin(n / 2.1) + 0.03 * Math.sin(n / 7.3);
+  const orders = Math.round(96 * weekendBoost * wave * trend);
+  const guests = Math.round(orders * 1.85);
+  const avgCheck = Math.round(36000 * weekendBoost * (1 + 0.04 * Math.cos(n / 2.5)) * trend);
+  return { date, revenue: orders * avgCheck, orders, guests };
+}
+
+function demoRevenueRange(from: string, to: string): RevenueRow[] {
   const rows: RevenueRow[] = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const date = demoDateStr(i);
-    const dow = new Date(date).getDay();
-    const weekendBoost = (dow === 5 || dow === 6) ? 1.28 : 1;
-    // Upward trend: newer days (lower i) get a growth multiplier
-    const trend = 1 + (days - 1 - i) * 0.004;
-    const wave = 1 + 0.06 * Math.sin(i / 2.1);
-    const orders = Math.round(96 * weekendBoost * wave * trend);
-    const guests = Math.round(orders * 1.85);
-    const avgCheck = Math.round(36000 * weekendBoost * (1 + 0.04 * Math.cos(i / 2.5)) * trend);
-    rows.push({ date, revenue: orders * avgCheck, orders, guests });
+  const today = demoDateStr(0);
+  for (let t = Date.parse(`${from}T00:00:00Z`); t <= Date.parse(`${to}T00:00:00Z`); t += 86400_000) {
+    const date = new Date(t).toISOString().slice(0, 10);
+    if (date > today) break;
+    const row = demoRevenueDay(date);
+    // Today is still going: only the hours that have passed.
+    if (date === today) {
+      const hrs = demoHourly(date);
+      const revenue = hrs.reduce((a, r) => a + r.revenue, 0), orders = hrs.reduce((a, r) => a + r.orders, 0);
+      rows.push({ date, revenue, orders, guests: Math.round(orders * 1.85) });
+    } else rows.push(row);
   }
   return rows;
+}
+
+function demoRevenueRows(days: number): RevenueRow[] {
+  return demoRevenueRange(demoDateStr(days - 1), demoDateStr(0));
 }
 
 function demoTopDishes(limit: number): DishRow[] {
@@ -616,17 +634,25 @@ function demoSalesStatus(): IntegrationStatus {
   };
 }
 
-function demoHourly(): HourlyRow[] {
+// A demo day's hours (11:00–24:00) that add up to that day's total; for
+// today only the hours that have started, the current one in part.
+function demoHourly(date?: string): HourlyRow[] {
+  const day = date ?? demoDateStr(0);
+  const total = demoRevenueDay(day);
   const curve = [2, 3, 6, 12, 22, 16, 9, 7, 11, 19, 24, 14, 6, 3];
-  return curve.map((mult, idx) => {
+  const sum = curve.reduce((a, b) => a + b, 0);
+  const isToday = day === demoDateStr(0);
+  const now = new Date();
+  const nowH = Number(now.toLocaleString('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Asia/Tashkent' })) % 24;
+  const nowM = Number(now.toLocaleString('en-GB', { minute: '2-digit', timeZone: 'Asia/Tashkent' }));
+  const rows: HourlyRow[] = [];
+  curve.forEach((w, idx) => {
     const hour = 11 + idx;
-    return {
-      hour,
-      h: `${hour}:00`,
-      orders: mult,
-      revenue: mult * 36000,
-    };
+    if (isToday && hour > nowH) return;
+    const part = isToday && hour === nowH ? nowM / 60 : 1;
+    rows.push({ hour, h: `${hour}:00`, orders: Math.round(total.orders * w / sum * part), revenue: Math.round(total.revenue * w / sum * part) });
   });
+  return rows;
 }
 
 function demoCategoryPerf(): CategoryPerfRow[] {
@@ -1710,18 +1736,7 @@ export const traceApi = {
   sales: {
     revenue: (range: 'today' | '7days' | '30days' | 'custom', customFrom?: string, customTo?: string, revenueType?: RevenueType): Promise<RevenueRow[]> => {
       if (isDemoTenant()) {
-        if (range === 'custom' && customFrom && customTo) {
-          // Comparison period — match day count of the custom range, scaled 15% lower
-          const msPerDay = 86400000;
-          const spanDays = Math.max(1, Math.round((new Date(customTo).getTime() - new Date(customFrom).getTime()) / msPerDay));
-          const rows = demoRevenueRows(spanDays);
-          return Promise.resolve(rows.map(r => ({
-            ...r,
-            revenue: Math.round(r.revenue * 0.85),
-            orders:  Math.round(r.orders  * 0.85),
-            guests:  Math.round(r.guests  * 0.85),
-          })));
-        }
+        if (range === 'custom' && customFrom && customTo) return Promise.resolve(demoRevenueRange(customFrom, customTo));
         const days = range === 'today' ? 1 : range === '30days' ? 30 : 7;
         return Promise.resolve(demoRevenueRows(days));
       }
@@ -1744,7 +1759,7 @@ export const traceApi = {
     heatmap: (days = 28): Promise<HeatmapResult> =>
       isDemoTenant() ? Promise.resolve(demoHeatmap()) : apiFetch(`/sales/heatmap?days=${days}`).then(r => { if (!r.ok) throw new Error('heatmap'); return r.json(); }),
     hourly: (date?: string): Promise<HourlyRow[]> =>
-      isDemoTenant() ? Promise.resolve(demoHourly()) : apiFetch(`/sales/hourly${date ? `?date=${date}` : ''}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+      isDemoTenant() ? Promise.resolve(demoHourly(date)) : apiFetch(`/sales/hourly${date ? `?date=${date}` : ''}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     topDishes: (range: 'today' | '7days' | '30days' | 'custom', limit = 10, customFrom?: string, customTo?: string): Promise<DishRow[]> => {
       if (isDemoTenant()) return Promise.resolve(demoTopDishes(limit));
       const q = customFrom && customTo

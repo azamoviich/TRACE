@@ -186,7 +186,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ lang, branch, onContextRea
   const cRevFull = cRgOn ? compRg!.revenue ?? 0 : cTot.rev;
   const cRev = compSoFar && !cRgOn ? compSoFar.rev : cRevFull * scale;
   const cOrd = compSoFar && !cRgOn ? compSoFar.ord : (cRgOn ? compRg!.orders ?? 0 : cTot.ord) * scale;
-  const cGst = (cRgOn ? compRg!.guests ?? 0 : cTot.gst) * scale;
+  // Guests aren't in the hourly data: take the same share of the comparison
+  // day's guests as its orders so far (time-of-day share when that's missing).
+  const gstScale = compSoFar && !cRgOn && cTot.ord > 0 ? compSoFar.ord / cTot.ord : scale;
+  const cGst = (cRgOn ? compRg!.guests ?? 0 : cTot.gst) * gstScale;
   const dRev = pctChange(revenue, cRev), dOrd = pctChange(orders, cOrd), dGst = pctChange(guests, cGst);
   const dAvg = cOrd ? pctChange(avg, cRev / cOrd) : null, dPg = cGst ? pctChange(perGuest, cRev / cGst) : null;
 

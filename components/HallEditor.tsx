@@ -79,12 +79,22 @@ function renderElement(
   onMouseDown: (e: React.MouseEvent) => void,
   onContextMenu: (e: React.MouseEvent) => void,
   info?: LiveInfo | RevenueInfo | DurationInfo | null,
+  rd?: { lang: Language; heat: boolean },
 ) {
   const isTable = el.type === 'rect_table' || el.type === 'round_table' || el.type === 'stool';
-  const structFill   = isDark ? '#1a1a1e' : '#e8e4de';
-  const structStroke = isDark ? '#2a2a30' : '#c5c0b8';
-  const structText   = isDark ? '#444' : '#aaa7a0';
-  const c = isTable ? occColor(occ, isDark) : { fill: structFill, stroke: structStroke, text: structText };
+  // Redesign look (Operations): ink = guests eating, accent = over 90 min,
+  // white = free; heat modes shade ink by value. Colours are CSS tokens.
+  const rdC = !rd ? null : !isTable ? { fill: 'var(--sunken)', stroke: 'var(--rule)', text: 'var(--text-3)' }
+    : rd.heat ? (occ > 0 ? { fill: `color-mix(in srgb, var(--text) ${Math.round(12 + occ * 80)}%, var(--surface))`, stroke: 'transparent', text: occ > 0.45 ? 'var(--bg)' : 'var(--text)' } : { fill: 'var(--surface)', stroke: 'var(--rule-strong)', text: 'var(--text-2)' })
+    : info?.kind === 'live' || occ > 0 ? (info?.kind === 'live' && info.min >= 90 ? { fill: 'var(--accent)', stroke: 'transparent', text: '#fff' } : { fill: 'var(--text)', stroke: 'transparent', text: 'var(--bg)' })
+    : { fill: 'var(--surface)', stroke: 'var(--rule-strong)', text: 'var(--text-2)' };
+  const structFill   = rdC ? 'var(--sunken)' : isDark ? '#1a1a1e' : '#e8e4de';
+  const structStroke = rdC ? 'var(--rule)' : isDark ? '#2a2a30' : '#c5c0b8';
+  const structText   = rdC ? 'var(--text-3)' : isDark ? '#444' : '#aaa7a0';
+  const c = rdC ?? (isTable ? occColor(occ, isDark) : { fill: structFill, stroke: structStroke, text: structText });
+  const font = rd ? 'IBM Plex Sans, system-ui, sans-serif' : 'Onest';
+  const lbl = rd && el.label ? el.label.replace(/^(Стол|Table|Stol)\s*/i, '') : el.label;
+  const rdMin = (m: number) => !rd ? shortMin(m) : m < 60 ? `${m} ${tr(rd.lang, 'мин', 'min', 'daq')}` : `${Math.floor(m / 60)} ${tr(rd.lang, 'ч', 'h', 'soat')} ${String(m % 60).padStart(2, '0')}`;
   const selStroke = selected ? '#6366f1' : c.stroke;
   const selStrokeW = selected ? 2 : 1;
   const rot = el.rotation ?? 0;
@@ -104,7 +114,7 @@ function renderElement(
     : info.kind === 'duration' ? `${el.label}: ${shortMin(Math.round(info.avgMin * info.visits))} total · ${info.visits} ${info.visits === 1 ? 'visit' : 'visits'}`
     : `${el.label}: ${shortMoney(info.revenue)} UZS · ${info.orders} ${info.orders === 1 ? 'order' : 'orders'}`;
   const infoBadge = info == null ? undefined
-    : info.kind === 'live' ? shortMin(info.min)
+    : info.kind === 'live' ? rdMin(info.min)
     : info.kind === 'duration' ? shortMin(Math.round(info.avgMin * info.visits))
     : `${shortMoney(info.revenue)}${info.orders ? ` · ${info.orders}` : ''}`;
 
@@ -112,12 +122,12 @@ function renderElement(
     const { x = 0, y = 0, w = 80, h = 40, label } = el;
     return (
       <g key={el.id} transform={transform} onMouseDown={onMouseDown} onContextMenu={onContextMenu} style={{ cursor: 'move' }}>
-        <rect x={x} y={y} width={w} height={h} rx={3} fill={c.fill} stroke={selStroke} strokeWidth={selStrokeW}>
+        <rect x={x} y={y} width={w} height={h} rx={rd ? 6 : 3} style={{ fill: c.fill, stroke: selStroke }} strokeWidth={selStrokeW}>
           {infoTitle && <title>{infoTitle}</title>}
         </rect>
-        <text x={x + w / 2} y={y + h / 2 + (info ? -1 : 4)} textAnchor="middle" fill={c.text} fontSize={10} fontFamily="Onest" fontWeight={600}>{label}</text>
+        <text x={x + w / 2} y={y + h / 2 + (info ? -1 : 4)} textAnchor="middle" style={{ fill: c.text }} fontSize={rd ? 11 : 10} fontFamily={font} fontWeight={600}>{rd ? lbl : label}</text>
         {infoBadge && (
-          <text x={x + w / 2} y={y + h / 2 + 10} textAnchor="middle" fill={c.text} fontSize={7} fontFamily="Onest" opacity={0.8}>
+          <text x={x + w / 2} y={y + h / 2 + 10} textAnchor="middle" style={{ fill: c.text }} fontSize={7} fontFamily={font} opacity={0.8}>
             {infoBadge}
           </text>
         )}
@@ -130,12 +140,12 @@ function renderElement(
     const { cx = 0, cy = 0, r = 28, label } = el;
     return (
       <g key={el.id} transform={transform} onMouseDown={onMouseDown} onContextMenu={onContextMenu} style={{ cursor: 'move' }}>
-        <circle cx={cx} cy={cy} r={r} fill={c.fill} stroke={selStroke} strokeWidth={selStrokeW}>
+        <circle cx={cx} cy={cy} r={r} style={{ fill: c.fill, stroke: selStroke }} strokeWidth={selStrokeW}>
           {infoTitle && <title>{infoTitle}</title>}
         </circle>
-        <text x={cx} y={cy + (info ? -1 : 4)} textAnchor="middle" fill={c.text} fontSize={10} fontFamily="Onest" fontWeight={600}>{label}</text>
+        <text x={cx} y={cy + (info ? -1 : 4)} textAnchor="middle" style={{ fill: c.text }} fontSize={rd ? 11 : 10} fontFamily={font} fontWeight={600}>{rd ? lbl : label}</text>
         {infoBadge && (
-          <text x={cx} y={cy + 10} textAnchor="middle" fill={c.text} fontSize={7} fontFamily="Onest" opacity={0.8}>
+          <text x={cx} y={cy + 10} textAnchor="middle" style={{ fill: c.text }} fontSize={7} fontFamily={font} opacity={0.8}>
             {infoBadge}
           </text>
         )}
@@ -148,8 +158,8 @@ function renderElement(
     const { cx = 0, cy = 0, r = 10, label } = el;
     return (
       <g key={el.id} transform={transform} onMouseDown={onMouseDown} onContextMenu={onContextMenu} style={{ cursor: 'move' }}>
-        <circle cx={cx} cy={cy} r={r} fill={c.fill} stroke={selStroke} strokeWidth={selStrokeW} />
-        <text x={cx} y={cy + 3} textAnchor="middle" fill={c.text} fontSize={7} fontFamily="Onest" fontWeight={600}>{label}</text>
+        <circle cx={cx} cy={cy} r={r} style={{ fill: c.fill, stroke: selStroke }} strokeWidth={selStrokeW} />
+        <text x={cx} y={cy + 3} textAnchor="middle" style={{ fill: c.text }} fontSize={7} fontFamily={font} fontWeight={600}>{rd ? lbl : label}</text>
         {selected && <circle cx={cx} cy={cy} r={r + 4} fill="none" stroke="#6366f1" strokeWidth={1.5} strokeDasharray="3 2" opacity={0.6} />}
       </g>
     );
@@ -159,7 +169,7 @@ function renderElement(
     const { x = 0, y = 0, w = 120, h = 14 } = el;
     return (
       <g key={el.id} transform={transform} onMouseDown={onMouseDown} onContextMenu={onContextMenu} style={{ cursor: 'move' }}>
-        <rect x={x} y={y} width={w} height={h} rx={2} fill={structFill} stroke={selStroke} strokeWidth={selStrokeW} />
+        <rect x={x} y={y} width={w} height={h} rx={2} style={{ fill: structFill, stroke: selStroke }} strokeWidth={selStrokeW} />
         {selected && <rect x={x - 3} y={y - 3} width={w + 6} height={h + 6} rx={4} fill="none" stroke="#6366f1" strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6} />}
       </g>
     );
@@ -170,9 +180,9 @@ function renderElement(
     const barTop = isDark ? '#222228' : '#d8d3cc';
     return (
       <g key={el.id} transform={transform} onMouseDown={onMouseDown} onContextMenu={onContextMenu} style={{ cursor: 'move' }}>
-        <rect x={x} y={y} width={w} height={h} rx={3} fill={structFill} stroke={selStroke} strokeWidth={selStrokeW} />
-        <rect x={x} y={y} width={w} height={6} rx={2} fill={barTop} />
-        <text x={x + w / 2} y={y + h / 2 + 5} textAnchor="middle" fill={structText} fontSize={10} fontFamily="Onest" fontWeight={600} letterSpacing={3}>{label}</text>
+        <rect x={x} y={y} width={w} height={h} rx={3} style={{ fill: structFill, stroke: selStroke }} strokeWidth={selStrokeW} />
+        {!rd && <rect x={x} y={y} width={w} height={6} rx={2} fill={barTop} />}
+        <text x={x + w / 2} y={y + h / 2 + 5} textAnchor="middle" style={{ fill: structText }} fontSize={10} fontFamily={font} fontWeight={600} letterSpacing={rd ? 0 : 3}>{label}</text>
         {selected && <rect x={x - 3} y={y - 3} width={w + 6} height={h + 6} rx={5} fill="none" stroke="#6366f1" strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6} />}
       </g>
     );
@@ -182,8 +192,8 @@ function renderElement(
     const { x = 0, y = 0, w = 80, label } = el;
     return (
       <g key={el.id} transform={transform} onMouseDown={onMouseDown} onContextMenu={onContextMenu} style={{ cursor: 'move' }}>
-        <line x1={x} y1={y} x2={x + (w ?? 80)} y2={y} stroke={selStroke} strokeWidth={2} strokeDasharray="6 3" />
-        <text x={x + (w ?? 80) / 2} y={y + 14} textAnchor="middle" fill={c.text} fontSize={8} fontFamily="Onest" letterSpacing={2}>{label}</text>
+        <line x1={x} y1={y} x2={x + (w ?? 80)} y2={y} style={{ stroke: selStroke }} strokeWidth={2} strokeDasharray="6 3" />
+        <text x={x + (w ?? 80) / 2} y={y + 14} textAnchor="middle" style={{ fill: c.text }} fontSize={8} fontFamily={font} letterSpacing={rd ? 1 : 2}>{label}</text>
         {selected && <rect x={x - 3} y={y - 8} width={(w ?? 80) + 6} height={26} rx={3} fill="none" stroke="#6366f1" strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6} />}
       </g>
     );
@@ -338,9 +348,11 @@ interface HallEditorProps {
   readOnly?: boolean;
   inline?: boolean;
   lang?: Language;
+  /** Redesign look (Operations): token colours, Plex font, mockup legend. */
+  rdLook?: boolean;
 }
 
-export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tableInfo, revenueInfo, durationInfo, legendMode = 'occupancy', onSave, onClose, readOnly = false, inline = false, lang = 'ru' }: HallEditorProps) {
+export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tableInfo, revenueInfo, durationInfo, legendMode = 'occupancy', onSave, onClose, readOnly = false, inline = false, lang = 'ru', rdLook = false }: HallEditorProps) {
   const isDark = useIsDark();
   const [elements, setElements] = useState<HallElement[]>(plan.elements);
   const [planName, setPlanName] = useState(plan.name);
@@ -540,7 +552,7 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
       {!inline && Array.from({ length: H / GRID - 1 }, (_, i) => (
         <line key={`gh${i}`} x1={0} y1={(i + 1) * GRID} x2={W} y2={(i + 1) * GRID} stroke={isDark ? '#1a1a1e' : '#e5e1db'} strokeWidth={0.5} />
       ))}
-      <rect x={4} y={4} width={W - 8} height={H - 8} fill="none" stroke={isDark ? '#222228' : '#d4cfc8'} strokeWidth={2} rx={2} />
+      {!rdLook && <rect x={4} y={4} width={W - 8} height={H - 8} fill="none" stroke={isDark ? '#222228' : '#d4cfc8'} strokeWidth={2} rx={2} />}
       {elements.map(el => {
         const occ = el.iiko_table_number == null ? 0
           : tableHeat != null ? (tableHeat.get(el.iiko_table_number) ?? 0)
@@ -558,6 +570,7 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
             : durationInfo ? (durationInfo.get(el.iiko_table_number) ? { kind: 'duration' as const, ...durationInfo.get(el.iiko_table_number)! } : null)
             : tableInfo ? (tableInfo.get(el.iiko_table_number) ? { kind: 'live' as const, ...tableInfo.get(el.iiko_table_number)! } : null)
             : null,
+          rdLook ? { lang, heat: tableHeat != null } : undefined,
         );
       })}
       {!inline && tool !== 'select' && (
@@ -568,7 +581,20 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
     </svg>
   );
 
-  const legend = (
+  const legend = rdLook ? (
+    <div className="rd-hall-legend">
+      {legendMode === 'occupancy' ? <>
+        <span><i style={{ background: 'var(--text)' }} />{tr(lang, 'Едят', 'Eating', 'Ovqatlanmoqda')}</span>
+        <span><i style={{ background: 'var(--accent)' }} />{tr(lang, 'Дольше 90 мин', 'Over 90 min', '90 daqiqadan ortiq')}</span>
+        <span><i style={{ background: 'var(--surface)', border: '1px solid var(--rule-strong)' }} />{tr(lang, 'Свободен', 'Free', "Bo'sh")}</span>
+      </> : <>
+        <span>{legendMode === 'revenue' ? tr(lang, 'Выручка стола:', 'Table revenue:', 'Stol tushumi:') : tr(lang, 'Загрузка стола:', 'Table occupancy:', 'Stol bandligi:')}</span>
+        <span>{tr(lang, 'меньше', 'less', 'kam')}</span>
+        <span className="ramp">{[.15, .35, .55, .75, .92].map(o => <i key={o} style={{ background: `color-mix(in srgb, var(--text) ${Math.round(o * 100)}%, var(--surface))` }} />)}</span>
+        <span>{tr(lang, 'больше', 'more', "ko'p")}</span>
+      </>}
+    </div>
+  ) : (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2 border-t border-border flex-shrink-0">
       {(legendMode === 'revenue' ? [
         { label: tr(lang, 'Нет данных', 'No data', "Ma'lumot yo'q"), color: isDark ? '#555' : '#c8c3bb' },

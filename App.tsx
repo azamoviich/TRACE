@@ -300,7 +300,7 @@ export default function App() {
     switch (view) {
       case 'dashboard':   return <Dashboard key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} onOpenPlan={planAvailable && !hiddenPages.includes('plan') ? () => setCurrentView('plan') : undefined} onNavigate={setCurrentView} />;
       case 'sales':       return <Sales key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} />;
-      case 'operations':  return <Operations key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} branches={branches} isAllBranches={activeBranchId === ALL_BRANCHES_ID} />;
+      case 'operations':  return <Operations key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} branches={branches} isAllBranches={activeBranchId === ALL_BRANCHES_ID} onNavigate={setCurrentView} />;
       case 'financial':   return <Financial key={branchKey} lang={lang} onShowToast={showToast} branch={selectedBranch} onContextReady={setAiContext} onNavigate={setCurrentView} />;
       case 'plan':        return <Plan key={branchKey} lang={lang} onShowToast={showToast} onContextReady={setAiContext} />;
       case 'reviews':     return <Reviews key={branchKey} lang={lang} onContextReady={setAiContext} />;

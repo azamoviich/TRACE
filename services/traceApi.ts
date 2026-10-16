@@ -854,6 +854,18 @@ function demoTableTurns(): TableTurnRow[] {
   ];
 }
 
+function demoVoidEvents(): VoidEvent[] {
+  const at = (minAgo: number) => new Date(Date.now() - minAgo * 60_000).toISOString();
+  return [
+    { id: 'dv1', type: 'order_printed_items_deleted', waiter: 'Нодир', table: 'Стол 9', orderNum: 1482, sum: 88_000, at: at(34),
+      items: [{ name: 'Шакшука', quantity: 1, sum: 88_000, writeoff: 'with' }], writeoff: 'with', reason: 'Ошибка кухни', comment: 'пересолили' },
+    { id: 'dv2', type: 'order_printed_items_deleted', waiter: 'Нодир', table: 'Стол 7', orderNum: 1477, sum: 72_000, at: at(56),
+      items: [{ name: 'Капучино', quantity: 2, sum: 72_000, writeoff: 'without' }], writeoff: 'without', reason: 'Ошибка официанта', comment: null },
+    { id: 'dv3', type: 'order_before_delete', waiter: 'Нодир', table: 'Стол 3', orderNum: 1469, sum: 164_000, at: at(103),
+      items: [{ name: 'Плов', quantity: 2, sum: 124_000, writeoff: 'with' }, { name: 'Чай', quantity: 1, sum: 40_000, writeoff: 'without' }], writeoff: 'mixed', reason: 'Гость ушёл', comment: null },
+  ];
+}
+
 function demoHalls(): HallPlan[] {
   // Table numbers line up with demoTableTurns/demoRevenueRows so the
   // occupancy + revenue heatmap reads as one consistent fictional venue.
@@ -1836,12 +1848,10 @@ export const traceApi = {
   },
   halls: {
     list: async (branchIdOverride?: string): Promise<HallPlan[]> => {
-      // No demo tenant ever has a hall plan pre-configured — a real
-      // tenant only gets one after someone manually draws it in Settings.
-      // Showing a fully-populated heatmap here implied it works out of
-      // the box, which it doesn't for anyone. Empty list hides the whole
-      // card (Operations.tsx: `hasHallPlan &&`).
-      if (isDemoTenant()) return [];
+      // Demo shows its sample hall: plans now come from the till by
+      // themselves (iikoFront sections sync), so a populated map is what a
+      // real restaurant sees too.
+      if (isDemoTenant()) return demoHalls();
       const r = await apiFetch(`/halls`, {}, branchIdOverride);
       if (!r.ok) throw new Error(`${r.status}`);
       return r.json();
@@ -2065,7 +2075,7 @@ export const traceApi = {
       return apiFetch(`/operations/void-tracker${q ? `?${q}` : ''}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []);
     },
     voidEvents: (): Promise<VoidEvent[]> =>
-      isDemoTenant() ? Promise.resolve([]) : apiFetch(`/operations/void-events`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+      isDemoTenant() ? Promise.resolve(demoVoidEvents()) : apiFetch(`/operations/void-events`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     delivery: (): Promise<DeliveryRow[]> =>
       isDemoTenant() ? Promise.resolve(demoDelivery()) : apiFetch(`/operations/delivery`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
     // Poster only — no iiko-side equivalent anywhere in TRACE.
@@ -2475,8 +2485,12 @@ export interface VoidEvent {
   table: string | null;
   orderNum: number | null;
   sum: number;
-  items: { name: string; quantity: number; sum?: number }[];
+  items: { name: string; quantity: number; sum?: number; writeoff?: 'with' | 'without' | null }[];
   at: string;
+  /** From iiko's sales report: was the deleted food written off? null = not known (yet). */
+  writeoff?: 'with' | 'without' | 'mixed' | null;
+  reason?: string | null;
+  comment?: string | null;
 }
 
 export interface DeliveryRow {

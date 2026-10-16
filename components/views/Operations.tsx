@@ -13,10 +13,11 @@ import { DateRangePicker } from '../ui/DateRangePicker';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { traceApi, CashShift, OpsKpis, StaffRow, StopItem, HallPlan, HallElement, isDemoTenant, demoActiveOrders, OpsAlert, VoidEvent, getTenantPlan, ShiftScheduleDay, StaffAbcRow, BranchSummary, ActiveOrderRow, ReservationRow, StaffProfitabilityRow } from '../../services/traceApi';
+import { traceApi, CashShift, OpsKpis, StaffRow, StopItem, HallPlan, HallElement, isDemoTenant, demoActiveOrders, OpsAlert, VoidEvent, getTenantPlan, ShiftScheduleDay, StaffAbcRow, BranchSummary, ActiveOrderRow, ReservationRow, StaffProfitabilityRow, bookingApi, StaffReservation } from '../../services/traceApi';
+import { ViewState } from '../../types';
 import { HallEditor } from '../HallEditor';
 import { ProLock } from '../ui/ProLock';
-import { Skel, rangeLabel, nowHM, AiState } from '../rd/ui';
+import { Skel, rangeLabel, nowHM, AiState, ruPl } from '../rd/ui';
 import { Trio, TrioTile } from '../rd/Trio';
 import { SlotText } from '../ui/SlotNumber';
 import { tashkentDateStr } from '../../utils/tz';
@@ -343,7 +344,7 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
       [tr(lang, 'Занято', 'Occupied', 'Band'), <>{occ.length}<small>{tr(lang, `из ${tablesInPlan}`, `of ${tablesInPlan}`, `${tablesInPlan} dan`)}</small></>],
       [tr(lang, 'Стол в среднем', 'Avg table', "O'rtacha stol"), <>{mins.length ? Math.round(mins.reduce((a, b) => a + b, 0) / mins.length) : '—'}<small>{tr(lang, 'мин', 'min', 'daq')}</small></>],
       [tr(lang, 'Дольше 90 мин', 'Over 90 min', "90 daq.dan ko'p"), <>{mins.filter(m => m >= 90).length}</>],
-      [tr(lang, 'Свободно', 'Free', "Bo'sh"), <>{Math.max(0, tablesInPlan - occ.length)}<small>{tr(lang, 'столов', 'tables', 'stol')}</small></>],
+      [tr(lang, 'Свободно', 'Free', "Bo'sh"), <>{Math.max(0, tablesInPlan - occ.length)}<small>{tr(lang, ruPl(Math.max(0, tablesInPlan - occ.length), 'стол', 'стола', 'столов'), 'tables', 'stol')}</small></>],
     ] as [string, React.ReactNode][];
   })() : [];
   const busy = (mode === 'revenue' && revenueLoading) || (mode === 'duration' && durationLoading);
@@ -397,6 +398,7 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
           onClose={() => {}}
           readOnly
           inline
+          rdLook
           lang={lang}
         />
       </div>
@@ -414,68 +416,50 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
 // High counts = mistakes or unauthorized voids — theft-control signal.
 
 function VoidDetailModal({ event, lang, onClose }: { event: VoidEvent; lang: Language; onClose: () => void }) {
-  const ru = lang === 'ru';
-  const isUz = lang === 'uz';
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [onClose]);
-
+  const when = new Date(event.at).toLocaleString(lang === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' });
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)' }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-card border border-border rounded-xl w-full max-w-md max-h-[80vh] flex flex-col shadow-2xl animate-fade-in">
-        <div className="flex items-start justify-between px-5 pt-5 pb-4 border-b border-border flex-shrink-0">
-          <div className="min-w-0">
-            <h2 className="font-display text-[15px] font-bold text-text">
-              {event.type === 'order_before_delete'
-                ? tr(lang, 'Заказ удалён', 'Order deleted', 'Buyurtma oʻchirildi')
-                : tr(lang, 'Позиции сняты', 'Items voided', 'Pozitsiyalar olib tashlandi')}
-            </h2>
-            <p className="text-[11px] text-muted mt-0.5">
-              {event.orderNum ? `#${event.orderNum}` : ''}{event.table ? ` · ${event.table}` : ''} · {event.waiter}
-            </p>
+    <>
+      <div className="sheet-scrim" onClick={onClose} />
+      <div className="vd" role="dialog" aria-modal="true" aria-labelledby="vd-t">
+        <div className="vd-head">
+          <div>
+            <h2 id="vd-t">{event.type === 'order_before_delete' ? tr(lang, 'Заказ удалён', 'Order deleted', "Buyurtma o'chirildi") : tr(lang, 'Позиции сняты', 'Items voided', 'Pozitsiyalar olib tashlandi')}</h2>
+            <p>{[event.orderNum ? `#${event.orderNum}` : null, event.table, event.waiter].filter(Boolean).join(' · ')}</p>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-muted hover:text-text hover:bg-card-hover transition-colors flex-shrink-0 ml-3">
-            <X size={14} />
-          </button>
+          <button className="vd-x" onClick={onClose} aria-label={tr(lang, 'Закрыть', 'Close', 'Yopish')}><i className="ph ph-x" aria-hidden="true" /></button>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-          <div className="flex items-center justify-between text-[12px]">
-            <span className="text-muted">{tr(lang, 'Время', 'Time', 'Vaqt')}</span>
-            <span className="text-text font-medium">
-              {new Date(event.at).toLocaleString(ru ? 'ru-RU' : isUz ? 'uz-Latn-UZ' : 'en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-            </span>
-          </div>
-          {event.sum > 0 && (
-            <div className="flex items-center justify-between text-[12px]">
-              <span className="text-muted">{tr(lang, 'Сумма', 'Sum', 'Summa')}</span>
-              <span className="text-danger font-bold metric-number">{event.sum.toLocaleString('ru-RU')} UZS</span>
-            </div>
-          )}
-          {event.items.length > 0 ? (
-            <div className="pt-2 border-t border-border">
-              <p className="text-[10px] uppercase tracking-widest text-muted mb-2">
-                {tr(lang, `Позиции (${event.items.length})`, `Items (${event.items.length})`, `Pozitsiyalar (${event.items.length})`)}
-              </p>
-              <div className="space-y-1.5">
-                {event.items.map((item, i) => (
-                  <div key={i} className="flex items-center justify-between text-[12px]">
-                    <span className="text-text">{item.name} <span className="text-muted">×{item.quantity}</span></span>
-                    {item.sum != null && <span className="text-muted metric-number">{item.sum.toLocaleString('ru-RU')}</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : event.type === 'order_before_delete' ? (
-            <p className="text-[12px] text-muted/60">{tr(lang, 'Заказ удалён целиком — плагин не передал состав на момент удаления', 'Whole order was deleted — the plugin did not report item contents at delete time', "Buyurtma butunlay o'chirildi — plagin o'chirish vaqtida tarkibini yubormadi")}</p>
-          ) : (
-            <p className="text-[12px] text-muted/60">{tr(lang, 'Список позиций недоступен', 'Item list unavailable', "Pozitsiyalar ro'yxati yo'q")}</p>
-          )}
-        </div>
+        <ul className="kv">
+          <li><span>{tr(lang, 'Когда', 'When', 'Qachon')}</span><span>{when}</span></li>
+          {event.sum > 0 && <li><span>{tr(lang, 'Сумма', 'Total', 'Summa')}</span><span className="neg">−{Math.round(event.sum).toLocaleString('ru-RU')}</span></li>}
+          <li><span>{tr(lang, 'Списание', 'Write-off', 'Hisobdan chiqarish')}</span>
+            <span>{event.writeoff ? <span className={`wo wo-${event.writeoff}`}>{woLabel(lang, event.writeoff)}</span>
+              : <span className="faint">{tr(lang, 'iiko ещё не передал', 'not reported by iiko yet', "iiko hali yubormadi")}</span>}</span></li>
+          {event.reason && <li><span>{tr(lang, 'Причина', 'Reason', 'Sabab')}</span><span>{event.reason}</span></li>}
+          {event.comment && <li><span>{tr(lang, 'Комментарий', 'Comment', 'Izoh')}</span><span>{event.comment}</span></li>}
+        </ul>
+        {event.writeoff && <p className="vd-note">{event.writeoff === 'without'
+          ? tr(lang, 'Без списания: блюдо не готовили, продукты остались на складе.', 'Not written off: nothing was cooked, stock stayed in the store.', "Hisobdan chiqarilmagan: taom tayyorlanmagan, mahsulot omborda qoldi.")
+          : tr(lang, 'Со списанием: продукты ушли со склада — это прямая потеря себестоимости.', 'Written off: the ingredients left the store — a direct cost loss.', "Hisobdan chiqarilgan: mahsulot ombordan chiqdi — bu to'g'ridan-to'g'ri yo'qotish.")}</p>}
+        <h3 className="vd-sub">{tr(lang, 'Позиции', 'Items', 'Pozitsiyalar')}{event.items.length > 0 && <span className="faint"> {event.items.length}</span>}</h3>
+        {event.items.length > 0 ? (
+          <ul className="kv">
+            {event.items.map((it, i) => (
+              <li key={i}>
+                <span>{it.name} <span className="faint">×{it.quantity}</span>{it.writeoff && <span className={`wo wo-${it.writeoff}`}>{woLabel(lang, it.writeoff)}</span>}</span>
+                <span>{it.sum != null ? Math.round(it.sum).toLocaleString('ru-RU') : ''}</span>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="rd-empty">{event.type === 'order_before_delete'
+          ? tr(lang, 'Заказ удалён целиком — касса не передала состав на момент удаления.', 'The whole order was deleted — the till did not send its items.', "Buyurtma butunlay o'chirildi — kassa tarkibini yubormadi.")
+          : tr(lang, 'Список позиций недоступен.', 'Item list unavailable.', "Pozitsiyalar ro'yxati yo'q.")}</p>}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -523,6 +507,46 @@ function Alerts({ lang, pluginConnected, onGo }: { lang: Language; pluginConnect
 
 // ── Voids ─────────────────────────────────────────────────────────────────
 
+// Was the deleted food written off (it left the store — a real loss) or not.
+function woLabel(lang: Language, w: 'with' | 'without' | 'mixed') {
+  return w === 'with' ? tr(lang, 'со списанием', 'written off', 'hisobdan chiqarilgan')
+    : w === 'without' ? tr(lang, 'без списания', 'not written off', 'hisobdan chiqarilmagan')
+    : tr(lang, 'частично списано', 'partly written off', 'qisman chiqarilgan');
+}
+
+function Bookings({ lang, rows, onAll }: { lang: Language; rows: StaffReservation[]; onAll?: () => void }) {
+  const today = tashkentDateStr();
+  const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + 86400_000).toISOString().slice(0, 10);
+  const day = (iso: string) => new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'Asia/Tashkent' });
+  const hm = (iso: string) => new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' });
+  const when = (iso: string) => {
+    const d = day(iso);
+    const lbl = d === today ? tr(lang, 'сегодня', 'today', 'bugun') : d === tomorrow ? tr(lang, 'завтра', 'tomorrow', 'ertaga') : d.split('-').reverse().slice(0, 2).join('.');
+    return `${lbl}, ${hm(iso)}`;
+  };
+  const dur = (a: string, b: string) => { const m = Math.round((Date.parse(b) - Date.parse(a)) / 60000); return m % 60 ? `${Math.floor(m / 60) ? `${Math.floor(m / 60)} ${tr(lang, 'ч', 'h', 'soat')} ` : ''}${m % 60} ${tr(lang, 'мин', 'min', 'daq')}` : `${m / 60} ${tr(lang, 'ч', 'h', 'soat')}`; };
+  const shown = rows.slice(0, 6);
+  return (
+    <section className="card-ph" aria-labelledby="h-bk">
+      <div className="sec-head"><h2 id="h-bk">{tr(lang, 'Бронирования', 'Bookings', 'Bronlar')}{rows.length > 0 && <span className="count">{rows.length}</span>}</h2>
+        {onAll && <button className="link" type="button" onClick={onAll}>{tr(lang, 'Все брони', 'All bookings', 'Barcha bronlar')}</button>}</div>
+      {rows.length === 0 ? <p className="rd-empty">{tr(lang, 'На сегодня и завтра броней нет', 'No bookings for today or tomorrow', "Bugun va ertaga bron yo'q")}</p> : (
+        <table className="bk">
+          <thead><tr><th>{tr(lang, 'Гость', 'Guest', 'Mehmon')}</th><th className="c-phone">{tr(lang, 'Телефон', 'Phone', 'Telefon')}</th><th>{tr(lang, 'Когда', 'When', 'Qachon')}</th><th className="c-dur">{tr(lang, 'На сколько', 'Duration', 'Davomiyligi')}</th><th>{tr(lang, 'Статус', 'Status', 'Holat')}</th></tr></thead>
+          <tbody>{shown.map(r => (
+            <tr key={r.id}>
+              <td>{r.guest_name || tr(lang, 'Гость', 'Guest', 'Mehmon')}, {r.party_size} {tr(lang, 'чел.', 'ppl', 'kishi')}{r.table_name ? <span className="bk-sub">{tr(lang, 'стол', 'table', 'stol')} {r.table_name}</span> : null}</td>
+              <td className="c-phone"><span className="phone">{r.guest_phone || '—'}</span></td>
+              <td className="nw">{when(r.start_at)}</td><td className="c-dur nw">{dur(r.start_at, r.end_at)}</td>
+              <td><span className={`bk-st ${r.status === 'pending' ? 'new' : 'ok2'}`}>{r.status === 'pending' ? tr(lang, 'Ждёт звонка', 'Awaiting call', "Qo'ng'iroq kutmoqda") : r.status === 'seated' ? tr(lang, 'За столом', 'Seated', 'Stolda') : tr(lang, 'Подтверждено', 'Confirmed', 'Tasdiqlangan')}</span></td>
+            </tr>
+          ))}</tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
 function Voids({ lang, events }: { lang: Language; events: VoidEvent[] }) {
   const [detail, setDetail] = useState<VoidEvent | null>(null);
   const [all, setAll] = useState(false);
@@ -543,7 +567,8 @@ function Voids({ lang, events }: { lang: Language; events: VoidEvent[] }) {
                 {v.table ? `${v.table}, ` : ''}{v.type === 'order_before_delete' ? tr(lang, 'заказ удалён', 'order deleted', "buyurtma o'chirildi") : v.items.map(i => i.name).join(', ') || tr(lang, 'позиции сняты', 'items voided', 'pozitsiyalar olindi')}
                 <span>{v.waiter}{v.orderNum ? `, ${tr(lang, 'заказ', 'order', 'buyurtma')} #${v.orderNum}` : ''}</span>
               </span>
-              <span className="amt">{v.sum > 0 ? `−${Math.round(v.sum).toLocaleString('ru-RU')}` : ''}</span>
+              <span className="amt">{v.sum > 0 ? `−${Math.round(v.sum).toLocaleString('ru-RU')}` : ''}
+                {v.writeoff && <span className={`wo wo-${v.writeoff}`}>{woLabel(lang, v.writeoff)}</span>}</span>
             </button>
           ))}
         </div>
@@ -677,7 +702,8 @@ export const Operations: React.FC<{
   onContextReady?: (ctx: string) => void;
   branches?: BranchSummary[];
   isAllBranches?: boolean;
-}> = ({ lang, onShowToast, branch, onContextReady, branches = [], isAllBranches = false }) => {
+  onNavigate?: (v: ViewState) => void;
+}> = ({ lang, onShowToast, branch, onContextReady, branches = [], isAllBranches = false, onNavigate }) => {
   const t = TRANSLATIONS[lang];
   const demo = isDemoTenant();
   const isBasePlan = getTenantPlan() === 'base';
@@ -961,6 +987,22 @@ export const Operations: React.FC<{
 
   // Poster only — incomingOrders.getReservations, no iiko-side equivalent.
   // Polls every 60s, plus an instant reload on an `incoming_order` webhook.
+  // TRACE's own bookings (Бронирование): today's and tomorrow's, not cancelled.
+  // null = the section is off for this restaurant (or not loaded) → hidden.
+  const [bookings, setBookings] = useState<StaffReservation[] | null>(null);
+  useEffect(() => {
+    if (isPoster || isAllBranches) { setBookings(null); return; }
+    let alive = true;
+    const load = () => {
+      const from = new Date(), to = new Date(Date.now() + 2 * 86400_000);
+      bookingApi.reservations.list({ from: from.toISOString(), to: to.toISOString() }, ['pending', 'confirmed', 'seated'])
+        .then(r => { if (alive) setBookings(Array.isArray(r) ? r.sort((a, b) => a.start_at.localeCompare(b.start_at)) : []); })
+        .catch(() => { if (alive) setBookings(null); });
+    };
+    load();
+    const id = setInterval(load, 60_000);
+    return () => { alive = false; clearInterval(id); };
+  }, [isPoster, isAllBranches]);
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
   const [reservationsLoading, setReservationsLoading] = useState(false);
   useEffect(() => {
@@ -1204,7 +1246,18 @@ export const Operations: React.FC<{
       </section>
 
       {/* 3. Floor + cash + stop list */}
-      <div className="floor rise" style={{ animationDelay: '.12s', ...(showHall ? {} : { gridTemplateColumns: '1fr' }) }}>
+      <div className="floor rise" style={{ animationDelay: '.12s', ...(showHall || !isAllBranches ? {} : { gridTemplateColumns: '1fr' }) }}>
+        {!showHall && !isAllBranches && (
+          <section className="card-ph" aria-labelledby="h-hall">
+            <div className="sec-head"><h2 id="h-hall">{tr(lang, 'Зал', 'Floor', 'Zal')}</h2></div>
+            <div className="hall-empty">
+              <i className="ph ph-squares-four" aria-hidden="true" />
+              <p>{isPoster
+                ? tr(lang, 'Схемы зала пока нет. Её настроит поддержка TRACE — тогда здесь будет видно, какие столы заняты.', 'No floor plan yet. TRACE support sets it up — then this shows which tables are busy.', "Zal sxemasi hali yo'q. Uni TRACE yordami sozlaydi — keyin band stollar ko'rinadi.")
+                : tr(lang, 'Схемы зала пока нет. Она появится сама, когда касса iikoFront передаст залы и столы.', 'No floor plan yet. It appears by itself once the iikoFront till sends its halls and tables.', "Zal sxemasi hali yo'q. iikoFront kassasi zal va stollarni yuborganda o'zi paydo bo'ladi.")}</p>
+            </div>
+          </section>
+        )}
         {showHall && (
           <section className="card-ph" aria-labelledby="h-hall">
             <div className="sec-head"><h2 id="h-hall">{tr(lang, 'Зал', 'Floor', 'Zal')}</h2>{((PLUGIN_ENABLED && pluginConnected) || (isPoster && posterLive)) && <span className="state">{tr(lang, 'Live', 'Live', 'Live')}</span>}</div>
@@ -1286,9 +1339,10 @@ export const Operations: React.FC<{
       </section>
 
       {/* 5. Voids + bookings */}
-      {(pluginConnected || (isPoster && reservations.length > 0)) && (
-        <div className="band-2 band rise" style={{ animationDelay: '.2s', ...(pluginConnected && isPoster && reservations.length > 0 ? {} : { gridTemplateColumns: '1fr' }) }}>
+      {(pluginConnected || (isPoster && reservations.length > 0) || bookings != null) && (
+        <div className="band-2 band rise" style={{ animationDelay: '.2s', ...(pluginConnected && ((isPoster && reservations.length > 0) || bookings != null) ? {} : { gridTemplateColumns: '1fr' }) }}>
           {pluginConnected && <Voids lang={lang} events={voidEvents} />}
+          {bookings != null && <Bookings lang={lang} rows={bookings} onAll={onNavigate ? () => onNavigate('booking') : undefined} />}
           {isPoster && !isAllBranches && reservations.length > 0 && (
             <section className="card-ph" aria-labelledby="h-bk">
               <div className="sec-head"><h2 id="h-bk">{tr(lang, 'Бронирования', 'Bookings', 'Bronlar')}</h2></div>

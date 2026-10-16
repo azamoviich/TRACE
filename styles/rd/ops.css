@@ -58,7 +58,7 @@
 .rd-ops .map-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--rule); }
 .rd-ops .map-stats .l { font-size: 12.5px; color: var(--text-3); }
 .rd-ops .map-stats .v { font-size: 18px; font-weight: 600; margin-top: 2px; }
-.rd-ops .map-stats .v small { font-size: 13px; font-weight: 400; color: var(--text-3); }
+.rd-ops .map-stats .v small { font-size: 13px; font-weight: 400; color: var(--text-3); margin-left: 4px; }
 .rd-ops .tip-card { position: absolute; z-index: 5; min-width: 220px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--shadow); font-size: 13.5px; pointer-events: none; opacity: 0; transform: translateY(4px); transition: opacity .15s, transform .15s; }
 .rd-ops .tip-card.on { opacity: 1; transform: none; }
 .rd-ops .tip-card b { font-size: 15px; font-weight: 600; }
@@ -200,3 +200,34 @@
   .rd-ops .bk .c-dur, .rd-ops .bk .c-phone { display: none; }
   .rd-ops .toast { bottom: calc(80px + env(safe-area-inset-bottom)); }
 }
+
+/* Deletion: written off or not (iiko sales report) */
+.rd-ops .wo { display: inline-block; margin-left: 8px; padding: 0 6px; border-radius: 5px; border: 1px solid var(--rule-strong); font-size: 12px; font-weight: 400; color: var(--text-2); white-space: nowrap; vertical-align: 1px; }
+.rd-ops .wo-with { color: var(--neg); border-color: color-mix(in srgb, var(--neg) 40%, transparent); }
+.rd-ops .void .amt { text-align: right; }
+.rd-ops .void .amt .wo { display: block; margin: 3px 0 0; width: fit-content; margin-left: auto; }
+.rd-ops .vd { position: fixed; z-index: 46; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(460px, calc(100vw - 32px)); max-height: min(80dvh, 640px); overflow-y: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 18px 20px 20px; }
+.rd-ops .vd-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.rd-ops .vd-head h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.rd-ops .vd-head p { margin: 2px 0 0; font-size: 13.5px; color: var(--text-3); }
+.rd-ops .vd-x { margin-left: auto; width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--text-2); font-size: 16px; }
+.rd-ops .vd-x:hover { background: var(--sunken); color: var(--text); }
+.rd-ops .vd .kv { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+.rd-ops .vd .kv li { display: flex; justify-content: space-between; gap: 16px; padding: 9px 0; border-bottom: 1px solid var(--rule); font-size: 14.5px; }
+.rd-ops .vd .kv li > span:first-child { color: var(--text-2); }
+.rd-ops .vd .kv li > span:last-child { text-align: right; }
+.rd-ops .vd-note { margin: 10px 0 0; font-size: 13.5px; color: var(--text-2); line-height: 1.5; }
+.rd-ops .vd-sub { margin: 18px 0 6px; font-size: 14px; font-weight: 600; }
+@media (max-width: 640px) {
+  .rd-ops .vd { top: auto; bottom: 0; left: 0; transform: none; width: 100%; border-radius: 16px 16px 0 0; padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+}
+.rd-ops .hall-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 28px 24px; border: 1px dashed var(--rule-strong); border-radius: 12px; color: var(--text-2); }
+.rd-ops .hall-empty .ph { font-size: 26px; color: var(--text-3); }
+.rd-ops .hall-empty p { margin: 0; max-width: 460px; font-size: 14.5px; line-height: 1.55; }
+.rd-ops .rd-hall-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 12px 2px 0; font-size: 13px; color: var(--text-2); }
+.rd-ops .rd-hall-legend span { display: inline-flex; align-items: center; gap: 7px; }
+.rd-ops .rd-hall-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+.rd-ops .rd-hall-legend .ramp { gap: 2px; }
+.rd-ops .rd-hall-legend .ramp i { width: 18px; border-radius: 2px; }
+.rd-ops .bk .bk-sub { display: block; font-size: 12.5px; color: var(--text-3); }
+.rd-ops .bk td.nw, .rd-ops .bk .phone { white-space: nowrap; }

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { traceApi } from '../../services/traceApi';
-import { FieldLabel, inputBase } from './primitives';
 
 export const AdminLogin: React.FC<{ onLogin: (token: string) => void }> = ({ onLogin }) => {
   const [password, setPassword] = useState('');
@@ -26,33 +25,21 @@ export const AdminLogin: React.FC<{ onLogin: (token: string) => void }> = ({ onL
     }
   };
 
+  // Same sign-in look as the tenant login (TRACE-mockups admin.html); the
+  // admin panel is an internal English-only tool.
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="w-full max-w-[320px]">
-        <div className="mb-8 text-center">
-          <h1 className="font-display text-[24px] font-black text-text tracking-[0.25em]">TRACE</h1>
-          <p className="text-[9px] uppercase tracking-[0.3em] text-muted mt-1">Admin Panel</p>
-        </div>
-        <form onSubmit={submit} className="bg-card border border-border rounded-xl p-6 space-y-4">
-          <div>
-            <FieldLabel>Password</FieldLabel>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              autoFocus
-              className={inputBase}
-            />
+    <div className="rd rd-gate rd-login">
+      <div className="gate-wrap">
+        <div className="gate-brand"><span className="brand-mark" aria-hidden="true" /><span>TRACE</span></div>
+        <p className="gate-sub">Admin panel</p>
+        <form className="gate-card" onSubmit={submit}>
+          <div className="fld">
+            <label htmlFor="adm-pw">Password</label>
+            <input id="adm-pw" className="in" type="password" value={password} onChange={e => setPassword(e.target.value)} autoFocus autoComplete="current-password" aria-invalid={!!err || undefined} />
           </div>
-          {err && <p className="text-danger text-[11px]">{err}</p>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-primary hover:bg-primary-hover text-white font-semibold py-2.5 rounded-lg text-[13px] transition-colors flex items-center justify-center gap-2 disabled:opacity-70"
-          >
-            {loading
-              ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              : 'Enter'}
+          {err && <p className="ferr" role="alert">{err}</p>}
+          <button type="submit" className="btn solid gate-go" disabled={loading || !password}>
+            {loading ? <span className="gate-spin" aria-label="Signing in" /> : 'Sign in'}
           </button>
         </form>
       </div>

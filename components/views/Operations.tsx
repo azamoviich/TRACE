@@ -13,7 +13,7 @@ import { DateRangePicker } from '../ui/DateRangePicker';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { traceApi, CashShift, OpsKpis, StaffRow, StopItem, HallPlan, HallElement, isDemoTenant, demoActiveOrders, OpsAlert, VoidEvent, getTenantPlan, ShiftScheduleDay, StaffAbcRow, BranchSummary, ActiveOrderRow, ReservationRow, StaffProfitabilityRow, bookingApi, StaffReservation } from '../../services/traceApi';
+import { traceApi, CashShift, OpsKpis, StaffRow, StopItem, HallPlan, HallElement, isDemoTenant, demoActiveOrders, OpsAlert, VoidEvent, getTenantPlan, ShiftScheduleDay, StaffAbcRow, BranchSummary, ActiveOrderRow, ReservationRow, StaffProfitabilityRow, bookingApi, StaffReservation, getTenantRole } from '../../services/traceApi';
 import { ViewState } from '../../types';
 import { HallEditor } from '../HallEditor';
 import { ProLock } from '../ui/ProLock';
@@ -152,10 +152,23 @@ function todayISO() {
   return tashkentDateStr();
 }
 
-function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster, onHasPlanChange }: { lang: Language; onToast?: (m: string, t: 'info') => void; occupiedTables?: Set<number>; tableInfo?: Map<number, { min: number; sum: number }>; branchId?: string; isPoster?: boolean; onHasPlanChange?: (hasPlan: boolean) => void }) {
-  const [plans, setPlans] = useState<HallPlan[]>([]);
+function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster, onHasPlanChange, focusTable, canEdit }: { lang: Language; onToast?: (m: string, t: 'info') => void; occupiedTables?: Set<number>; tableInfo?: Map<number, { min: number; sum: number }>; branchId?: string; isPoster?: boolean; onHasPlanChange?: (hasPlan: boolean) => void; focusTable?: { num: number; at: number } | null; canEdit?: boolean }) {
+  // Last plans seen on this device draw at once; list() refreshes them.
+  const [plans, setPlans] = useState<HallPlan[]>(() => traceApi.halls.cached(branchId) ?? []);
   const [activeTab, setActiveTab] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => traceApi.halls.cached(branchId) == null);
+  const [editing, setEditing] = useState(false);
+  // «Показать на схеме»: open the hall holding the table and ring it for a few seconds.
+  const [ring, setRing] = useState<number | null>(null);
+  useEffect(() => {
+    if (!focusTable) return;
+    const i = plans.findIndex(p => p.elements.some(e => e.iiko_table_number === focusTable.num));
+    if (i >= 0) setActiveTab(i);
+    setMode('now');
+    setRing(focusTable.num);
+    const t = setTimeout(() => setRing(null), 4500);
+    return () => clearTimeout(t);
+  }, [focusTable]);
   const [mode, setMode] = useState<'now' | 'revenue' | 'duration'>('now');
   const [period, setPeriod] = useState<HeatPeriod>(30);
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null);
@@ -169,9 +182,11 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
   const durationCache = useRef<Map<string, { table: number; avgMin: number; visits: number }[]>>(new Map());
 
   useEffect(() => {
+    const cached = traceApi.halls.cached(branchId);
+    if (cached) onHasPlanChange?.(cached.length > 0);
     traceApi.halls.list(branchId)
       .then(p => { setPlans(p); setLoading(false); onHasPlanChange?.(p.length > 0); })
-      .catch((e) => { console.warn('halls fetch:', e); setLoading(false); onHasPlanChange?.(false); });
+      .catch((e) => { console.warn('halls fetch:', e); setLoading(false); if (!cached) onHasPlanChange?.(false); });
   }, [branchId]);
 
   // Effective request args — a custom calendar pick wins, otherwise "today"
@@ -351,6 +366,25 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
 
   return (
     <div>
+      {editing && activePlan && (
+        <HallEditor
+          key={`edit-${activePlan.id}`}
+          plan={activePlan}
+          lang={lang}
+          rdLook
+          onClose={() => setEditing(false)}
+          onSave={async updated => {
+            if (isDemoTenant()) {
+              setPlans(ps => ps.map(p => p.id === updated.id ? updated : p));
+              onToast?.(tr(lang, 'В демо схема сохраняется только до перезагрузки', 'In the demo the plan is kept until reload', 'Demoda sxema faqat qayta yuklashgacha saqlanadi'), 'info');
+            } else {
+              const saved = await traceApi.halls.save(updated);
+              setPlans(ps => ps.map(p => p.id === saved.id ? saved : p));
+            }
+            setEditing(false);
+          }}
+        />
+      )}
       <div className="map-tools">
         {plans.length > 1 && (
           <span className="seg small" role="group" aria-label={tr(lang, 'Зал', 'Floor', 'Zal')}>
@@ -376,6 +410,7 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
               onApply={r => { setCustomRange(r); setCalendarOpen(false); }} onClear={() => { setCustomRange(null); setCalendarOpen(false); }} />
           </span>
         )}
+        {canEdit && <button type="button" className="btn map-edit" onClick={() => setEditing(true)}><i className="ph ph-pencil-simple" aria-hidden="true" />{tr(lang, 'Изменить схему', 'Edit plan', "Sxemani o'zgartirish")}</button>}
       </div>
 
       {mode !== 'now' && !busy && stats.length === 0 && (
@@ -400,6 +435,7 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
           inline
           rdLook
           lang={lang}
+          focusTableNumber={ring}
         />
       </div>
       {stats.length > 0 && (
@@ -470,7 +506,11 @@ const ALERT_ICONS: Record<string, string> = {
   void_spike: 'ph-trash', kitchen_overdue: 'ph-cooking-pot', revenue_pace_drop: 'ph-trend-down',
 };
 
-function Alerts({ lang, pluginConnected, onGo }: { lang: Language; pluginConnected: boolean; onGo: (a: OpsAlert) => void }) {
+// Table an alert is about: set on browser-made alerts, read from the title otherwise.
+type OpsAlertX = OpsAlert & { table?: number };
+const alertTable = (a: OpsAlertX) => a.table ?? (Number(/(?:Стол|Table|Stol)\s*(\d+)/i.exec(a.title)?.[1]) || undefined);
+
+function Alerts({ lang, pluginConnected, onGo, extra = [] }: { lang: Language; pluginConnected: boolean; onGo: (a: OpsAlertX) => void; extra?: OpsAlertX[] }) {
   const [alerts, setAlerts] = useState<OpsAlert[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const load = useCallback(() => {
@@ -483,9 +523,11 @@ function Alerts({ lang, pluginConnected, onGo }: { lang: Language; pluginConnect
     const id = setInterval(load, 60_000);
     return () => clearInterval(id);
   }, [load, pluginConnected]);
-  const visible = alerts.filter(a => !hidden.has(a.id));
-  if (!pluginConnected || visible.length === 0) return null;
-  const goLabel = (a: OpsAlert) => a.type === 'void_spike' ? tr(lang, 'Смотреть удаления', 'See voids', "O'chirishlarni ko'rish")
+  // Without the plugin the server has no live alerts; the 30s snapshot still
+  // shows long-open tables, so those come from the browser (`extra`).
+  const visible = [...(pluginConnected ? alerts : []), ...(pluginConnected ? [] : extra)].filter(a => !hidden.has(a.id));
+  if (visible.length === 0) return null;
+  const goLabel = (a: OpsAlertX) => a.type === 'void_spike' ? tr(lang, 'Смотреть удаления', 'See voids', "O'chirishlarni ko'rish")
     : a.type === 'long_ticket' || a.type === 'double_bill' || a.type === 'dead_zone' ? tr(lang, 'Показать на схеме', 'Show on the plan', "Sxemada ko'rsatish")
     : a.type === 'kitchen_overdue' ? tr(lang, 'Открытые заказы', 'Open orders', 'Ochiq buyurtmalar') : null;
   return (
@@ -1095,6 +1137,18 @@ export const Operations: React.FC<{
   const [ordersAll, setOrdersAll] = useState(false);
   const [cardOpen, setCardOpen] = useState(false);
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const [focusTable, setFocusTable] = useState<{ num: number; at: number } | null>(null);
+  // Tables open 90+ minutes, from the 30s order snapshot (used when the plugin is offline).
+  const localAlerts: OpsAlertX[] = useMemo(() => [...tableInfo.entries()]
+    .filter(([, i]) => i.min >= 90)
+    .sort((a, b) => b[1].min - a[1].min)
+    .slice(0, 4)
+    .map(([num, i]) => ({
+      id: `long-${num}`, level: i.min >= 150 ? 'critical' as const : 'warning' as const, type: 'long_ticket', since: '', table: num,
+      title: tr(lang, `Стол ${num} открыт ${Math.floor(i.min / 60)} ч ${i.min % 60} мин`, `Table ${num} open for ${Math.floor(i.min / 60)} h ${i.min % 60} min`, `${num}-stol ${Math.floor(i.min / 60)} soat ${i.min % 60} daqiqa ochiq`),
+      detail: i.sum > 0 ? tr(lang, `Счёт ${Math.round(i.sum).toLocaleString('ru-RU')} сум. Проверьте, нужен ли гостю ещё заказ или счёт.`, `Bill ${Math.round(i.sum).toLocaleString('ru-RU')} UZS. Check whether the guest wants more or the bill.`, `Hisob ${Math.round(i.sum).toLocaleString('ru-RU')} so'm. Mehmonga yana buyurtma yoki hisob kerakmi, tekshiring.`)
+        : tr(lang, 'Проверьте, нужен ли гостю ещё заказ или счёт.', 'Check whether the guest wants more or the bill.', 'Mehmonga yana buyurtma yoki hisob kerakmi, tekshiring.'),
+    })), [tableInfo, lang]);
   const fmtN = (n: number) => Math.round(n).toLocaleString('ru-RU');
   const hm = (iso: string | null) => iso ? new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' }) : '';
   const nowLabel = new Date().toLocaleString(tr(lang, 'ru-RU', 'en-GB', 'uz-Latn-UZ'), { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' });
@@ -1232,13 +1286,18 @@ export const Operations: React.FC<{
               : pluginConnected ? tr(lang, 'Данные с кассы идут в реальном времени.', 'Till data arrives in real time.', 'Kassa maʼlumotlari real vaqtda keladi.')
               : isPoster && posterLive ? tr(lang, 'Данные Poster идут в реальном времени.', 'Poster data arrives in real time.', 'Poster maʼlumotlari real vaqtda keladi.')
               : isPoster ? tr(lang, 'Poster, обновление раз в 30 секунд.', 'Poster, refreshed every 30 seconds.', 'Poster, har 30 soniyada yangilanadi.')
-              : tr(lang, 'Касса iikoFront не на связи: живые данные недоступны.', 'The iikoFront till is offline: no live data.', 'iikoFront kassasi ulanmagan.')}</span>
+              : tr(lang, 'Плагин кассы iikoFront не на связи: заказы и столы обновляются раз в 30 секунд.', 'The iikoFront till plugin is offline: orders and tables refresh every 30 seconds.', 'iikoFront kassa plagini ulanmagan: buyurtmalar va stollar har 30 soniyada yangilanadi.')}</span>
           </div>
         </div>
       </div>
 
       {/* 1. What needs attention right now */}
-      <Alerts lang={lang} pluginConnected={pluginConnected} onGo={a => jump(a.type === 'void_spike' ? 'h-voids' : a.type === 'kitchen_overdue' ? 'h-orders' : 'h-hall')} />
+      <Alerts lang={lang} pluginConnected={pluginConnected} extra={localAlerts}
+        onGo={a => {
+          const tbl = alertTable(a);
+          if (tbl != null && a.type !== 'void_spike' && a.type !== 'kitchen_overdue') setFocusTable({ num: tbl, at: Date.now() });
+          jump(a.type === 'void_spike' ? 'h-voids' : a.type === 'kitchen_overdue' ? 'h-orders' : 'h-hall');
+        }} />
 
       {/* 2. Pace of the shift */}
       <section className="strip rise" style={{ animationDelay: '.08s' }} aria-label={tr(lang, 'Показатели смены', 'Shift numbers', "Smena ko'rsatkichlari")}>
@@ -1271,7 +1330,10 @@ export const Operations: React.FC<{
                 </div>
               );
             }) : (
-              <HallMap lang={lang} onToast={onShowToast} occupiedTables={(PLUGIN_ENABLED && pluginConnected || isPoster) && occupiedTables.size > 0 ? occupiedTables : undefined} tableInfo={tableInfo} isPoster={isPoster} onHasPlanChange={setHasHallPlan} />
+              // The 30s order snapshot is real data with or without the plugin — the
+              // map colours from it, so the stats under the map must count it too.
+              <HallMap lang={lang} onToast={onShowToast} occupiedTables={occupiedTables.size > 0 ? occupiedTables : undefined} tableInfo={tableInfo} isPoster={isPoster} onHasPlanChange={setHasHallPlan}
+                focusTable={focusTable} canEdit={getTenantRole() === 'owner'} />
             )}
           </section>
         )}

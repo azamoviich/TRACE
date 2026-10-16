@@ -204,25 +204,26 @@ function renderElement(
 
 // ── props panel ───────────────────────────────────────────────────────────────
 
-function PropsPanel({ el, section, onChange, onDelete }: {
+function PropsPanel({ el, section, onChange, onDelete, T }: {
   el: HallElement;
   section?: IikoSection;
   onChange: (updated: HallElement) => void;
   onDelete: () => void;
+  T: (ru: string, en: string, uz: string) => string;
 }) {
   const isTable = el.type === 'rect_table' || el.type === 'round_table' || el.type === 'stool';
 
   return (
     <div className="w-52 flex-shrink-0 border-l border-border bg-surface p-4 space-y-3 overflow-y-auto">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[9px] uppercase tracking-[0.2em] text-muted font-semibold">Properties</span>
+        <span className="text-[9px] uppercase tracking-[0.2em] text-muted font-semibold">{T('Свойства', 'Properties', 'Xususiyatlar')}</span>
         <button onClick={onDelete} className="text-muted hover:text-red-400 transition-colors">
           <Trash2 size={13} />
         </button>
       </div>
 
       <div>
-        <label className="block text-[9px] uppercase tracking-[0.15em] text-muted mb-1">Label</label>
+        <label className="block text-[9px] uppercase tracking-[0.15em] text-muted mb-1">{T('Подпись', 'Label', 'Yorliq')}</label>
         <input
           value={el.label}
           onChange={e => onChange({ ...el, label: e.target.value })}
@@ -232,7 +233,7 @@ function PropsPanel({ el, section, onChange, onDelete }: {
 
       {isTable && (
         <div>
-          <label className="block text-[9px] uppercase tracking-[0.15em] text-muted mb-1">Seats</label>
+          <label className="block text-[9px] uppercase tracking-[0.15em] text-muted mb-1">{T('Мест', 'Seats', "O'rinlar")}</label>
           <input
             type="number"
             min={1}
@@ -246,14 +247,14 @@ function PropsPanel({ el, section, onChange, onDelete }: {
 
       {isTable && (
         <div>
-          <label className="block text-[9px] uppercase tracking-[0.15em] text-muted mb-1">iiko Table #</label>
+          <label className="block text-[9px] uppercase tracking-[0.15em] text-muted mb-1">{T('Стол в iiko №', 'iiko Table #', 'iiko stol №')}</label>
           {section ? (
             <select
               value={el.iiko_table_number ?? ''}
               onChange={e => onChange({ ...el, iiko_table_number: e.target.value ? parseInt(e.target.value) : undefined })}
               className="w-full bg-background border border-border rounded-lg px-2.5 py-1.5 text-text text-[12px] focus:border-primary focus:outline-none"
             >
-              <option value="">— unlinked —</option>
+              <option value="">{T('— не связан —', '— unlinked —', "— bog'lanmagan —")}</option>
               {section.tables.map(t => (
                 <option key={t.id} value={t.number}>#{t.number} {t.name}</option>
               ))}
@@ -261,7 +262,7 @@ function PropsPanel({ el, section, onChange, onDelete }: {
           ) : (
             <input
               type="number"
-              placeholder="iiko table number"
+              placeholder={T('номер стола в iiko', 'iiko table number', 'iiko stol raqami')}
               value={el.iiko_table_number ?? ''}
               onChange={e => onChange({ ...el, iiko_table_number: e.target.value ? parseInt(e.target.value) : undefined })}
               className="w-full bg-background border border-border rounded-lg px-2.5 py-1.5 text-text text-[12px] focus:border-primary focus:outline-none"
@@ -273,12 +274,12 @@ function PropsPanel({ el, section, onChange, onDelete }: {
       {(el.type === 'rect_table' || el.type === 'wall' || el.type === 'bar' || el.type === 'entrance') && (
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className="block text-[9px] text-muted mb-1">W</label>
+            <label className="block text-[9px] text-muted mb-1">{T('Ш', 'W', 'E')}</label>
             <input type="number" value={el.w ?? 80} onChange={e => onChange({ ...el, w: parseInt(e.target.value) || 80 })}
               className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-text text-[11px] focus:border-primary focus:outline-none" />
           </div>
           <div>
-            <label className="block text-[9px] text-muted mb-1">H</label>
+            <label className="block text-[9px] text-muted mb-1">{T('В', 'H', 'B')}</label>
             {el.type !== 'entrance' && (
               <input type="number" value={el.h ?? 40} onChange={e => onChange({ ...el, h: parseInt(e.target.value) || 14 })}
                 className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-text text-[11px] focus:border-primary focus:outline-none" />
@@ -289,7 +290,7 @@ function PropsPanel({ el, section, onChange, onDelete }: {
 
       {(el.type === 'round_table' || el.type === 'stool') && (
         <div>
-          <label className="block text-[9px] text-muted mb-1">Radius</label>
+          <label className="block text-[9px] text-muted mb-1">{T('Радиус', 'Radius', 'Radius')}</label>
           <input type="number" value={el.r ?? 28} min={8} onChange={e => onChange({ ...el, r: parseInt(e.target.value) || 8 })}
             className="w-full bg-background border border-border rounded-lg px-2.5 py-1.5 text-text text-[12px] focus:border-primary focus:outline-none" />
         </div>
@@ -297,7 +298,7 @@ function PropsPanel({ el, section, onChange, onDelete }: {
 
       {/* Rotation */}
       <div>
-        <label className="block text-[9px] uppercase tracking-[0.15em] text-muted mb-1">Rotation</label>
+        <label className="block text-[9px] uppercase tracking-[0.15em] text-muted mb-1">{T('Поворот', 'Rotation', 'Burilish')}</label>
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => onChange({ ...el, rotation: ((el.rotation ?? 0) - 45 + 360) % 360 })}
@@ -350,9 +351,11 @@ interface HallEditorProps {
   lang?: Language;
   /** Redesign look (Operations): token colours, Plex font, mockup legend. */
   rdLook?: boolean;
+  /** Table to point at (alerts → «Показать на схеме»): a pulsing accent ring. */
+  focusTableNumber?: number | null;
 }
 
-export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tableInfo, revenueInfo, durationInfo, legendMode = 'occupancy', onSave, onClose, readOnly = false, inline = false, lang = 'ru', rdLook = false }: HallEditorProps) {
+export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tableInfo, revenueInfo, durationInfo, legendMode = 'occupancy', onSave, onClose, readOnly = false, inline = false, lang = 'ru', rdLook = false, focusTableNumber = null }: HallEditorProps) {
   const isDark = useIsDark();
   const [elements, setElements] = useState<HallElement[]>(plan.elements);
   const [planName, setPlanName] = useState(plan.name);
@@ -501,14 +504,16 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
     }
   };
 
+  // The owner's editor (rdLook) speaks the user's language; the admin panel stays English.
+  const T = (ru: string, en: string, uz: string) => rdLook ? tr(lang, ru, en, uz) : en;
   const TOOLS: Array<{ id: HallElementType | 'select'; icon: React.ReactNode; label: string }> = [
-    { id: 'select',      icon: <LayoutGrid size={14} />,  label: 'Select' },
-    { id: 'rect_table',  icon: <Square size={14} />,      label: 'Rect Table' },
-    { id: 'round_table', icon: <Circle size={14} />,      label: 'Round Table' },
-    { id: 'stool',       icon: <Circle size={11} />,      label: 'Bar Stool' },
-    { id: 'wall',        icon: <Minus size={14} />,       label: 'Wall' },
-    { id: 'bar',         icon: <Square size={14} />,      label: 'Bar Counter' },
-    { id: 'entrance',    icon: <ArrowRight size={14} />,  label: 'Entrance' },
+    { id: 'select',      icon: <LayoutGrid size={14} />,  label: T('Выбрать', 'Select', 'Tanlash') },
+    { id: 'rect_table',  icon: <Square size={14} />,      label: T('Прямоугольный стол', 'Rect Table', "To'rtburchak stol") },
+    { id: 'round_table', icon: <Circle size={14} />,      label: T('Круглый стол', 'Round Table', 'Dumaloq stol') },
+    { id: 'stool',       icon: <Circle size={11} />,      label: T('Барный стул', 'Bar Stool', 'Bar stuli') },
+    { id: 'wall',        icon: <Minus size={14} />,       label: T('Стена', 'Wall', 'Devor') },
+    { id: 'bar',         icon: <Square size={14} />,      label: T('Барная стойка', 'Bar Counter', 'Bar peshtaxtasi') },
+    { id: 'entrance',    icon: <ArrowRight size={14} />,  label: T('Вход', 'Entrance', 'Kirish') },
   ];
 
   // Read-only inline view: crop the canvas to the elements' bounding box so a
@@ -554,6 +559,19 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
       ))}
       {!rdLook && <rect x={4} y={4} width={W - 8} height={H - 8} fill="none" stroke={isDark ? '#222228' : '#d4cfc8'} strokeWidth={2} rx={2} />}
       {elements.map(el => {
+        if (focusTableNumber != null && el.iiko_table_number === focusTableNumber) {
+          const round = el.type === 'round_table' || el.type === 'stool';
+          return (
+            <g key={el.id}>
+              {round
+                ? <circle cx={el.cx ?? 0} cy={el.cy ?? 0} r={(el.r ?? 28) + 7} className="hall-ring" />
+                : <rect x={(el.x ?? 0) - 7} y={(el.y ?? 0) - 7} width={(el.w ?? 80) + 14} height={(el.h ?? 40) + 14} rx={10} className="hall-ring" />}
+              {renderElement(el, false, occupiedTableNumbers?.has(el.iiko_table_number) ? 0.9 : 0, isDark, () => {}, () => {},
+                tableInfo?.get(el.iiko_table_number) ? { kind: 'live' as const, ...tableInfo.get(el.iiko_table_number)! } : null,
+                rdLook ? { lang, heat: false } : undefined)}
+            </g>
+          );
+        }
         const occ = el.iiko_table_number == null ? 0
           : tableHeat != null ? (tableHeat.get(el.iiko_table_number) ?? 0)
           : occupiedTableNumbers?.has(el.iiko_table_number) ? 0.9
@@ -654,7 +672,7 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
             onChange={e => { setPlanName(e.target.value); setDirty(true); }}
             className="text-[13px] font-semibold text-text bg-transparent focus:outline-none focus:bg-card-hover focus:px-2 rounded transition-all min-w-0 max-w-[200px]"
           />
-          {dirty && !saveErr && <span className="text-[10px] text-amber-400 font-mono">unsaved</span>}
+          {dirty && !saveErr && <span className="text-[10px] text-amber-400 font-mono">{T('не сохранено', 'unsaved', 'saqlanmagan')}</span>}
           {saveErr && <span className="text-[10px] text-red-400 font-mono">{saveErr}</span>}
         </div>
         <div className="flex items-center gap-2">
@@ -665,7 +683,7 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
               className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-lg text-[11px] font-semibold disabled:opacity-40 hover:bg-primary/90 transition-colors"
             >
               <Save size={12} />
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? T('Сохраняем…', 'Saving…', 'Saqlanmoqda…') : T('Сохранить', 'Save', 'Saqlash')}
             </button>
           )}
         </div>
@@ -689,7 +707,7 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
             <div className="flex-1" />
             {selectedId && (
               <button
-                title="Delete selected (Del)"
+                title={T('Удалить выбранное (Del)', 'Delete selected (Del)', "Tanlanganni o'chirish (Del)")}
                 onClick={deleteSelected}
                 className="w-9 h-9 rounded-xl flex items-center justify-center text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors mb-2"
               >
@@ -713,11 +731,12 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
             section={section}
             onChange={updateElement}
             onDelete={deleteSelected}
+            T={T}
           />
         )}
       </div>
 
-      {legend}
+      {rdLook ? <div className="px-5 py-2.5 border-t border-border text-[12px] text-muted">{T('Перетаскивайте столы · R — поворот на 45° · Del — удалить · номер стола в iiko связывает его с заказами', 'Drag tables · R rotates 45° · Del deletes · the iiko table number links it to orders', "Stollarni suring · R — 45° burish · Del — o'chirish · iiko stol raqami uni buyurtmalarga bog'laydi")}</div> : legend}
     </div>
   );
 }

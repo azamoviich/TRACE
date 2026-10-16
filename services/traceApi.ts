@@ -892,6 +892,11 @@ function demoVoidEvents(): VoidEvent[] {
   ];
 }
 
+// Per subdomain + branch, so switching branches never shows another hall.
+function hallsCacheKey(branchIdOverride?: string): string {
+  return `trace_halls_${getSubdomain()}_${branchIdOverride ?? getActiveBranchId() ?? 'self'}`;
+}
+
 function demoHalls(): HallPlan[] {
   // Table numbers line up with demoTableTurns/demoRevenueRows so the
   // occupancy + revenue heatmap reads as one consistent fictional venue.
@@ -1868,6 +1873,24 @@ export const traceApi = {
       // real restaurant sees too.
       if (isDemoTenant()) return demoHalls();
       const r = await apiFetch(`/halls`, {}, branchIdOverride);
+      if (!r.ok) throw new Error(`${r.status}`);
+      const plans: HallPlan[] = await r.json();
+      try { localStorage.setItem(hallsCacheKey(branchIdOverride), JSON.stringify(plans)); } catch { /* storage full or blocked */ }
+      return plans;
+    },
+    /** Last plans seen on this device — drawn at once while list() refreshes. */
+    cached: (branchIdOverride?: string): HallPlan[] | null => {
+      if (isDemoTenant()) return demoHalls();
+      try { const v = localStorage.getItem(hallsCacheKey(branchIdOverride)); return v ? JSON.parse(v) as HallPlan[] : null; } catch { return null; }
+    },
+    /** Owner edits a plan (Операции → Изменить схему); needs the owner session. */
+    save: async (plan: HallPlan): Promise<HallPlan> => {
+      const token = getTenantOwnerToken();
+      const r = await apiFetch(`/halls/${plan.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ name: plan.name, elements: plan.elements }),
+      });
       if (!r.ok) throw new Error(`${r.status}`);
       return r.json();
     },

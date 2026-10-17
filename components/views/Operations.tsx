@@ -1131,13 +1131,16 @@ export const Operations: React.FC<{
 
   // Voids feed the "Удаления" block and the alert jump target.
   const [voidEvents, setVoidEvents] = useState<VoidEvent[]>([]);
+  // iiko's events journal is the source (single branch), so the plugin
+  // doesn't need to be online for this block.
+  const showVoids = !isPoster && !isAllBranches;
   useEffect(() => {
-    if (!pluginConnected) return;
+    if (!showVoids) { setVoidEvents([]); return; }
     const load = () => traceApi.operations.voidEvents().then(setVoidEvents).catch(() => {});
     load();
     const id = setInterval(load, 120_000);
     return () => clearInterval(id);
-  }, [pluginConnected]);
+  }, [showVoids]);
 
   const [ordersAll, setOrdersAll] = useState(false);
   const [cardOpen, setCardOpen] = useState(false);
@@ -1406,9 +1409,9 @@ export const Operations: React.FC<{
       </section>
 
       {/* 5. Voids + bookings */}
-      {(pluginConnected || (isPoster && reservations.length > 0) || bookings != null) && (
-        <div className="band-2 band rise" style={{ animationDelay: '.2s', ...(pluginConnected && ((isPoster && reservations.length > 0) || bookings != null) ? {} : { gridTemplateColumns: '1fr' }) }}>
-          {pluginConnected && <Voids lang={lang} events={voidEvents} />}
+      {(showVoids || (isPoster && reservations.length > 0) || bookings != null) && (
+        <div className="band-2 band rise" style={{ animationDelay: '.2s', ...(showVoids && ((isPoster && reservations.length > 0) || bookings != null) ? {} : { gridTemplateColumns: '1fr' }) }}>
+          {showVoids && <Voids lang={lang} events={voidEvents} />}
           {bookings != null && <Bookings lang={lang} rows={bookings} onAll={onNavigate ? () => onNavigate('booking') : undefined} />}
           {isPoster && !isAllBranches && reservations.length > 0 && (
             <section className="card-ph" aria-labelledby="h-bk">

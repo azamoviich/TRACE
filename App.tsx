@@ -313,13 +313,11 @@ export default function App() {
       case 'settings':    return (
         <Settings
           lang={lang}
+          setLang={setLang}
           onShowToast={showToast}
+          onLogout={handleLogout}
           theme={theme}
           setTheme={setTheme}
-          navStyle={navStyle}
-          setNavStyle={setNavStyle}
-          mobileNavStyle={mobileNavStyle}
-          setMobileNavStyle={setMobileNavStyle}
           hiddenPages={hiddenPagesState}
           unavailablePages={unavailablePages}
           setHiddenPages={setHiddenPages}
@@ -338,7 +336,7 @@ export default function App() {
 
   // Redesigned pages render their own markup under .rd; the rest still use
   // Tailwind and sit in the same container with the new tokens.
-  const REDESIGNED: Partial<Record<ViewState, string>> = { dashboard: 'dash', sales: 'sales', operations: 'ops', financial: 'fin', employees: 'staff', plan: 'plan', reviews: 'reviews', booking: 'book' };
+  const REDESIGNED: Partial<Record<ViewState, string>> = { dashboard: 'dash', sales: 'sales', operations: 'ops', financial: 'fin', employees: 'staff', plan: 'plan', reviews: 'reviews', booking: 'book', loyalty: 'x rd-loy', compare: 'x rd-compare', settings: 'x rd-set', reports: 'x rd-rep' };
   // Pages stay mounted once opened (hidden when not current), so going back
   // to one is instant instead of a fresh load behind skeletons.
   const shownView = effectiveView(currentView);

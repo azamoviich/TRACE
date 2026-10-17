@@ -1,26 +1,12 @@
+// Лояльность — redesigned per TRACE-mockups/owner/more.js S.loyalty
+// (styles/rd/more.css): look a guest up by phone, members strip, guests over
+// 30 days, best guests; a guest opens in a side panel with balance and buys.
 import React, { useEffect, useState } from 'react';
-import {
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-} from 'recharts';
 import * as XLSX from 'xlsx';
-import { Users, TrendingUp, Wallet, Repeat, Search, X, Heart, Download } from 'lucide-react';
-import { Card } from '../ui/Card';
-import { ChartTooltip } from '../ui/ChartTooltip';
+import { tr } from '../../constants';
 import { Language } from '../../types';
 import { traceApi, LoyaltySummary, LoyaltyGuestRow, LoyaltyVisit } from '../../services/traceApi';
-
-function tr(lang: Language, ru: string, en: string, uz: string) {
-  return lang === 'ru' ? ru : lang === 'uz' ? uz : en;
-}
-
-function fmtSum(n: number) {
-  return n.toLocaleString('ru-RU');
-}
-
-function fmtDate(lang: Language, iso: string | null | undefined) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(lang === 'ru' ? 'ru-RU' : lang === 'uz' ? 'uz-Latn-UZ' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' });
-}
+import { Empty, LineChart, Skel, fmt, money, ruPl } from '../rd/ui';
 
 interface IikoCustomerInfo {
   name?: string;
@@ -34,106 +20,24 @@ interface IikoCustomerInfo {
   lastProcessedOrderDate?: string;
 }
 
-function GuestDetailPanel({ lang, data }: { lang: Language; data: IikoCustomerInfo }) {
-  const fullName = [data.name, data.surname].filter(Boolean).join(' ') || tr(lang, 'Без имени', 'Unnamed', 'Ismsiz');
-  const tier = data.categories?.find(c => c.isActive)?.name;
-  const balances = (data.walletBalances ?? []).filter(w => w.balance > 0);
-  const cardNumber = data.cards?.[0]?.number;
-
-  return (
-    <div className="rounded-lg border border-border bg-background p-3 space-y-2.5">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <p className="text-[13px] font-semibold text-text">{fullName}</p>
-          <p className="text-[11px] text-muted">{data.phone}{cardNumber ? ` · ${tr(lang, 'карта', 'card', 'karta')} ${cardNumber}` : ''}</p>
-        </div>
-        {tier && (
-          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-primary/10 text-primary">{tier}</span>
-        )}
-      </div>
-
-      {balances.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {balances.map(w => (
-            <div key={w.id} className="text-[12px] bg-card border border-border rounded-lg px-2.5 py-1.5">
-              <span className="text-muted">{w.name}: </span>
-              <span className="font-semibold text-text metric-number">{fmtSum(w.balance)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="grid grid-cols-3 gap-2 pt-1.5 border-t border-border text-[11px]">
-        <div>
-          <p className="text-muted">{tr(lang, 'С нами с', 'Member since', "A'zo bo'lgan")}</p>
-          <p className="text-text font-medium mt-0.5">{fmtDate(lang, data.whenRegistered)}</p>
-        </div>
-        <div>
-          <p className="text-muted">{tr(lang, 'Первый визит', 'First visit', 'Birinchi tashrif')}</p>
-          <p className="text-text font-medium mt-0.5">{fmtDate(lang, data.firstOrderDate)}</p>
-        </div>
-        <div>
-          <p className="text-muted">{tr(lang, 'Последний визит', 'Last visit', 'Oxirgi tashrif')}</p>
-          <p className="text-text font-medium mt-0.5">{fmtDate(lang, data.lastProcessedOrderDate)}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PurchaseHistoryPanel({ lang, visits, loading }: { lang: Language; visits: LoyaltyVisit[]; loading: boolean }) {
-  if (loading) {
-    return <p className="text-[12px] text-muted mt-2">{tr(lang, 'Загрузка покупок...', 'Loading purchases...', 'Xaridlar yuklanmoqda...')}</p>;
-  }
-  if (visits.length === 0) {
-    return <p className="text-[12px] text-muted mt-2">{tr(lang, 'Нет истории покупок в TRACE — накопится по мере визитов', 'No purchase history in TRACE yet — will build up as visits come in', "TRACE'da xaridlar tarixi yo'q — tashriflar bilan to'planadi")}</p>;
-  }
-  return (
-    <div className="mt-2 space-y-2">
-      <p className="text-[11px] uppercase tracking-widest text-muted">{tr(lang, 'Покупки', 'Purchases', 'Xaridlar')}</p>
-      {visits.map((v, i) => (
-        <div key={i} className="rounded-lg border border-border bg-background p-2.5">
-          <div className="flex items-center justify-between mb-1">
-            <p className="text-[11px] text-muted">{fmtDate(lang, v.at)}</p>
-            <p className="text-[12px] font-semibold text-text metric-number">{fmtSum(v.sum)} UZS</p>
-          </div>
-          {v.items.length > 0 && (
-            <p className="text-[12px] text-text">
-              {v.items.map((it, j) => (
-                <span key={j}>{j > 0 && ', '}{it.name}{it.quantity > 1 ? ` ×${it.quantity}` : ''}</span>
-              ))}
-            </p>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function StatTile({ icon: Icon, label, value, suffix }: { icon: React.ElementType; label: string; value: string; suffix?: string }) {
-  return (
-    <div className="bg-card border border-border rounded-xl p-4">
-      <div className="flex items-center gap-1.5 text-muted mb-1.5">
-        <Icon size={13} />
-        <p className="text-[12px] font-medium">{label}</p>
-      </div>
-      <p className="metric-number font-display font-bold text-text leading-none" style={{ fontSize: 'clamp(18px, 2vw, 24px)' }}>
-        {value}{suffix && <span className="text-muted ml-1" style={{ fontSize: '0.55em' }}>{suffix}</span>}
-      </p>
-    </div>
-  );
+const locale = (lang: Language) => lang === 'ru' ? 'ru-RU' : lang === 'uz' ? 'uz-Latn-UZ' : 'en-GB';
+function fmtDate(lang: Language, iso: string | null | undefined, year = true) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(+d)) return '—';
+  return d.toLocaleDateString(locale(lang), { day: 'numeric', month: 'short', ...(year && d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}), timeZone: 'Asia/Tashkent' });
 }
 
 export const Loyalty: React.FC<{ lang: Language }> = ({ lang }) => {
-  const ru = lang === 'ru';
-  const isUz = lang === 'uz';
+  const T = (ru: string, en: string, uz: string) => tr(lang, ru, en, uz);
   const [summary, setSummary] = useState<LoyaltySummary | null>(null);
   const [guests, setGuests] = useState<LoyaltyGuestRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [detail, setDetail] = useState<{ phone: string; loading: boolean; data: any; error: boolean } | null>(null);
-  const [history, setHistory] = useState<{ phone: string; loading: boolean; visits: LoyaltyVisit[] } | null>(null);
-  const [manualPhone, setManualPhone] = useState('');
+  const [q, setQ] = useState('');
+  const [phone, setPhone] = useState('');
+  const [open, setOpen] = useState<{ phone: string; row?: LoyaltyGuestRow } | null>(null);
+  const [detail, setDetail] = useState<{ loading: boolean; data: IikoCustomerInfo | null; error: boolean }>({ loading: false, data: null, error: false });
+  const [visits, setVisits] = useState<{ loading: boolean; list: LoyaltyVisit[] }>({ loading: false, list: [] });
 
   useEffect(() => {
     setLoading(true);
@@ -143,249 +47,150 @@ export const Loyalty: React.FC<{ lang: Language }> = ({ lang }) => {
       .finally(() => setLoading(false));
   }, []);
 
-  const lookupGuest = (phone: string) => {
-    setDetail({ phone, loading: true, data: null, error: false });
-    traceApi.loyalty.guestDetail(phone)
-      .then(data => setDetail({ phone, loading: false, data, error: false }))
-      .catch(() => setDetail({ phone, loading: false, data: null, error: true }));
+  useEffect(() => {
+    if (!open) return;
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(null); };
+    document.addEventListener('keydown', key);
+    return () => document.removeEventListener('keydown', key);
+  }, [open]);
 
-    setHistory({ phone, loading: true, visits: [] });
-    traceApi.loyalty.guestHistory(phone)
-      .then(visits => setHistory({ phone, loading: false, visits }))
-      .catch(() => setHistory({ phone, loading: false, visits: [] }));
+  const openGuest = (p: string, row?: LoyaltyGuestRow) => {
+    setOpen({ phone: p, row });
+    setDetail({ loading: true, data: null, error: false });
+    setVisits({ loading: true, list: [] });
+    traceApi.loyalty.guestDetail(p)
+      .then(data => setDetail({ loading: false, data, error: !data }))
+      .catch(() => setDetail({ loading: false, data: null, error: true }));
+    traceApi.loyalty.guestHistory(p)
+      .then(list => setVisits({ loading: false, list }))
+      .catch(() => setVisits({ loading: false, list: [] }));
   };
 
-  // Clicking an already-open row closes it instead of re-fetching.
-  const toggleGuest = (phone: string) => {
-    if (detail?.phone === phone) {
-      setDetail(null);
-      setHistory(null);
-      return;
-    }
-    lookupGuest(phone);
-  };
-
-  const filtered = search
-    ? guests.filter(g => g.phone.includes(search) || (g.name ?? '').toLowerCase().includes(search.toLowerCase()))
+  const digits = (s: string) => s.replace(/\D/g, '');
+  const filtered = q
+    ? guests.filter(g => (digits(q) && digits(g.phone).includes(digits(q))) || (g.name ?? '').toLowerCase().includes(q.toLowerCase().trim()))
     : guests;
-
   const noData = !loading && (!summary || summary.totalMembers === 0);
+  const unnamed = T('Без имени', 'Unnamed', 'Ismsiz');
 
-  const exportToExcel = () => {
-    const header = [
-      tr(lang, 'Гость', 'Guest', 'Mehmon'), tr(lang, 'Телефон', 'Phone', 'Telefon'),
-      tr(lang, 'Визиты', 'Visits', 'Tashriflar'), tr(lang, 'Потрачено (UZS)', 'Spent (UZS)', 'Sarflangan (UZS)'),
-      tr(lang, 'Любимое блюдо', 'Favorite item', 'Sevimli taom'),
-      tr(lang, 'Последний визит', 'Last visit', 'Oxirgi tashrif'),
-    ];
-    const rows = guests.map(g => [
-      g.name ?? tr(lang, 'Без имени', 'Unnamed', 'Ismsiz'),
-      g.phone,
-      g.visitCount,
-      g.totalSpent,
-      g.favoriteItem ?? '—',
-      fmtDate(lang, g.lastSeen),
-    ]);
+  const exportExcel = () => {
+    const header = [T('Гость', 'Guest', 'Mehmon'), T('Телефон', 'Phone', 'Telefon'), T('Визиты', 'Visits', 'Tashriflar'), T('Потрачено (UZS)', 'Spent (UZS)', 'Sarflangan (UZS)'), T('Любимое блюдо', 'Favourite dish', 'Sevimli taom'), T('Последний визит', 'Last visit', 'Oxirgi tashrif')];
+    const rows = guests.map(g => [g.name ?? unnamed, g.phone, g.visitCount, g.totalSpent, g.favoriteItem ?? '—', fmtDate(lang, g.lastSeen)]);
     const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
-    ws['!cols'] = [{ wch: 18 }, { wch: 16 }, { wch: 8 }, { wch: 14 }, { wch: 24 }, { wch: 14 }];
+    ws['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 8 }, { wch: 14 }, { wch: 24 }, { wch: 14 }];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, tr(lang, 'Лояльность', 'Loyalty', 'Sadoqat'));
+    XLSX.utils.book_append_sheet(wb, ws, T('Лояльность', 'Loyalty', 'Sadoqat'));
     XLSX.writeFile(wb, `loyalty-${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
+  const trend = summary?.trend ?? [];
+  const d = detail.data;
+  const fullName = d ? [d.name, d.surname].filter(Boolean).join(' ') : '';
+  const title = fullName || open?.row?.name || unnamed;
+  const tier = d?.categories?.find(c => c.isActive)?.name;
+  const balances = (d?.walletBalances ?? []).filter(w => w.balance > 0);
+  const card = d?.cards?.[0]?.number;
+
   return (
-    <div className="space-y-5 pb-24 animate-fade-in">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
+    <>
+      <div className="page-head rise">
         <div>
-          <h2 className="text-[18px] font-bold text-text">{tr(lang, 'Программа лояльности', 'Loyalty program', 'Sadoqat dasturi')}</h2>
-          <p className="text-[13px] text-muted mt-0.5">{tr(lang, 'Гости, идентифицированные по номеру телефона на кассе', 'Guests identified by phone at checkout', "Kassada telefon raqami orqali aniqlangan mehmonlar")}</p>
+          <h1>{T('Лояльность', 'Loyalty', 'Sadoqat')}</h1>
+          <div className="sub">{T('Гости, которых касса узнала по номеру телефона', 'Guests the till recognised by phone number', 'Kassa telefon raqami orqali tanigan mehmonlar')}</div>
         </div>
-        {!noData && guests.length > 0 && (
-          <button
-            onClick={exportToExcel}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded-lg bg-card border border-border text-text hover:bg-card-hover transition-colors flex-shrink-0"
-          >
-            <Download size={13} />
-            {tr(lang, 'Скачать Excel', 'Download Excel', 'Excel yuklab olish')}
-          </button>
-        )}
+        {!noData && guests.length > 0 && <button className="btn" type="button" onClick={exportExcel}><i className="ph ph-download-simple" aria-hidden="true" />{T('Скачать Excel', 'Download Excel', 'Excel yuklab olish')}</button>}
       </div>
 
-      {/* Manual lookup — works via iiko's Cloud API directly, for any phone
-          number, even before the POS has ever captured that guest. Doesn't
-          depend on accumulated history like the table below does. */}
-      <Card>
-        <p className="text-[13px] font-semibold text-text mb-1">{tr(lang, 'Найти гостя по телефону', 'Look up a guest by phone', 'Telefon orqali mehmonni topish')}</p>
-        <p className="text-[12px] text-muted mb-3">{tr(lang, 'Баланс, статус и последний визит — по любому номеру', 'Balance, tier, and last visit — for any phone number', "Balans, status va oxirgi tashrif — istalgan raqam bo'yicha")}</p>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 bg-background border border-border rounded-lg px-2.5 py-1.5 flex-1 max-w-[280px]">
-            <Search size={13} className="text-muted flex-shrink-0" />
-            <input
-              value={manualPhone}
-              onChange={e => setManualPhone(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && manualPhone.trim()) lookupGuest(manualPhone.trim()); }}
-              placeholder={tr(lang, '+998 90 123 45 67', '+998 90 123 45 67', '+998 90 123 45 67')}
-              className="bg-transparent outline-none text-[13px] text-text placeholder:text-muted w-full"
-            />
-          </div>
-          <button
-            onClick={() => manualPhone.trim() && lookupGuest(manualPhone.trim())}
-            disabled={!manualPhone.trim()}
-            className="px-3 py-1.5 text-[13px] font-medium rounded-lg bg-primary text-white disabled:opacity-40 transition-opacity"
-          >
-            {tr(lang, 'Найти', 'Look up', 'Topish')}
-          </button>
+      <section className="card rise" aria-labelledby="h-find">
+        <div className="card-h"><h2 id="h-find">{T('Найти гостя', 'Find a guest', 'Mehmonni topish')}</h2></div>
+        <p className="card-sub">{T('Баланс, статус и последний визит по любому номеру, даже если гость ещё не попал в список ниже', 'Balance, tier and last visit for any number, even if the guest is not in the list below yet', "Istalgan raqam bo'yicha balans, status va oxirgi tashrif")}</p>
+        <form className="find" onSubmit={e => { e.preventDefault(); if (digits(phone).length >= 7) openGuest(phone.trim()); }}>
+          <input className="input" type="tel" inputMode="tel" placeholder="+998 90 123 45 67" value={phone} onChange={e => setPhone(e.target.value)} aria-label={T('Телефон гостя', 'Guest phone', 'Mehmon telefoni')} />
+          <button className="btn solid" type="submit" disabled={digits(phone).length < 7}>{T('Найти', 'Find', 'Topish')}</button>
+        </form>
+      </section>
+
+      {loading && <div className="stack"><div className="card"><Skel lines={['w9', 'w7', 'w9', 'w5']} /></div></div>}
+
+      {noData && <div className="stack"><div className="card"><Empty>{T('Аналитика гостей появится здесь после первых визитов с программой лояльности.', 'Guest analytics will show up here after the first loyalty visits.', "Sadoqat dasturi bo'yicha birinchi tashriflardan so'ng tahlil shu yerda paydo bo'ladi.")}</Empty></div></div>}
+
+      {!loading && !noData && summary && (
+        <div className="stack">
+          <section className="strip rise" aria-label={T('Итоги', 'Totals', 'Yakunlar')}>
+            <div><div className="s-l">{T('Участников', 'Members', "A'zolar")}</div><div className="s-v">{fmt(summary.totalMembers)}</div><div className="s-d">{T('всего в программе', 'in the programme', 'dasturda jami')}</div></div>
+            <div><div className="s-l">{T('Новых за 30 дней', 'New in 30 days', '30 kunda yangi')}</div><div className="s-v">{fmt(summary.newMembers)}</div><div className="s-d">{T('первый визит', 'first visit', 'birinchi tashrif')}</div></div>
+            <div><div className="s-l">{T('Возвращаются', 'Come back', 'Qaytadi')}</div><div className="s-v">{summary.returningPct}<small>%</small></div><div className="s-d">{T(`${fmt(summary.returningMembers)} ${ruPl(summary.returningMembers, 'гость', 'гостя', 'гостей')}`, `${fmt(summary.returningMembers)} guests`, `${fmt(summary.returningMembers)} mehmon`)}</div></div>
+            <div><div className="s-l">{T('Средние траты', 'Average spend', "O'rtacha xarajat")}</div><div className="s-v">{money(summary.avgSpent, lang)}</div><div className="s-d">{T('на гостя за всё время', 'per guest, all time', 'mehmon boshiga')}</div></div>
+          </section>
+
+          {trend.length > 1 && (
+            <section className="card rise" aria-labelledby="h-act">
+              <div className="card-h"><h2 id="h-act">{T('Гости за 30 дней', 'Guests over 30 days', '30 kunlik mehmonlar')}</h2></div>
+              <LineChart height={200} labels={trend.map(t => `${+t.date.slice(8, 10)}.${t.date.slice(5, 7)}`)} cur={trend.map(t => t.guests)}
+                curName={T('Гости', 'Guests', 'Mehmonlar')} axis={v => String(Math.round(v))} tip={v => fmt(v)} />
+            </section>
+          )}
+
+          <section className="card rise" aria-labelledby="h-best">
+            <div className="card-h"><h2 id="h-best">{T('Лучшие гости', 'Best guests', 'Eng yaxshi mehmonlar')}</h2>
+              <div className="search"><i className="ph ph-magnifying-glass" aria-hidden="true" /><input className="input" type="search" placeholder={T('Телефон или имя', 'Phone or name', 'Telefon yoki ism')} value={q} onChange={e => setQ(e.target.value)} aria-label={T('Поиск гостя', 'Search guests', 'Mehmon qidirish')} /></div>
+            </div>
+            {filtered.length === 0 ? <Empty>{T(`Нет гостей по запросу «${q}».`, `No guests match “${q}”.`, `«${q}» bo'yicha mehmon yo'q.`)}</Empty> : (
+              <div className="tbl-wrap"><table>
+                <thead><tr><th className="rank">#</th><th>{T('Гость', 'Guest', 'Mehmon')}</th><th className="r">{T('Визиты', 'Visits', 'Tashriflar')}</th><th className="r">{T('Потрачено', 'Spent', 'Sarflangan')}</th><th className="r hide-ph">{T('Последний визит', 'Last visit', 'Oxirgi tashrif')}</th></tr></thead>
+                <tbody>{filtered.map(g => (
+                  <tr key={g.phone} className="click" tabIndex={0} onClick={() => openGuest(g.phone, g)} onKeyDown={e => { if (e.key === 'Enter') openGuest(g.phone, g); }}>
+                    <td className="rank">{guests.indexOf(g) + 1}</td>
+                    <td className="who"><b>{g.name ?? unnamed}</b><span>{g.phone}{g.favoriteItem ? ` · ${T('любит', 'likes', 'yoqtiradi')} ${g.favoriteItem}` : ''}</span></td>
+                    <td className="r num">{fmt(g.visitCount)}</td>
+                    <td className="r num">{money(g.totalSpent, lang)}</td>
+                    <td className="r num faint hide-ph">{fmtDate(lang, g.lastSeen)}</td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            )}
+          </section>
         </div>
-        {detail?.phone === manualPhone && manualPhone && (
-          <div className="mt-3 pt-3 border-t border-border">
-            <div className="flex justify-end mb-1">
-              <button
-                onClick={() => { setDetail(null); setHistory(null); }}
-                className="text-muted hover:text-text transition-colors p-1"
-                title={tr(lang, 'Закрыть', 'Close', 'Yopish')}
-              >
-                <X size={14} />
-              </button>
-            </div>
-            {detail.loading ? (
-              <p className="text-[12px] text-muted">{tr(lang, 'Загрузка...', 'Loading...', 'Yuklanmoqda...')}</p>
-            ) : detail.error ? (
-              <p className="text-[12px] text-danger">{tr(lang, 'Гость не найден', 'Guest not found', 'Mehmon topilmadi')}</p>
-            ) : (
-              <GuestDetailPanel lang={lang} data={detail.data} />
-            )}
-            {history?.phone === manualPhone && (
-              <PurchaseHistoryPanel lang={lang} visits={history.visits} loading={history.loading} />
-            )}
-          </div>
-        )}
-      </Card>
-
-      {noData ? (
-        <Card>
-          <div className="py-10 text-center text-muted text-[13px]">
-            {tr(lang, 'Аналитика гостей появится здесь после первых визитов с программой лояльности',
-                'Guest analytics will show up here after the first loyalty visits come in',
-                "Sadoqat dasturi bo'yicha birinchi tashriflardan so'ng mehmonlar tahlili shu yerda paydo bo'ladi")}
-          </div>
-        </Card>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <StatTile icon={Users} label={tr(lang, 'Участников', 'Members', "A'zolar")} value={loading ? '—' : (summary?.totalMembers ?? 0).toLocaleString('ru-RU')} />
-            <StatTile icon={TrendingUp} label={tr(lang, 'Новых за 30 дней', 'New (30d)', '30 kunda yangi')} value={loading ? '—' : (summary?.newMembers ?? 0).toLocaleString('ru-RU')} />
-            <StatTile icon={Repeat} label={tr(lang, 'Возвращаются', 'Returning', 'Qaytadigan')} value={loading ? '—' : `${summary?.returningPct ?? 0}%`} />
-            <StatTile icon={Wallet} label={tr(lang, 'Средний чек гостя', 'Avg spend/guest', "O'rtacha xarajat")} value={loading ? '—' : fmtSum(summary?.avgSpent ?? 0)} suffix="UZS" />
-          </div>
-
-          <Card>
-            <p className="text-[13px] text-muted font-medium mb-4">{tr(lang, 'Активность гостей (30 дней)', 'Guest activity (30 days)', 'Mehmonlar faolligi (30 kun)')}</p>
-            <div className="h-[200px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={summary?.trend ?? []} margin={{ top: 4, right: 0, left: 8, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="gLoyalty" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#ff6b35" stopOpacity={0.14} />
-                      <stop offset="100%" stopColor="#ff6b35" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="0" vertical={false} stroke="rgb(var(--color-border))" />
-                  <XAxis dataKey="date" stroke="transparent" tick={{ fill: 'rgb(var(--color-muted))', fontSize: 11, fontFamily: 'Onest' }} tickLine={false} axisLine={false} tickFormatter={v => fmtDate(lang, v)} />
-                  <YAxis stroke="transparent" tick={{ fill: 'rgb(var(--color-muted))', fontSize: 11, fontFamily: 'Onest' }} tickLine={false} axisLine={false} width={30} allowDecimals={false} />
-                  <Tooltip
-                    content={(props: any) => <ChartTooltip {...props} labelFormatter={(l) => fmtDate(lang, l)} />}
-                  />
-                  <Area type="monotone" dataKey="guests" name={tr(lang, 'Гости', 'Guests', 'Mehmonlar')} stroke="#ff6b35" strokeWidth={1.5} fill="url(#gLoyalty)" dot={false} activeDot={{ r: 3, fill: '#ff6b35', strokeWidth: 0 }} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </Card>
-
-          <Card>
-            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-              <p className="text-[13px] font-semibold text-text">{tr(lang, 'Гости', 'Guests', 'Mehmonlar')}</p>
-              <div className="flex items-center gap-1.5 bg-background border border-border rounded-lg px-2.5 py-1.5 w-full max-w-[240px]">
-                <Search size={13} className="text-muted flex-shrink-0" />
-                <input
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder={tr(lang, 'Телефон или имя', 'Phone or name', 'Telefon yoki ism')}
-                  className="bg-transparent outline-none text-[13px] text-text placeholder:text-muted w-full"
-                />
-              </div>
-            </div>
-
-            {loading ? (
-              <div className="space-y-2">
-                {[0, 1, 2].map(i => <div key={i} className="h-10 bg-card-hover rounded animate-pulse" />)}
-              </div>
-            ) : filtered.length === 0 ? (
-              <p className="text-[13px] text-muted py-6 text-center">{tr(lang, 'Гости не найдены', 'No guests found', 'Mehmonlar topilmadi')}</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left min-w-[500px]">
-                  <thead>
-                    <tr className="border-b border-border">
-                      {[tr(lang, 'Гость', 'Guest', 'Mehmon'), tr(lang, 'Визиты', 'Visits', 'Tashriflar'), tr(lang, 'Потрачено', 'Spent', 'Sarflangan'), tr(lang, 'Последний визит', 'Last visit', "Oxirgi tashrif")].map(h => (
-                        <th key={h} className="py-2 pr-4 text-[10px] uppercase tracking-[0.15em] text-muted font-medium whitespace-nowrap">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map(g => (
-                      <React.Fragment key={g.phone}>
-                        <tr
-                          className="border-b border-border last:border-0 hover:bg-card-hover transition-colors cursor-pointer"
-                          onClick={() => toggleGuest(g.phone)}
-                        >
-                          <td className="py-2.5 pr-4">
-                            <p className="text-[13px] font-medium text-text">{g.name ?? tr(lang, 'Без имени', 'Unnamed', 'Ismsiz')}</p>
-                            <p className="text-[11px] text-muted">{g.phone}</p>
-                            {g.favoriteItem && (
-                              <p className="text-[11px] text-primary flex items-center gap-1 mt-0.5">
-                                <Heart size={10} className="flex-shrink-0" fill="currentColor" />
-                                <span className="truncate">{g.favoriteItem}</span>
-                              </p>
-                            )}
-                          </td>
-                          <td className="py-2.5 pr-4 text-[13px] text-text metric-number">{g.visitCount}</td>
-                          <td className="py-2.5 pr-4 text-[13px] text-text metric-number">{fmtSum(g.totalSpent)}</td>
-                          <td className="py-2.5 pr-4 text-[12px] text-muted">{fmtDate(lang, g.lastSeen)}</td>
-                        </tr>
-                        {detail?.phone === g.phone && (
-                          <tr>
-                            <td colSpan={4} className="pb-3 px-2">
-                              <div className="flex justify-end mb-1">
-                                <button
-                                  onClick={() => toggleGuest(g.phone)}
-                                  className="text-muted hover:text-text transition-colors p-1"
-                                  title={tr(lang, 'Закрыть', 'Close', 'Yopish')}
-                                >
-                                  <X size={14} />
-                                </button>
-                              </div>
-                              {detail.loading ? (
-                                <p className="text-[12px] text-muted">{tr(lang, 'Загрузка...', 'Loading...', 'Yuklanmoqda...')}</p>
-                              ) : detail.error ? (
-                                <p className="text-[12px] text-danger">{tr(lang, 'Не удалось загрузить баланс', 'Could not load balance', "Balansni yuklab bo'lmadi")}</p>
-                              ) : (
-                                <GuestDetailPanel lang={lang} data={detail.data} />
-                              )}
-                              {history?.phone === g.phone && (
-                                <PurchaseHistoryPanel lang={lang} visits={history.visits} loading={history.loading} />
-                              )}
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Card>
-        </>
       )}
-    </div>
+
+      <div className={`scrim${open ? ' on' : ''}`} onClick={() => setOpen(null)} />
+      <aside className={`panel${open ? ' on' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+        {open && <>
+          <div className="p-head">
+            <div style={{ minWidth: 0 }}>
+              <h2>{detail.loading ? (open.row?.name ?? open.phone) : title}</h2>
+              <div className="faint">{d?.phone ?? open.phone}{card ? ` · ${T('карта', 'card', 'karta')} ${card}` : ''}</div>
+              {tier && <span className="tag acc" style={{ marginTop: 8 }}>{tier}</span>}
+            </div>
+            <button className="p-close" type="button" onClick={() => setOpen(null)} aria-label={T('Закрыть', 'Close', 'Yopish')}><i className="ph ph-x" aria-hidden="true" /></button>
+          </div>
+          <div className="p-body">
+            {detail.loading ? <Skel lines={['w9', 'w7', 'w5']} />
+              : detail.error && !open.row ? <Empty>{T('Гость с таким номером не найден.', 'No guest with this number.', 'Bunday raqamli mehmon topilmadi.')}</Empty>
+              : <>
+                <div className="kgrid">
+                  {balances.length > 0
+                    ? balances.slice(0, 2).map(w => <div key={w.id}><div className="k-l">{w.name}</div><div className="k-v num">{fmt(w.balance)}</div></div>)
+                    : <div><div className="k-l">{T('Баллы', 'Points', 'Ballar')}</div><div className="k-v">0</div></div>}
+                  {balances.length < 2 && <div><div className="k-l">{T('Визиты', 'Visits', 'Tashriflar')}</div><div className="k-v num">{open.row ? fmt(open.row.visitCount) : '—'}</div></div>}
+                  <div><div className="k-l">{T('Участник с', 'Member since', "A'zo bo'lgan")}</div><div className="k-v">{fmtDate(lang, d?.whenRegistered ?? open.row?.firstSeen)}</div></div>
+                  <div><div className="k-l">{T('Последний визит', 'Last visit', 'Oxirgi tashrif')}</div><div className="k-v">{fmtDate(lang, d?.lastProcessedOrderDate ?? open.row?.lastSeen)}</div></div>
+                </div>
+                {detail.error && <p className="note">{T('Баланс не загрузился, показываем то, что знает TRACE.', "Balance didn't load, showing what TRACE knows.", "Balans yuklanmadi, TRACE bilganini ko'rsatyapmiz.")}</p>}
+                <div className="sec-label">{T('Покупки', 'Purchases', 'Xaridlar')}</div>
+                {visits.loading ? <Skel lines={['w9', 'w7']} />
+                  : visits.list.length === 0 ? <Empty>{T('В TRACE пока нет покупок этого гостя. История копится с каждым визитом.', 'No purchases of this guest in TRACE yet. History builds up with every visit.', "TRACE'da bu mehmonning xaridlari hali yo'q.")}</Empty>
+                  : visits.list.map((v, i) => (
+                    <div className="visit" key={i}>
+                      <span>{v.items.length ? v.items.map(it => `${it.name}${it.quantity > 1 ? ` ×${it.quantity}` : ''}`).join(', ') : T('Без позиций', 'No items', "Pozitsiyasiz")}</span>
+                      <span className="num">{money(v.sum, lang)}</span>
+                      <span className="faint">{fmtDate(lang, v.at)}</span>
+                    </div>
+                  ))}
+              </>}
+          </div>
+        </>}
+      </aside>
+    </>
   );
 };

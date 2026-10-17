@@ -190,6 +190,17 @@ function demoChat(context: string, lang: Language): { text: string; fromAI: bool
     return { fromAI: true, text: `${lead} ${rest}` };
   }
 
+  if (context.startsWith('[branch-compare]')) {
+    return {
+      fromAI: true,
+      text: lang === 'ru'
+        ? 'Mirobod отстаёт от Chorsu по выручке примерно на треть, но чек там самый высокий. Разница в трафике: заказов почти вдвое меньше при той же посадке.\n\n1. Запустите в Mirobod бизнес-ланч, как в Chorsu: днём он даёт заметную долю заказов.\n2. В Yunusobod шашлык заказывают вдвое реже, чем в других филиалах. Проверьте, как он подан в меню и советуют ли его официанты.\n3. Сравните часы пик: если в Mirobod вечер пустой, попробуйте вечернюю акцию на 18:00–20:00.'
+        : lang === 'uz'
+        ? "Mirobod tushum bo'yicha Chorsudan taxminan uchdan bir ortda, lekin cheki eng yuqori. Farq oqimda: o'rinlar soni bir xil bo'lsa ham buyurtmalar deyarli ikki baravar kam.\n\n1. Mirobodda Chorsudagidek biznes-lanch boshlang.\n2. Yunusobodda shashlik boshqa filiallarga qaraganda ikki baravar kam buyurtma qilinadi. Menyuda qanday berilganini tekshiring.\n3. Mirobodda kechqurun bo'sh bo'lsa, 18:00–20:00 uchun aksiya sinab ko'ring."
+        : "Mirobod trails Chorsu by about a third in revenue, yet has the highest check. The gap is traffic: almost half the orders with the same seating.\n\n1. Launch a business lunch in Mirobod like Chorsu's.\n2. Yunusobod sells half as much shashlik as the other branches. Check how it's shown on the menu and whether waiters suggest it.\n3. If Mirobod's evenings are empty, try an 18:00–20:00 promo.",
+    };
+  }
+
   const isMenuAnalysis = ru ? context.includes('аналитик меню') : context.includes('menu analyst');
   if (isMenuAnalysis) {
     const catMatch = context.match(ru ? /Выручка по категориям:\n\s*([^:]+):\s*([\d\s]+) UZS/ : /Revenue by category:\n\s*([^:]+):\s*([\d\s]+) UZS/);
@@ -676,17 +687,20 @@ function demoCategoryPerf(): CategoryPerfRow[] {
 
 function demoCompare(range: 'today' | '7days' | '30days'): { branches: BranchCompareResult[] } {
   const days = range === 'today' ? 1 : range === '30days' ? 30 : 7;
+  // Each branch differs in traffic (orders), check size and menu mix, so the
+  // comparison has something to show.
   const branchDefs = [
-    { id: 'demo-branch-1', name: 'Chorsu', subdomain: 'demo', factor: 1 },
-    { id: 'demo-branch-2', name: 'Yunusobod', subdomain: 'demo2', factor: 0.8 },
+    { id: 'demo-branch-1', name: 'Chorsu', subdomain: 'demo', rev: 1, ord: 1, mix: [1, 1, 1, 1, 1, 1, 1, 1] },
+    { id: 'demo-branch-2', name: 'Yunusobod', subdomain: 'demo2', rev: 0.8, ord: 0.9, mix: [1.1, 0.5, 1.2, 1.3, 0.9, 1, 1.2, 0.8] },
+    { id: 'demo-branch-3', name: 'Mirobod', subdomain: 'demo3', rev: 0.64, ord: 0.52, mix: [0.8, 1.4, 0.7, 0.6, 1.2, 1.1, 0.9, 1.3] },
   ];
   return {
-    branches: branchDefs.map(({ id, name, subdomain, factor }) => {
+    branches: branchDefs.map(({ id, name, subdomain, rev, ord, mix }) => {
       const series = demoRevenueRows(days).map(r => ({
         ...r,
-        revenue: Math.round(r.revenue * factor),
-        orders: Math.round(r.orders * factor),
-        guests: Math.round(r.guests * factor),
+        revenue: Math.round(r.revenue * rev),
+        orders: Math.round(r.orders * ord),
+        guests: Math.round(r.guests * (ord + rev) / 2),
       }));
       const revenue = series.reduce((s, r) => s + r.revenue, 0);
       const orders = series.reduce((s, r) => s + r.orders, 0);
@@ -696,8 +710,8 @@ function demoCompare(range: 'today' | '7days' | '30days'): { branches: BranchCom
         revenue, orders, guests,
         avgCheck: orders > 0 ? Math.round(revenue / orders) : 0,
         series,
-        topDishes: demoTopDishes(5).map(d => ({ ...d, revenue: Math.round(d.revenue * factor), quantity: Math.round(d.quantity * factor) })),
-        categories: demoCategoryPerf(),
+        topDishes: demoTopDishes(6).map((d, i) => ({ ...d, revenue: Math.round(d.revenue * rev * days * mix[i % mix.length]), quantity: Math.round(d.quantity * ord * days * mix[i % mix.length]) })),
+        categories: demoCategoryPerf().map((c, i) => ({ ...c, revenue: Math.round(c.revenue * rev * days * mix[(i + 2) % mix.length]) })),
       };
     }),
   };

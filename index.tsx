@@ -12,6 +12,7 @@ import './styles/rd/staff.css';
 import './styles/rd/plan.css';
 import './styles/rd/reviews.css';
 import './styles/rd/book.css';
+import './styles/rd/more.css';
 import './styles/rd/gate.css';
 import './styles/rd/app.css';
 

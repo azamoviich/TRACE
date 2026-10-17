@@ -1,333 +1,184 @@
+// Сравнение филиалов — redesigned per TRACE-mockups/owner/more.js S.compare
+// (styles/rd/more.css): AI on why branches differ, the metrics side by side
+// with the leader in bold, one metric by day, top dishes and category mix.
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card } from '../ui/Card';
-import { ChartTooltip } from '../ui/ChartTooltip';
-import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  CartesianGrid, Legend, BarChart, Bar, Cell,
-} from 'recharts';
-import { Sparkles, Trophy, TrendingUp, TrendingDown } from 'lucide-react';
 import { tr } from '../../constants';
 import { Language } from '../../types';
 import { traceApi, BranchSummary, BranchCompareResult } from '../../services/traceApi';
-import { AskAI } from '../AskAI';
+import { AiMeta, Empty, MultiLine, Opt, PeriodSeg, PeriodValue, Pop, Skel, fmt, money, seriesCls, wdShort } from '../rd/ui';
 
-const RANGES: { key: 'today' | '7days' | '30days'; ru: string; en: string; uz: string }[] = [
-  { key: 'today', ru: 'Сегодня', en: 'Today', uz: 'Bugun' },
-  { key: '7days', ru: '7 дней', en: '7 days', uz: '7 kun' },
-  { key: '30days', ru: '30 дней', en: '30 days', uz: '30 kun' },
-];
+type Range = 'today' | '7days' | '30days';
+type Metric = 'revenue' | 'orders' | 'avgCheck' | 'guests';
 
-const METRICS: { key: 'revenue' | 'orders' | 'avgCheck' | 'guests'; ru: string; en: string; uz: string }[] = [
-  { key: 'revenue', ru: 'Выручка', en: 'Revenue', uz: 'Tushum' },
-  { key: 'orders', ru: 'Заказы', en: 'Orders', uz: 'Buyurtmalar' },
-  { key: 'avgCheck', ru: 'Средний чек', en: 'Avg check', uz: "O'rtacha chek" },
-  { key: 'guests', ru: 'Гости', en: 'Guests', uz: 'Mehmonlar' },
-];
-
-const BRANCH_COLORS = ['#ff6b35', '#2563eb', '#10b981', '#f59e0b', '#a855f7', '#ec4899'];
-
-const fmtUZS = (v: number) => `${Math.round(v).toLocaleString('ru-RU')} UZS`;
-const fmtShort = (v: number) =>
-  v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `${Math.round(v / 1_000)}K` : String(Math.round(v));
-
-interface CompareProps {
-  lang: Language;
-  branches: BranchSummary[];
-}
-
-export const Compare: React.FC<CompareProps> = ({ lang, branches }) => {
-  const [range, setRange] = useState<'today' | '7days' | '30days'>('7days');
-  const [data, setData] = useState<BranchCompareResult[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [barMetric, setBarMetric] = useState<'revenue' | 'orders' | 'avgCheck' | 'guests'>('revenue');
-  const [aiOpen, setAiOpen] = useState(false);
+export const Compare: React.FC<{ lang: Language; branches: BranchSummary[] }> = ({ lang }) => {
+  const T = (ru: string, en: string, uz: string) => tr(lang, ru, en, uz);
+  const [period, setPeriod] = useState<PeriodValue>({ range: '7days', custom: null });
+  const range = period.range as Range;
+  const [data, setData] = useState<BranchCompareResult[] | null>(null);
+  const [metric, setMetric] = useState<Metric>('revenue');
+  const [ai, setAi] = useState<{ state: 'empty' | 'loading' | 'done'; text?: string; err?: boolean; when?: string }>({ state: 'empty' });
 
   useEffect(() => {
-    setLoading(true);
+    setData(null);
+    setAi({ state: 'empty' });
     traceApi.org.compare(range)
       .then(d => setData(d.branches ?? []))
-      .catch(() => setData([]))
-      .finally(() => setLoading(false));
+      .catch(() => setData([]));
   }, [range]);
 
-  const valid = useMemo(() => data.filter(b => !b.error), [data]);
+  const valid = useMemo(() => (data ?? []).filter(b => !b.error), [data]);
+  const failed = useMemo(() => (data ?? []).filter(b => b.error), [data]);
 
-  const rankings = useMemo(() => {
-    const sorted = (key: keyof BranchCompareResult) =>
-      [...valid].sort((a, b) => ((b[key] as number) ?? 0) - ((a[key] as number) ?? 0));
+  const METRICS: { key: Metric; label: string; money: boolean }[] = [
+    { key: 'revenue', label: T('Выручка', 'Revenue', 'Tushum'), money: true },
+    { key: 'orders', label: T('Заказы', 'Orders', 'Buyurtmalar'), money: false },
+    { key: 'avgCheck', label: T('Средний чек', 'Avg check', "O'rtacha chek"), money: true },
+    { key: 'guests', label: T('Гости', 'Guests', 'Mehmonlar'), money: false },
+  ];
+  const val = (b: BranchCompareResult, k: Metric) => (b[k] as number | undefined) ?? 0;
+  const best = (k: Metric) => Math.max(0, ...valid.map(b => val(b, k)));
+  const show = (k: Metric, v: number) => METRICS.find(m => m.key === k)!.money ? money(v, lang) : fmt(v);
+
+  // Day axis: union of every branch's dates.
+  const dates = useMemo(() => [...new Set(valid.flatMap(b => (b.series ?? []).map(r => r.date.slice(0, 10))))].sort(), [valid]);
+  const labels = dates.map(d => range === '30days' ? `${+d.slice(8, 10)}.${d.slice(5, 7)}` : wdShort(d, lang));
+  const series = valid.map(b => {
+    const by = new Map((b.series ?? []).map(r => [r.date.slice(0, 10), r]));
     return {
-      revenue: sorted('revenue'),
-      orders: sorted('orders'),
-      avgCheck: sorted('avgCheck'),
-      guests: sorted('guests'),
-    };
-  }, [valid]);
-
-  const leaders = useMemo(() => ({
-    revenue: rankings.revenue[0],
-    orders: rankings.orders[0],
-    avgCheck: rankings.avgCheck[0],
-    guests: rankings.guests[0],
-  }), [rankings]);
-
-  const getRank = (id: string, key: 'revenue' | 'orders' | 'avgCheck' | 'guests') =>
-    rankings[key].findIndex(b => b.id === id) + 1;
-
-  const pctVsBest = (val: number, best: number) =>
-    best > 0 ? Math.round(((val - best) / best) * 100) : 0;
-
-  const chartData = useMemo(() => {
-    const dateMap = new Map<string, Record<string, any>>();
-    for (const b of data) {
-      for (const row of b.series ?? []) {
-        const entry = dateMap.get(row.date) ?? { date: row.date };
-        entry[b.name] = row.revenue;
-        dateMap.set(row.date, entry);
-      }
-    }
-    return [...dateMap.values()].sort((a, b) => a.date.localeCompare(b.date));
-  }, [data]);
-
-  const barData = useMemo(() =>
-    valid.map((b, i) => ({
       name: b.name,
-      value: (b[barMetric] as number) ?? 0,
-      color: BRANCH_COLORS[i % BRANCH_COLORS.length],
-    }))
-  , [valid, barMetric]);
+      v: dates.map(d => {
+        const r = by.get(d);
+        if (!r) return null;
+        return metric === 'avgCheck' ? (r.orders ? r.revenue / r.orders : null) : metric === 'revenue' ? r.revenue : metric === 'orders' ? r.orders : r.guests;
+      }),
+    };
+  });
+  const isMoney = metric === 'revenue' || metric === 'avgCheck';
 
-  const aiContext = useMemo(() => {
-    const rangeLabel = RANGES.find(r => r.key === range)?.[lang] ?? range;
-    const lines = valid.map(b =>
-      `${b.name}: Revenue ${fmtUZS(b.revenue ?? 0)}, Orders ${b.orders ?? 0}, AvgCheck ${fmtUZS(b.avgCheck ?? 0)}, Guests ${b.guests ?? 0}`
-    ).join('\n');
-    return `Branch Comparison (${rangeLabel})\n${lines}`;
-  }, [valid, range, lang]);
+  // Dishes: union of every branch's top list, ordered by combined revenue.
+  const dishes = useMemo(() => {
+    const tot = new Map<string, number>();
+    for (const b of valid) for (const d of b.topDishes ?? []) tot.set(d.name, (tot.get(d.name) ?? 0) + d.revenue);
+    return [...tot.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name]) => name);
+  }, [valid]);
+  const cats = useMemo(() => {
+    const tot = new Map<string, number>();
+    for (const b of valid) for (const c of b.categories ?? []) tot.set(c.name, (tot.get(c.name) ?? 0) + c.revenue);
+    return [...tot.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name]) => name);
+  }, [valid]);
+  const catPct = (b: BranchCompareResult, name: string) => {
+    const list = b.categories ?? [];
+    const total = list.reduce((s, c) => s + c.revenue, 0);
+    const c = list.find(x => x.name === name);
+    return c && total ? c.revenue / total * 100 : null;
+  };
+
+  const periodName = range === 'today' ? T('сегодня', 'today', 'bugun') : range === '7days' ? T('за 7 дней', 'last 7 days', '7 kunda') : T('за 30 дней', 'last 30 days', '30 kunda');
+
+  const runAi = () => {
+    setAi({ state: 'loading' });
+    const lines = valid.map(b => {
+      const top = (b.topDishes ?? []).slice(0, 5).map(d => `${d.name} ${d.quantity} шт / ${Math.round(d.revenue)} UZS`).join('; ');
+      const cat = (b.categories ?? []).map(c => `${c.name} ${Math.round(catPct(b, c.name) ?? 0)}%`).join('; ');
+      return `${b.name}: выручка ${Math.round(val(b, 'revenue'))} UZS, заказы ${val(b, 'orders')}, средний чек ${Math.round(val(b, 'avgCheck'))} UZS, гости ${val(b, 'guests')}\n  Топ блюд: ${top || '—'}\n  Категории (доля выручки): ${cat || '—'}`;
+    }).join('\n');
+    const context = `[branch-compare] Сравнение филиалов ${periodName}\n${lines}`;
+    const ask = T(
+      'Почему филиалы расходятся? Коротко: в чём главный разрыв (трафик, чек, меню) и 2–3 конкретных шага для отстающего филиала.',
+      'Why do the branches differ? Briefly: where is the main gap (traffic, check, menu), and 2–3 concrete steps for the lagging branch.',
+      "Nega filiallar farq qiladi? Qisqacha: asosiy farq qayerda (oqim, chek, menyu) va ortda qolgan filial uchun 2–3 aniq qadam.",
+    );
+    traceApi.ai.chat(context, [{ role: 'user', text: ask }], lang)
+      .then(r => setAi({ state: 'done', text: r.text, when: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' }) }))
+      .catch(() => setAi({ state: 'empty', err: true }));
+  };
 
   return (
-    <div className="animate-fade-in pb-20 space-y-8">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-[18px] font-bold text-text">
-          {tr(lang, 'Сравнение филиалов', 'Branch comparison', 'Filiallarni taqqoslash')}
-        </h2>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setAiOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold text-primary border border-primary/30 hover:bg-primary/10 transition-colors"
-          >
-            <Sparkles size={12} />
-            {tr(lang, 'AI-анализ', 'AI Analysis', 'AI tahlil')}
-          </button>
-          <div className="flex items-center gap-px border border-border rounded-xl overflow-hidden bg-card">
-            {RANGES.map(({ key, ru, en, uz }) => (
-              <button key={key} onClick={() => setRange(key)}
-                className={`px-3 py-1.5 text-[11px] font-medium transition-colors ${
-                  range === key ? 'bg-primary text-white' : 'text-muted hover:text-text hover:bg-[#1a1a1a]'
-                }`}
-              >
-                {tr(lang, ru, en, uz)}
-              </button>
-            ))}
-          </div>
+    <>
+      <div className="page-head rise">
+        <div>
+          <h1>{T('Сравнение филиалов', 'Branch comparison', 'Filiallarni taqqoslash')}</h1>
+          <div className="sub">{data ? T(`${valid.length} филиала, ${periodName}`, `${valid.length} branches, ${periodName}`, `${valid.length} ta filial, ${periodName}`) : T('Загружаем…', 'Loading…', 'Yuklanmoqda…')}</div>
         </div>
+        <PeriodSeg lang={lang} value={period} onChange={setPeriod} allowCustom={false} />
       </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center h-40 text-muted text-[12px]">
-          {tr(lang, 'Загрузка...', 'Loading...', 'Yuklanmoqda...')}
-        </div>
-      ) : (
+      {!data && <div className="card"><Skel lines={['w9', 'w7', 'w9', 'w5', 'w9']} /></div>}
+
+      {data && valid.length < 2 && (
+        <div className="card"><Empty>{valid.length === 0 && failed.length
+          ? T('Не удалось получить данные филиалов. Попробуйте позже.', "Couldn't load branch data. Try again later.", "Filiallar ma'lumotini olib bo'lmadi. Keyinroq urinib ko'ring.")
+          : T('Сравнивать не с чем. Нужно хотя бы два филиала в одной сети.', 'Nothing to compare yet. You need at least two branches in one chain.', "Taqqoslash uchun kamida ikkita filial kerak.")}</Empty></div>
+      )}
+
+      {data && valid.length >= 2 && (
         <>
-          {/* Leaders strip */}
-          {valid.length > 1 && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {METRICS.map(m => {
-                const leader = leaders[m.key];
-                if (!leader) return null;
-                return (
-                  <div key={m.key} className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-border bg-card">
-                    <Trophy size={13} className="text-[#f59e0b] flex-shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-[9px] uppercase tracking-[0.18em] text-muted">
-                        {tr(lang, m.ru, m.en, m.uz)}
-                      </p>
-                      <p className="text-[12px] font-semibold text-text truncate">{leader.name}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          <section className="ai rise" data-state={ai.state} aria-labelledby="h-cai">
+            <div className="ai-head"><h2 id="h-cai">{T('Почему филиалы расходятся', 'Why the branches differ', 'Nega filiallar farq qiladi')}</h2>{ai.state === 'done' && <AiMeta lang={lang} when={ai.when} onRerun={runAi} />}</div>
+            {ai.state === 'empty' && <div className="st-empty"><p className="ai-desc">{T('AI сравнит выручку, чек, меню и загрузку и скажет, что даёт разницу.', 'AI compares revenue, check, menu and traffic and says what makes the difference.', "AI tushum, chek, menyu va oqimni taqqoslab, farq nimadan ekanini aytadi.")}
+              {ai.err && <span className="rd-err" style={{ display: 'block' }}>{T('Не получилось. Попробуйте позже.', "Didn't work. Try later.", "Bo'lmadi. Keyinroq urinib ko'ring.")}</span>}</p>
+              <button className="btn solid" type="button" onClick={runAi}><i className="ph ph-sparkle" aria-hidden="true" />{T('Сравнить филиалы', 'Compare branches', 'Filiallarni taqqoslash')}</button></div>}
+            {ai.state === 'loading' && <div className="st-loading" aria-live="polite"><p className="ai-wait">{T('Сравниваем филиалы…', 'Comparing branches…', 'Filiallarni taqqoslayapmiz…')}</p><Skel lines={['w9', 'w7', 'w5']} /></div>}
+            {ai.state === 'done' && <div className="st-done"><p className="ai-out">{ai.text}</p></div>}
+          </section>
 
-          {/* KPI cards per branch */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {data.map((b, i) => {
-              const color = BRANCH_COLORS[i % BRANCH_COLORS.length];
-              return (
-                <Card key={b.id} title="">
-                  {/* Branch header */}
-                  <div className="flex items-center justify-between mb-4 -mt-1">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: color }} />
-                      <span className="text-[14px] font-bold text-text">{b.name}</span>
-                    </div>
-                    {!b.error && valid.length > 1 && (
-                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                        getRank(b.id, 'revenue') === 1
-                          ? 'bg-[#f59e0b]/10 text-[#f59e0b]'
-                          : 'bg-[#1a1a1a] text-muted'
-                      }`}>
-                        #{getRank(b.id, 'revenue')}
-                      </span>
-                    )}
-                  </div>
+          <div className="stack">
+            <section className="card rise" aria-labelledby="h-cm">
+              <div className="card-h"><h2 id="h-cm">{T('Показатели', 'Metrics', "Ko'rsatkichlar")}</h2><span className="sec-note">{T('Жирным отмечен лидер, ниже — отставание от него', 'Leader in bold, gap to the leader below', "Yetakchi qalin, ostida undan farq")}</span></div>
+              <div className="tbl-wrap"><table>
+                <thead><tr><th />{valid.map(b => <th key={b.id} className="r">{b.name}</th>)}</tr></thead>
+                <tbody>{METRICS.map(m => {
+                  const top = best(m.key);
+                  return (
+                    <tr key={m.key}><td>{m.label}</td>{valid.map(b => {
+                      const v = val(b, m.key), lead = v === top && top > 0;
+                      const gap = top > 0 && !lead ? (v / top - 1) * 100 : null;
+                      return <td key={b.id} className={`r num${lead ? ' lead' : ''}`}>{show(m.key, v)}{gap != null && <small className="neg">−{Math.abs(Math.round(gap))}%</small>}</td>;
+                    })}</tr>
+                  );
+                })}</tbody>
+              </table></div>
+              {failed.length > 0 && <p className="note">{T(`Нет данных: ${failed.map(b => b.name).join(', ')}`, `No data: ${failed.map(b => b.name).join(', ')}`, `Ma'lumot yo'q: ${failed.map(b => b.name).join(', ')}`)}</p>}
+            </section>
 
-                  {b.error ? (
-                    <p className="text-[12px] text-muted">{tr(lang, 'Нет данных за этот период', 'No data for this period', 'Bu davr uchun ma\'lumot yo\'q')}</p>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-4">
-                      {METRICS.map(m => {
-                        const val = (b[m.key] as number) ?? 0;
-                        const bestVal = (leaders[m.key]?.[m.key] as number) ?? 0;
-                        const pct = valid.length > 1 ? pctVsBest(val, bestVal) : null;
-                        const isMonetary = m.key === 'revenue' || m.key === 'avgCheck';
-                        return (
-                          <div key={m.key}>
-                            <p className="text-[10px] uppercase tracking-[0.18em] text-muted mb-1">
-                              {tr(lang, m.ru, m.en, m.uz)}
-                            </p>
-                            <p className="metric-number text-[15px] font-bold text-text">
-                              {isMonetary ? fmtUZS(val) : val.toLocaleString('ru-RU')}
-                            </p>
-                            {pct !== null && pct !== 0 && (
-                              <div className={`flex items-center gap-0.5 mt-0.5 text-[10px] font-medium ${
-                                pct >= 0 ? 'text-success' : 'text-[#ef4444]'
-                              }`}>
-                                {pct >= 0
-                                  ? <TrendingUp size={10} />
-                                  : <TrendingDown size={10} />
-                                }
-                                {pct >= 0 ? '+' : ''}{pct}%
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </Card>
-              );
-            })}
-          </div>
-
-          {/* Bar chart — metric comparison */}
-          {valid.length > 1 && (
-            <Card title={tr(lang, 'Сравнение метрик', 'Metric comparison', 'Metrika taqqoslamasi')}>
-              <div className="flex items-center gap-px border border-border rounded-xl overflow-hidden bg-[#111] w-fit mb-4">
-                {METRICS.map(m => (
-                  <button key={m.key} onClick={() => setBarMetric(m.key)}
-                    className={`px-3 py-1.5 text-[11px] font-medium transition-colors ${
-                      barMetric === m.key ? 'bg-primary text-white' : 'text-muted hover:text-text hover:bg-[#1a1a1a]'
-                    }`}
-                  >
-                    {tr(lang, m.ru, m.en, m.uz)}
-                  </button>
-                ))}
-              </div>
-              <div className="h-[200px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={barData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
-                    <CartesianGrid strokeDasharray="0" vertical={false} stroke="#1a1a1a" />
-                    <XAxis dataKey="name" stroke="transparent" tick={{ fill: '#666', fontSize: 11, fontFamily: 'Onest' }} tickLine={false} axisLine={false} dy={4} />
-                    <YAxis stroke="transparent" tick={{ fill: '#666', fontSize: 10, fontFamily: 'Onest' }} tickLine={false} axisLine={false} width={52}
-                      tickFormatter={fmtShort} />
-                    <Tooltip
-                      content={(p: any) => (
-                        <ChartTooltip {...p}
-                          valueFormatter={(v) => (barMetric === 'revenue' || barMetric === 'avgCheck') ? fmtUZS(v) : v.toLocaleString('ru-RU')}
-                        />
-                      )}
-                      cursor={{ fill: 'rgba(255,107,53,0.04)' }}
-                    />
-                    <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={64}>
-                      {barData.map((entry, i) => (
-                        <Cell key={i} fill={entry.color} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
-          )}
-
-          {/* Combined revenue chart */}
-          <Card title={tr(lang, 'Выручка по дням', 'Revenue over time', 'Kunlik tushum')}>
-            <div className="h-[260px] mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="0" vertical={false} stroke="#1a1a1a" />
-                  <XAxis dataKey="date" stroke="transparent" tick={{ fill: '#666', fontSize: 11, fontFamily: 'Onest' }} tickLine={false} axisLine={false} dy={4} />
-                  <YAxis stroke="transparent" tick={{ fill: '#666', fontSize: 10, fontFamily: 'Onest' }} tickLine={false} axisLine={false} width={52}
-                    tickFormatter={v => v >= 1_000_000 ? `${(v / 1_000_000).toFixed(v % 1_000_000 === 0 ? 0 : 1)}M` : v >= 1_000 ? `${Math.round(v / 1_000)}K` : String(v)} />
-                  <Tooltip content={(p: any) => <ChartTooltip {...p} valueFormatter={(v) => fmtUZS(v)} />} cursor={{ stroke: '#2a2a2a', strokeWidth: 1 }} />
-                  <Legend wrapperStyle={{ fontSize: 11, fontFamily: 'Onest' }} />
-                  {data.filter(b => !b.error).map((b, i) => (
-                    <Line key={b.id} type="monotone" dataKey={b.name} stroke={BRANCH_COLORS[i % BRANCH_COLORS.length]} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </Card>
-
-          {/* Top dishes per branch */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {valid.map(b => (
-              <Card key={b.id} title={`${b.name} · ${tr(lang, 'Топ блюд', 'Top dishes', 'Top taomlar')}`}>
-                <div className="space-y-2">
-                  {(b.topDishes ?? []).map((d, i) => (
-                    <div key={d.name} className="flex items-center gap-2 text-[12px]">
-                      <span className="text-[10px] text-muted w-4 flex-shrink-0">{i + 1}</span>
-                      <span className="text-text truncate flex-1">{d.name}</span>
-                      <span className="metric-number text-muted flex-shrink-0">{fmtUZS(d.revenue)}</span>
-                    </div>
-                  ))}
-                  {(b.topDishes ?? []).length === 0 && (
-                    <p className="text-[12px] text-muted">—</p>
-                  )}
+            {dates.length > 0 && (
+              <section className="card rise" aria-labelledby="h-cd">
+                <div className="card-h"><h2 id="h-cd">{T('По дням', 'By day', "Kunlar bo'yicha")}</h2>
+                  <Pop right label={<span>{METRICS.find(m => m.key === metric)!.label}</span>}>
+                    {close => METRICS.map(m => <Opt key={m.key} checked={metric === m.key} onClick={() => { setMetric(m.key); close(); }}>{m.label}</Opt>)}
+                  </Pop>
                 </div>
-              </Card>
-            ))}
-          </div>
+                <MultiLine labels={labels} series={series} axis={isMoney ? (v => money(v, lang)) : (v => String(Math.round(v)))} tip={isMoney ? (v => money(v, lang)) : fmt} />
+                <div className="legend" style={{ marginTop: 10 }}>{valid.map((b, i) => <span key={b.id}><i className={seriesCls(i)} />{b.name}</span>)}</div>
+              </section>
+            )}
 
-          {/* Category mix per branch */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {valid.map(b => (
-              <Card key={b.id} title={`${b.name} · ${tr(lang, 'Категории', 'Categories', 'Toifalar')}`}>
-                <div className="space-y-2">
-                  {(b.categories ?? []).map(c => (
-                    <div key={c.name} className="flex items-center justify-between text-[12px]">
-                      <span className="text-text truncate pr-2">{c.name}</span>
-                      <span className="metric-number text-muted flex-shrink-0">{fmtUZS(c.avgCheck)}</span>
-                    </div>
-                  ))}
-                  {(b.categories ?? []).length === 0 && (
-                    <p className="text-[12px] text-muted">—</p>
-                  )}
-                </div>
-              </Card>
-            ))}
+            <div className="grid2">
+              <section className="card rise" aria-labelledby="h-cdish">
+                <div className="card-h"><h2 id="h-cdish">{T('Топ блюд', 'Top dishes', 'Top taomlar')}</h2><span className="sec-note">{T('штук за период', 'pcs in period', 'davrda dona')}</span></div>
+                {dishes.length === 0 ? <Empty>{T('Нет данных', 'No data', "Ma'lumot yo'q")}</Empty> : <div className="tbl-wrap"><table>
+                  <thead><tr><th />{valid.map(b => <th key={b.id} className="r">{b.name}</th>)}</tr></thead>
+                  <tbody>{dishes.map(name => {
+                    const q = valid.map(b => (b.topDishes ?? []).find(d => d.name === name)?.quantity ?? null);
+                    const top = Math.max(0, ...q.map(x => x ?? 0));
+                    return <tr key={name}><td>{name}</td>{q.map((x, i) => <td key={i} className={`r num${x != null && x === top && top > 0 ? ' lead' : ''}`}>{x != null ? fmt(x) : <span className="faint">—</span>}</td>)}</tr>;
+                  })}</tbody>
+                </table></div>}
+              </section>
+              <section className="card rise" aria-labelledby="h-ccat">
+                <div className="card-h"><h2 id="h-ccat">{T('Категории, доля выручки', 'Categories, share of revenue', 'Toifalar, tushum ulushi')}</h2></div>
+                {cats.length === 0 ? <Empty>{T('Нет данных', 'No data', "Ma'lumot yo'q")}</Empty> : <div className="tbl-wrap"><table>
+                  <thead><tr><th />{valid.map(b => <th key={b.id} className="r">{b.name}</th>)}</tr></thead>
+                  <tbody>{cats.map(name => <tr key={name}><td>{name}</td>{valid.map(b => {
+                    const p = catPct(b, name);
+                    return <td key={b.id} className="r num">{p != null ? `${Math.round(p)}%` : <span className="faint">—</span>}</td>;
+                  })}</tr>)}</tbody>
+                </table></div>}
+              </section>
+            </div>
           </div>
         </>
       )}
-
-      {/* AskAI panel with compare context */}
-      <AskAI
-        context={aiContext || tr(lang, 'Сравнение филиалов', 'Branch comparison', 'Filiallarni taqqoslash')}
-        lang={lang}
-        isOpen={aiOpen}
-        onClose={() => setAiOpen(false)}
-      />
-    </div>
+    </>
   );
 };

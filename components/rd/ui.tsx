@@ -275,3 +275,69 @@ export const Legend: React.FC<{ cur: string; base?: string }> = ({ cur, base }) 
 );
 
 export const Empty: React.FC<{ children: React.ReactNode }> = ({ children }) => <p className="rd-empty">{children}</p>;
+
+// ── Several series on one axis (branch comparison) ───────────────────────
+const SERIES_STYLE: { stroke: string; dash?: string; cls: string }[] = [
+  { stroke: 'var(--accent)', cls: '' },
+  { stroke: 'var(--text-2)', cls: 'alt' },
+  { stroke: 'var(--baseline)', cls: 'alt2' },
+  { stroke: 'var(--accent)', dash: '4 4', cls: 'alt3' },
+  { stroke: 'var(--text-2)', dash: '4 4', cls: 'alt4' },
+];
+export const seriesCls = (i: number) => SERIES_STYLE[i % SERIES_STYLE.length].cls;
+export const MultiLine: React.FC<{
+  labels: string[];
+  series: { name: string; v: (number | null)[] }[];
+  axis?: (v: number) => string;
+  tip?: (v: number) => string;
+  height?: number;
+}> = ({ labels, series, axis, tip, height }) => {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(800);
+  const [hover, setHover] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = wrapRef.current; if (!el) return;
+    const ro = new ResizeObserver(() => setW(el.clientWidth || 800));
+    ro.observe(el); setW(el.clientWidth || 800);
+    return () => ro.disconnect();
+  }, []);
+  const narrow = w <= 560;
+  const H = height ?? (narrow ? 190 : 250), padL = narrow ? 34 : 44, padR = narrow ? 4 : 8, padT = 10, padB = 28;
+  const n = labels.length;
+  const all = series.flatMap(s => s.v).filter((v): v is number => v != null && isFinite(v));
+  const max = Math.max(1e-9, (all.length ? Math.max(...all) : 1) * 1.12);
+  const x = (i: number) => padL + (n <= 1 ? (w - padL - padR) / 2 : i * (w - padL - padR) / (n - 1));
+  const y = (v: number) => padT + (1 - v / max) * (H - padT - padB);
+  const ax = axis ?? ((v: number) => (Math.round(v * 10) / 10).toLocaleString('ru-RU'));
+  const tv = tip ?? ((v: number) => fmt(v));
+  const step = n > 16 ? Math.ceil(n / (narrow ? 5 : 10)) : n > 10 ? (narrow ? 3 : 2) : (narrow && n > 5 ? 2 : 1);
+  const onMove = (e: React.MouseEvent) => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const px = (e.clientX - r.left) * (w / r.width);
+    setHover(Math.max(0, Math.min(n - 1, Math.round((px - padL) / ((w - padL - padR) / Math.max(1, n - 1))))));
+  };
+  return (
+    <div className="chart-wrap" ref={wrapRef} onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
+      <svg className="chart" viewBox={`0 0 ${w} ${H}`} style={{ height: H }} role="img" aria-label={series.map(s => s.name).join(', ')}>
+        {[0, 1, 2, 3, 4].map(k => {
+          const v = max * k / 4, yy = y(v);
+          return <g key={k}><line x1={padL} x2={w - padR} y1={yy} y2={yy} stroke="var(--rule)" /><text x={padL - 10} y={yy + 4} textAnchor="end" fontSize="11.5" fill="var(--text-3)">{v ? ax(v) : '0'}</text></g>;
+        })}
+        {labels.map((l, i) => i % step === 0 ? <text key={i} x={x(i)} y={H - 6} textAnchor="middle" fontSize="11.5" fill="var(--text-3)">{l}</text> : null)}
+        {series.map((s, si) => {
+          const st = SERIES_STYLE[si % SERIES_STYLE.length];
+          const pts = s.v.map((v, i) => v == null ? null : `${x(i)},${y(v)}`).filter(Boolean).join(' ');
+          return <polyline key={si} points={pts} fill="none" stroke={st.stroke} strokeWidth="2" strokeDasharray={st.dash} strokeLinejoin="round" strokeLinecap="round" />;
+        })}
+        {n === 1 && series.map((s, si) => s.v[0] == null ? null : <circle key={si} cx={x(0)} cy={y(s.v[0]!)} r="4" fill={SERIES_STYLE[si % SERIES_STYLE.length].stroke} />)}
+        {hover != null && <line x1={x(hover)} x2={x(hover)} y1={padT} y2={H - padB} stroke="var(--rule-strong)" />}
+      </svg>
+      <div className={`tip${hover != null ? ' on' : ''}`} style={{ left: hover != null ? Math.min(w - 200, Math.max(0, x(hover) + 12)) : 0, top: 8 }}>
+        {hover != null && <>
+          <b>{labels[hover]}</b>
+          {series.map((s, si) => <div key={si}><i className="sw" style={{ '--c': SERIES_STYLE[si % SERIES_STYLE.length].stroke } as React.CSSProperties} />{s.name}: {s.v[hover] != null ? tv(s.v[hover]!) : '—'}</div>)}
+        </>}
+      </div>
+    </div>
+  );
+};

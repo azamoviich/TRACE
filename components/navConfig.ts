@@ -79,22 +79,22 @@ export function loadDefaultPage(): ViewState {
   return DEFAULT_PAGE_CHOICES.includes(saved as ViewState) ? (saved as ViewState) : 'dashboard';
 }
 
-// Accent color swatches — each is an "R G B" triplet matching the
-// --color-primary custom property format set up in index.html, so applying
-// one is just overwriting that CSS var on <html>. Hover shade is a fixed
-// ~10% darken, computed at apply time rather than hand-picked per swatch.
+// Accent colours (TRACE-mockups/owner/settings.js ACCENTS). `rgb` is the
+// "R G B" triplet for the legacy --color-primary var; `light`/`dark` drive
+// the redesign's --accent in each theme.
 export interface AccentSwatch {
   id: string;
   rgb: string;
+  light: string;
+  dark: string;
+  name: [string, string, string];
 }
 
 export const ACCENT_SWATCHES: AccentSwatch[] = [
-  { id: 'orange', rgb: '255 107 53' },  // TRACE default
-  { id: 'blue', rgb: '37 99 235' },
-  { id: 'green', rgb: '22 163 74' },
-  { id: 'purple', rgb: '124 58 237' },
-  { id: 'pink', rgb: '219 39 119' },
-  { id: 'teal', rgb: '13 148 136' },
+  { id: 'orange', rgb: '255 107 53', light: '#E8642C', dark: '#F0784A', name: ['Оранжевый TRACE', 'TRACE orange', "TRACE to'q sariq"] },  // default
+  { id: 'blue', rgb: '47 111 159', light: '#2F6F9F', dark: '#6FA6D6', name: ['Синий', 'Blue', "Ko'k"] },
+  { id: 'green', rgb: '47 125 79', light: '#2F7D4F', dark: '#6BBF8A', name: ['Зелёный', 'Green', 'Yashil'] },
+  { id: 'graphite', rgb: '28 27 25', light: '#1C1B19', dark: '#EDEAE4', name: ['Графит', 'Graphite', 'Grafit'] },
 ];
 
 export function loadAccent(): string {
@@ -109,6 +109,13 @@ function darken(rgb: string, amount = 0.85): string {
 export function applyAccent(rgb: string) {
   document.documentElement.style.setProperty('--color-primary', rgb);
   document.documentElement.style.setProperty('--color-primary-hover', darken(rgb));
+  // Redesign tokens: a style tag, so the .dark override keeps working.
+  const sw = ACCENT_SWATCHES.find(s => s.rgb === rgb);
+  let tag = document.getElementById('rd-accent');
+  if (!sw || sw.id === 'orange') { tag?.remove(); return; }
+  if (!tag) { tag = document.createElement('style'); tag.id = 'rd-accent'; document.head.appendChild(tag); }
+  const soft = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, transparent)`;
+  tag.textContent = `:root{--accent:${sw.light};--accent-soft:${soft(sw.light, 14)};--focus:${sw.light}}.dark{--accent:${sw.dark};--accent-soft:${soft(sw.dark, 18)};--focus:${sw.dark}}`;
 }
 
 export function loadLogoUrl(): string | null {

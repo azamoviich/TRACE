@@ -1,35 +1,34 @@
-import React, { useState, useEffect } from 'react';
-import { Card } from '../ui/Card';
+// Настройки — redesigned per TRACE-mockups/owner/settings.js S.settings
+// (styles/rd/more.css): language, theme, accent and logo, visible sections
+// and start page, alert thresholds, Telegram and report subscriptions, the
+// desktop app, help.
+import React, { useEffect, useRef, useState } from 'react';
 import { Language, ViewState } from '../../types';
-import { Mail, Loader2, Plus, Trash2, Send, Sun, Moon, Link2, PanelLeft, PanelTop, Rows3, PanelBottom, Eye, EyeOff, Palette, Check, ImagePlus, X, Home, Download, Wand2 } from 'lucide-react';
-import { traceApi, isDemoTenant, ReportSubscription, ReportType, ReportChannel, TelegramStatus, uploadPhoto, getSubdomain, downloadUrl } from '../../services/traceApi';
-import { TRANSLATIONS } from '../../constants';
-import { NAV_ITEMS, HIDEABLE_PAGE_IDS, DEFAULT_PAGE_CHOICES, ACCENT_SWATCHES, NavStyle, MobileNavStyle } from '../navConfig';
+import { traceApi, isDemoTenant, ReportSubscription, ReportType, ReportChannel, TelegramStatus, AlertThresholds, uploadPhoto, getSubdomain, downloadUrl } from '../../services/traceApi';
+import { TRANSLATIONS, tr } from '../../constants';
+import { NAV_ITEMS, HIDEABLE_PAGE_IDS, DEFAULT_PAGE_CHOICES, ACCENT_SWATCHES } from '../navConfig';
 
 const NEW_PREFIX = 'new-';
 
-function blankSubscription(): ReportSubscription {
-  return {
-    id: `${NEW_PREFIX}${Date.now()}`,
-    channel: 'email',
-    email: '',
-    report_type: 'daily_summary',
-    frequency: 'daily',
-    send_hour: 7,
-    enabled: true,
-    last_sent_at: null,
-  };
+function blankSubscription(channel: ReportChannel): ReportSubscription {
+  return { id: `${NEW_PREFIX}${Date.now()}`, channel, email: '', report_type: 'daily_summary', frequency: 'daily', send_hour: 23, enabled: true, last_sent_at: null };
 }
+
+// Demo tenant: two sample subscriptions, edits stay in memory.
+const DEMO_SUBS: ReportSubscription[] = [
+  { id: 'demo-1', channel: 'telegram', email: null, report_type: 'daily_summary', frequency: 'daily', send_hour: 23, enabled: true, last_sent_at: null },
+  { id: 'demo-2', channel: 'email', email: 'owner@demo.uz', report_type: 'weekly_summary', frequency: 'weekly', send_hour: 9, enabled: true, last_sent_at: null },
+];
+
+const LANGS: { v: Language; label: string }[] = [{ v: 'ru', label: 'Русский' }, { v: 'uz', label: 'O‘zbekcha' }, { v: 'en', label: 'English' }];
 
 export const Settings: React.FC<{
   lang: Language;
+  setLang: (l: Language) => void;
   onShowToast?: (msg: string, type: 'success' | 'error' | 'info') => void;
+  onLogout?: () => void;
   theme: 'light' | 'dark';
   setTheme: (t: 'light' | 'dark') => void;
-  navStyle: NavStyle;
-  setNavStyle: (s: NavStyle) => void;
-  mobileNavStyle: MobileNavStyle;
-  setMobileNavStyle: (s: MobileNavStyle) => void;
   hiddenPages: ViewState[];
   // Pages the tenant doesn't have (add-on off, POS without plan/fact) — not
   // listed here at all, since showing or hiding them isn't the user's call.
@@ -42,21 +41,24 @@ export const Settings: React.FC<{
   logoUrl: string | null;
   setLogoUrl: (url: string | null) => void;
 }> = ({
-  lang, onShowToast, theme, setTheme, navStyle, setNavStyle, mobileNavStyle, setMobileNavStyle,
+  lang, setLang, onShowToast, onLogout, theme, setTheme,
   hiddenPages, unavailablePages, setHiddenPages, defaultPage, setDefaultPage, accent, setAccent, logoUrl, setLogoUrl,
 }) => {
-  const ru = lang === 'ru';
-  const isUz = lang === 'uz';
+  const T = (ru: string, en: string, uz: string) => tr(lang, ru, en, uz);
   const t = TRANSLATIONS[lang];
+  const demo = isDemoTenant();
   // Which download to highlight and which install warning to explain.
   const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent);
 
   // Report subscriptions (email + telegram) and the tenant's one shared
   // Telegram connection they all ride on.
-  const [subs, setSubs] = useState<ReportSubscription[]>([]);
-  const [telegram, setTelegram] = useState<TelegramStatus | null>(null);
+  const [subs, setSubs] = useState<ReportSubscription[]>(demo ? DEMO_SUBS : []);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [telegram, setTelegram] = useState<TelegramStatus | null>(demo ? { connected: true, deep_link: null } : null);
   const [telegramBusy, setTelegramBusy] = useState(false);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+  const [thresholds, setThresholds] = useState<AlertThresholds | null>(null);
+  const saveTimer = useRef<number | null>(null);
 
   // The "financial_summary" scheduled report calls computeDailyPL on the
   // backend, which is 100% iiko-only — for Poster it returns null and the
@@ -66,22 +68,21 @@ export const Settings: React.FC<{
   // financial summary exists.
   const [isPoster, setIsPoster] = useState(false);
   useEffect(() => { traceApi.sales.status().then(s => setIsPoster(!!s.poster)).catch(() => {}); }, []);
+  useEffect(() => { traceApi.settings.alertThresholds().then(setThresholds).catch(() => {}); }, []);
 
   // Merges freshly-fetched (persisted) subscriptions with any not-yet-saved
   // local rows, so refetching never wipes a subscription the user is still
   // filling in — a `focus` refetch used to blow away unsaved rows entirely.
   const refetchSubs = () => {
-    if (isDemoTenant()) return;
+    if (demo) return;
     traceApi.settings.listReportSubscriptions()
       .then(fetched => setSubs(prev => [...fetched, ...prev.filter(s => s.id.startsWith(NEW_PREFIX))]))
       .catch(() => {});
   };
-
   const refetchTelegram = () => {
-    if (isDemoTenant()) return;
+    if (demo) return;
     traceApi.settings.telegramStatus().then(setTelegram).catch(() => {});
   };
-
   useEffect(() => {
     refetchSubs();
     refetchTelegram();
@@ -91,20 +92,13 @@ export const Settings: React.FC<{
     return () => window.removeEventListener('focus', refetchTelegram);
   }, []);
 
-  const setBusy = (id: string, busy: boolean) => {
-    setBusyIds(prev => {
-      const next = new Set(prev);
-      if (busy) next.add(id); else next.delete(id);
-      return next;
-    });
-  };
+  const setBusy = (id: string, busy: boolean) => setBusyIds(prev => { const n = new Set(prev); if (busy) n.add(id); else n.delete(id); return n; });
+  const updateSub = (id: string, patch: Partial<ReportSubscription>) => setSubs(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
+  const failed = (ru: string, en: string, uz: string) => onShowToast?.(T(ru, en, uz), 'error');
 
-  const updateSub = (id: string, patch: Partial<ReportSubscription>) => {
-    setSubs(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
-  };
-
-  const handleSaveSubscription = async (sub: ReportSubscription) => {
+  const saveSub = async (sub: ReportSubscription) => {
     if (sub.channel === 'email' && !sub.email) return;
+    if (demo) { setSubs(prev => prev.map(s => s.id === sub.id ? { ...sub, id: s.id.startsWith(NEW_PREFIX) ? `demo-${Date.now()}` : s.id } : s)); setEditing(null); onShowToast?.(t.report_subscription_saved, 'success'); return; }
     setBusy(sub.id, true);
     try {
       if (sub.id.startsWith(NEW_PREFIX)) {
@@ -120,527 +114,297 @@ export const Settings: React.FC<{
         });
         setSubs(prev => prev.map(s => s.id === sub.id ? updated : s));
       }
+      setEditing(null);
       onShowToast?.(t.report_subscription_saved, 'success');
     } catch {
-      onShowToast?.(ru ? 'Ошибка сохранения' : isUz ? 'Saqlashda xatolik' : 'Save failed', 'error');
+      failed('Не удалось сохранить', "Couldn't save", "Saqlab bo'lmadi");
     } finally {
       setBusy(sub.id, false);
     }
   };
 
-  const handleConnectTelegram = async () => {
-    setTelegramBusy(true);
-    try {
-      const status = telegram?.deep_link ? telegram : await traceApi.settings.relinkTelegram();
-      setTelegram(status);
-      if (status.deep_link) window.open(status.deep_link, '_blank');
-    } catch {
-      onShowToast?.(ru ? 'Ошибка подключения' : isUz ? 'Ulanishda xatolik' : 'Connect failed', 'error');
-    } finally {
-      setTelegramBusy(false);
-    }
-  };
-
-  const handleRelinkTelegram = async () => {
-    setTelegramBusy(true);
-    try {
-      const status = await traceApi.settings.relinkTelegram();
-      setTelegram(status);
-      if (status.deep_link) window.open(status.deep_link, '_blank');
-    } catch {
-      onShowToast?.(ru ? 'Ошибка подключения' : isUz ? 'Ulanishda xatolik' : 'Connect failed', 'error');
-    } finally {
-      setTelegramBusy(false);
-    }
-  };
-
-  const handleDeleteSubscription = async (sub: ReportSubscription) => {
-    if (sub.id.startsWith(NEW_PREFIX)) {
-      setSubs(prev => prev.filter(s => s.id !== sub.id));
-      return;
-    }
+  const deleteSub = async (sub: ReportSubscription) => {
+    if (sub.id.startsWith(NEW_PREFIX) || demo) { setSubs(prev => prev.filter(s => s.id !== sub.id)); setEditing(null); return; }
     setBusy(sub.id, true);
     try {
       await traceApi.settings.deleteReportSubscription(sub.id);
       setSubs(prev => prev.filter(s => s.id !== sub.id));
+      setEditing(null);
     } catch {
-      onShowToast?.(ru ? 'Ошибка удаления' : isUz ? "O'chirishda xatolik" : 'Delete failed', 'error');
+      failed('Не удалось удалить', "Couldn't delete", "O'chirib bo'lmadi");
     } finally {
       setBusy(sub.id, false);
     }
   };
 
-  const togglePageHidden = (id: ViewState) => {
-    setHiddenPages(hiddenPages.includes(id) ? hiddenPages.filter(p => p !== id) : [...hiddenPages, id]);
+  const sendTest = async (sub: ReportSubscription) => {
+    if (sub.channel === 'email' && !sub.email) return;
+    if (sub.channel === 'telegram' && !telegram?.connected) return;
+    if (demo) { onShowToast?.(t.test_email_sent, 'success'); return; }
+    setBusy(sub.id, true);
+    try {
+      const res = await traceApi.settings.sendTestReport({ channel: sub.channel, email: sub.email, report_type: sub.report_type });
+      if (res.ok) onShowToast?.(t.test_email_sent, 'success');
+      else onShowToast?.(res.error ?? T('Не удалось отправить', "Couldn't send", "Yuborib bo'lmadi"), 'error');
+    } catch {
+      failed('Не удалось отправить', "Couldn't send", "Yuborib bo'lmadi");
+    } finally {
+      setBusy(sub.id, false);
+    }
+  };
+
+  const connectTelegram = async (relink: boolean) => {
+    if (demo) { onShowToast?.(T('В демо Telegram уже подключён', 'Telegram is already connected in the demo', 'Demoda Telegram ulangan'), 'info'); return; }
+    setTelegramBusy(true);
+    try {
+      const status = !relink && telegram?.deep_link ? telegram : await traceApi.settings.relinkTelegram();
+      setTelegram(status);
+      if (status.deep_link) window.open(status.deep_link, '_blank');
+    } catch {
+      failed('Не удалось подключить', "Couldn't connect", "Ulab bo'lmadi");
+    } finally {
+      setTelegramBusy(false);
+    }
   };
 
   const [logoUploading, setLogoUploading] = useState(false);
-  const handleLogoUpload = async (file: File) => {
+  const uploadLogo = async (file: File) => {
     setLogoUploading(true);
     try {
-      const url = await uploadPhoto(getSubdomain(), file);
-      setLogoUrl(url);
+      setLogoUrl(await uploadPhoto(getSubdomain(), file));
     } catch {
-      onShowToast?.(ru ? 'Ошибка загрузки' : isUz ? 'Yuklashda xatolik' : 'Upload failed', 'error');
+      failed('Не удалось загрузить', "Couldn't upload", "Yuklab bo'lmadi");
     } finally {
       setLogoUploading(false);
     }
   };
 
-  const handleSendTest = async (sub: ReportSubscription) => {
-    if (sub.channel === 'email' && !sub.email) return;
-    if (sub.channel === 'telegram' && !telegram?.connected) return;
-    setBusy(sub.id, true);
-    try {
-      const res = await traceApi.settings.sendTestReport({
-        channel: sub.channel, email: sub.email, report_type: sub.report_type,
-      });
-      if (res.ok) onShowToast?.(t.test_email_sent, 'success');
-      else onShowToast?.(res.error ?? (ru ? 'Ошибка отправки' : isUz ? "Yuborishda xatolik" : 'Send failed'), 'error');
-    } catch {
-      onShowToast?.(ru ? 'Ошибка отправки' : isUz ? "Yuborishda xatolik" : 'Send failed', 'error');
-    } finally {
-      setBusy(sub.id, false);
-    }
+  // Thresholds save a moment after the last click, not on every step.
+  const stepThreshold = (k: keyof AlertThresholds, d: number, min: number, fallback: number) => {
+    if (!thresholds) return;
+    const next = { ...thresholds, [k]: Math.max(min, (thresholds[k] ?? fallback) + d) };
+    setThresholds(next);
+    if (demo) return;
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      traceApi.settings.saveAlertThresholds(next).then(setThresholds).catch(() => failed('Не удалось сохранить', "Couldn't save", "Saqlab bo'lmadi"));
+    }, 700);
   };
 
+  const togglePage = (id: ViewState) => setHiddenPages(hiddenPages.includes(id) ? hiddenPages.filter(p => p !== id) : [...hiddenPages, id]);
+  const pages = NAV_ITEMS.filter(({ id }) => HIDEABLE_PAGE_IDS.includes(id) && !unavailablePages.includes(id));
+  const startChoices = DEFAULT_PAGE_CHOICES.filter(id => !hiddenPages.includes(id) && !unavailablePages.includes(id));
+  const sw = ACCENT_SWATCHES.find(s => s.rgb === accent) ?? ACCENT_SWATCHES[0];
+
+  const reportName = (r: ReportType) => r === 'daily_summary' ? t.daily_summary_label : r === 'weekly_summary' ? t.weekly_summary_label : t.financial_summary_label;
+  const hh = (h: number) => `${String(h).padStart(2, '0')}:00`;
+  const subLine = (s: ReportSubscription) => [
+    s.frequency === 'daily' ? T('Ежедневно', 'Daily', 'Har kuni') : T('Еженедельно, пн', 'Weekly, Mon', 'Har hafta, du'),
+    T(`в ${hh(s.send_hour)}`, `at ${hh(s.send_hour)}`, `soat ${hh(s.send_hour)}`),
+    s.channel === 'email' ? s.email : null,
+    !s.enabled ? T('на паузе', 'paused', "to'xtatilgan") : null,
+  ].filter(Boolean).join(' · ');
+
+  const THRESH: { k: keyof AlertThresholds; label: string; unit: string; step: number; min: number; fallback: number }[] = [
+    { k: 'staleOpenTableMin', label: T('Стол открыт и не закрыт дольше', 'Table open without closing longer than', 'Stol yopilmasdan ochiq'), unit: T('мин', 'min', 'daq'), step: 15, min: 15, fallback: 180 },
+    { k: 'lowStockQty', label: T('На складе осталось меньше', 'Stock below', 'Omborda qoldi'), unit: T('шт', 'pcs', 'dona'), step: 1, min: 0, fallback: 5 },
+    { k: 'highWriteoffPct', label: T('Списания выше', 'Write-offs above', 'Hisobdan chiqarish'), unit: T('% выручки', '% of revenue', '% tushum'), step: 1, min: 0, fallback: 5 },
+    { k: 'negativeMarginPct', label: T('Маржа блюда ниже', 'Dish margin below', 'Taom marjasi'), unit: '%', step: 1, min: -50, fallback: 0 },
+  ];
+
   return (
-    <div className="max-w-2xl animate-fade-in pb-20 space-y-5">
-      <Card title={ru ? 'Внешний вид' : isUz ? "Ko'rinish" : 'Appearance'} action={theme === 'dark' ? <Moon size={18} className="text-muted" /> : <Sun size={18} className="text-muted" />}>
-        <p className="text-[13px] text-muted -mt-1 mb-5">
-          {ru
-            ? 'Светлая тема рекомендуется для лучшей читаемости на телефоне'
-            : isUz
-              ? "Telefonda yaxshi o'qish uchun yorug' mavzu tavsiya etiladi"
-              : 'Light mode is recommended for the best readability on a phone'}
-        </p>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setTheme('light')}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-[14px] font-semibold border transition-colors ${
-              theme === 'light' ? 'bg-primary text-white border-primary' : 'bg-card border-border text-text hover:bg-card-hover'
-            }`}
-          >
-            <Sun size={16} />
-            {ru ? 'Светлая' : isUz ? "Yorug'" : 'Light'}
-          </button>
-          <button
-            onClick={() => setTheme('dark')}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-[14px] font-semibold border transition-colors ${
-              theme === 'dark' ? 'bg-primary text-white border-primary' : 'bg-card border-border text-text hover:bg-card-hover'
-            }`}
-          >
-            <Moon size={16} />
-            {ru ? 'Тёмная' : isUz ? 'Qora' : 'Dark'}
-          </button>
-        </div>
-      </Card>
-
-      <Card title={t.nav_settings_title} action={navStyle === 'side' ? <PanelLeft size={18} className="text-muted" /> : navStyle === 'top' ? <PanelTop size={18} className="text-muted" /> : <Wand2 size={18} className="text-muted" />}>
-        <p className="text-[13px] text-muted -mt-1 mb-5">{t.nav_settings_desc}</p>
-
-        <div className="mb-4">
-          <label className="text-[11px] text-muted block mb-1.5">{t.nav_style_desktop}</label>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setNavStyle('auto')}
-              className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-[14px] font-semibold border transition-colors ${
-                navStyle === 'auto' ? 'bg-primary text-white border-primary' : 'bg-card border-border text-text hover:bg-card-hover'
-              }`}
-            >
-              <Wand2 size={16} />
-              {t.nav_style_auto}
-            </button>
-            <button
-              onClick={() => setNavStyle('top')}
-              className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-[14px] font-semibold border transition-colors ${
-                navStyle === 'top' ? 'bg-primary text-white border-primary' : 'bg-card border-border text-text hover:bg-card-hover'
-              }`}
-            >
-              <PanelTop size={16} />
-              {t.nav_style_top}
-            </button>
-            <button
-              onClick={() => setNavStyle('side')}
-              className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-[14px] font-semibold border transition-colors ${
-                navStyle === 'side' ? 'bg-primary text-white border-primary' : 'bg-card border-border text-text hover:bg-card-hover'
-              }`}
-            >
-              <PanelLeft size={16} />
-              {t.nav_style_side}
-            </button>
-          </div>
-        </div>
-
+    <>
+      <div className="page-head rise">
         <div>
-          <label className="text-[11px] text-muted block mb-1.5">{t.nav_style_mobile}</label>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setMobileNavStyle('bottom')}
-              className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-[14px] font-semibold border transition-colors ${
-                mobileNavStyle === 'bottom' ? 'bg-primary text-white border-primary' : 'bg-card border-border text-text hover:bg-card-hover'
-              }`}
-            >
-              <PanelBottom size={16} />
-              {t.nav_style_bottom_tabs}
-            </button>
-            <button
-              onClick={() => setMobileNavStyle('drawer')}
-              className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-[14px] font-semibold border transition-colors ${
-                mobileNavStyle === 'drawer' ? 'bg-primary text-white border-primary' : 'bg-card border-border text-text hover:bg-card-hover'
-              }`}
-            >
-              <Rows3 size={16} />
-              {t.nav_style_drawer}
-            </button>
+          <h1>{T('Настройки', 'Settings', 'Sozlamalar')}</h1>
+          <div className="sub">{T('Оформление, разделы, отчёты и приложение для компьютера', 'Appearance, sections, reports and the desktop app', "Ko'rinish, bo'limlar, hisobotlar va kompyuter ilovasi")}</div>
+        </div>
+      </div>
+
+      <div className="set-col rise">
+        <div className="sec-label">{T('Язык', 'Language', 'Til')}</div>
+        <div className="seg" role="group" aria-label={T('Язык', 'Language', 'Til')}>
+          {LANGS.map(l => <button key={l.v} type="button" aria-pressed={lang === l.v} onClick={() => setLang(l.v)}>{l.label}</button>)}
+        </div>
+
+        <div className="sec-label">{T('Оформление', 'Appearance', "Ko'rinish")}</div>
+        <div className="seg" role="group" aria-label={T('Тема', 'Theme', 'Mavzu')}>
+          <button type="button" aria-pressed={theme === 'light'} onClick={() => setTheme('light')}><i className="ph ph-sun" aria-hidden="true" style={{ marginRight: 6 }} />{T('Светлая', 'Light', "Yorug'")}</button>
+          <button type="button" aria-pressed={theme === 'dark'} onClick={() => setTheme('dark')}><i className="ph ph-moon" aria-hidden="true" style={{ marginRight: 6 }} />{T('Тёмная', 'Dark', "Qorong'i")}</button>
+        </div>
+        <div className="list" style={{ marginTop: 12 }}>
+          <div className="li col">
+            <span className="li-main"><span className="li-t">{T('Акцентный цвет', 'Accent colour', 'Asosiy rang')}</span><span className="li-s">{T('Кнопки, активная вкладка, графики', 'Buttons, active tab, charts', 'Tugmalar, faol tab, grafiklar')}</span></span>
+            <div className="acc-row">
+              {ACCENT_SWATCHES.map(s => <button key={s.id} type="button" className="accsw" style={{ '--c': s.light, '--cd': s.dark } as React.CSSProperties} aria-pressed={s.rgb === sw.rgb} aria-label={tr(lang, ...s.name)} onClick={() => setAccent(s.rgb)} />)}
+              <span className="faint" style={{ fontSize: 13 }}>{tr(lang, ...sw.name)}</span>
+            </div>
+          </div>
+          <div className="li">
+            <span className="logo-box">{logoUrl ? <img src={logoUrl} alt="" /> : 'TRACE'}</span>
+            <span className="li-main"><span className="li-t">{T('Логотип', 'Logo', 'Logotip')}</span><span className="li-s">{T('Показывается в шапке вместо TRACE', 'Shown in the header instead of TRACE', "Sarlavhada TRACE o'rniga")}</span></span>
+            {logoUrl && <button type="button" className="row-btn neg" onClick={() => setLogoUrl(null)}>{T('Убрать', 'Remove', 'Olib tashlash')}</button>}
+            <label className="btn" style={{ cursor: 'pointer' }}>
+              <i className={`ph ${logoUploading ? 'ph-circle-notch spin' : 'ph-upload-simple'}`} aria-hidden="true" />
+              {logoUploading ? T('Загружаем…', 'Uploading…', 'Yuklanmoqda…') : logoUrl ? T('Заменить', 'Replace', 'Almashtirish') : T('Загрузить', 'Upload', 'Yuklash')}
+              <input type="file" accept="image/*" hidden disabled={logoUploading} onChange={e => { const f = e.target.files?.[0]; if (f) uploadLogo(f); e.target.value = ''; }} />
+            </label>
           </div>
         </div>
-      </Card>
 
-      <Card title={t.pages_visibility_title} action={<Eye size={18} className="text-muted" />}>
-        <p className="text-[13px] text-muted -mt-1 mb-5">{t.pages_visibility_desc}</p>
-        <div className="space-y-1">
-          {NAV_ITEMS.filter(({ id }) => id !== 'settings' && !unavailablePages.includes(id)).map(({ id, icon: Icon }) => {
-            const isHideable = HIDEABLE_PAGE_IDS.includes(id);
-            const isHidden = hiddenPages.includes(id);
+        <div className="sec-label">{T('Разделы', 'Sections', "Bo'limlar")}</div>
+        <div className="list">
+          {pages.map(({ id }) => {
+            const on = !hiddenPages.includes(id);
+            const name = t[id as keyof typeof t] as string;
             return (
-              <div key={id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-background transition-colors">
-                <Icon size={16} className="text-muted shrink-0" />
-                <span className="text-[13px] text-text flex-1">{t[id as keyof typeof t] as string}</span>
-                {!isHideable ? (
-                  <span className="text-[11px] text-muted">{t.page_locked_note}</span>
-                ) : (
-                  <button
-                    onClick={() => togglePageHidden(id)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold border transition-colors ${
-                      isHidden ? 'bg-card border-border text-muted hover:bg-card-hover' : 'bg-primary/10 border-primary/25 text-primary'
-                    }`}
-                  >
-                    {isHidden ? <EyeOff size={13} /> : <Eye size={13} />}
-                    {isHidden ? (ru ? 'Скрыто' : isUz ? 'Yashirin' : 'Hidden') : (ru ? 'Видно' : isUz ? "Ko'rinadi" : 'Visible')}
-                  </button>
-                )}
+              <div className="li" key={id}>
+                <span className="li-main li-t">{name}</span>
+                <button type="button" className="switch" role="switch" aria-checked={on} aria-label={T(`Показывать «${name}»`, `Show “${name}”`, `«${name}» ko'rsatish`)} onClick={() => togglePage(id)} />
               </div>
             );
           })}
-        </div>
-      </Card>
-
-      <Card title={t.default_page_title} action={<Home size={18} className="text-muted" />}>
-        <p className="text-[13px] text-muted -mt-1 mb-4">{t.default_page_desc}</p>
-        <select
-          value={hiddenPages.includes(defaultPage) || unavailablePages.includes(defaultPage) ? 'dashboard' : defaultPage}
-          onChange={e => setDefaultPage(e.target.value as ViewState)}
-          className="w-full bg-card border border-border rounded-lg px-3 py-2.5 text-[13px] text-text focus:outline-none focus:border-primary transition-colors cursor-pointer"
-        >
-          {DEFAULT_PAGE_CHOICES.filter(id => !hiddenPages.includes(id) && !unavailablePages.includes(id)).map(id => (
-            <option key={id} value={id}>{t[id as keyof typeof t] as string}</option>
-          ))}
-        </select>
-      </Card>
-
-      <Card title={t.accent_title} action={<Palette size={18} className="text-muted" />}>
-        <p className="text-[13px] text-muted -mt-1 mb-4">{t.accent_desc}</p>
-        <div className="flex gap-2.5 flex-wrap">
-          {ACCENT_SWATCHES.map(swatch => {
-            const isActive = accent === swatch.rgb;
-            return (
-              <button
-                key={swatch.id}
-                onClick={() => setAccent(swatch.rgb)}
-                style={{ backgroundColor: `rgb(${swatch.rgb})` }}
-                className="w-9 h-9 rounded-full flex items-center justify-center transition-transform hover:scale-110 shrink-0"
-              >
-                {isActive && <Check size={16} className="text-white" strokeWidth={3} />}
-              </button>
-            );
-          })}
-        </div>
-      </Card>
-
-      <Card title={t.logo_title} action={<ImagePlus size={18} className="text-muted" />}>
-        <p className="text-[13px] text-muted -mt-1 mb-4">{t.logo_desc}</p>
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-lg border border-border bg-background flex items-center justify-center overflow-hidden shrink-0">
-            {logoUrl
-              ? <img src={logoUrl} alt="Logo" className="w-full h-full object-contain" />
-              : <span className="font-display font-black text-[12px] tracking-[0.15em] text-muted">TRACE</span>}
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="px-4 py-2 bg-card border border-border text-text text-[12px] font-semibold rounded-lg hover:bg-card-hover transition-colors cursor-pointer flex items-center gap-2">
-              {logoUploading ? <Loader2 size={13} className="animate-spin" /> : <ImagePlus size={13} />}
-              {logoUploading ? t.logo_uploading : logoUrl ? t.logo_change : t.logo_upload}
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                disabled={logoUploading}
-                onChange={e => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f); e.target.value = ''; }}
-              />
-            </label>
-            {logoUrl && (
-              <button
-                onClick={() => setLogoUrl(null)}
-                className="px-3 py-2 text-danger text-[12px] font-semibold rounded-lg hover:bg-danger/8 transition-colors flex items-center gap-1.5"
-              >
-                <X size={13} />
-                {t.logo_remove}
-              </button>
-            )}
+          <div className="li">
+            <span className="li-main"><span className="li-t">{T('Стартовая страница', 'Start page', 'Boshlang‘ich sahifa')}</span><span className="li-s">{T('Открывается при входе', 'Opens when you sign in', 'Kirishda ochiladi')}</span></span>
+            <span className="sel" style={{ width: 200 }}>
+              <select className="input" value={startChoices.includes(defaultPage) ? defaultPage : 'dashboard'} onChange={e => setDefaultPage(e.target.value as ViewState)} aria-label={T('Стартовая страница', 'Start page', 'Boshlang‘ich sahifa')}>
+                {startChoices.map(id => <option key={id} value={id}>{t[id as keyof typeof t] as string}</option>)}
+              </select><i className="ph ph-caret-down chev" aria-hidden="true" />
+            </span>
           </div>
         </div>
-      </Card>
+        <p className="note">{T('Выключенные разделы пропадут из меню. Главная и настройки остаются всегда.', 'Turned-off sections disappear from the menu. Home and Settings always stay.', "O'chirilgan bo'limlar menyudan yo'qoladi. Bosh sahifa va sozlamalar doim qoladi.")}</p>
 
-      <Card title={t.email_reports} action={<Mail size={18} className="text-muted" />}>
-          <p className="text-[11px] text-muted -mt-1 mb-5">{t.email_reports_desc}</p>
-
-          <div className="mb-5 p-3 rounded-lg border border-border bg-background flex items-center gap-3">
-            <Send size={16} className="text-muted shrink-0" />
-            <div className="flex-1">
-              <p className="text-[13px] font-semibold text-text">{t.channel_telegram}</p>
-              <p className="text-[11px] text-muted">
-                {telegram?.connected ? t.telegram_connected : t.telegram_not_connected}
-              </p>
-            </div>
-            <button
-              onClick={telegram?.connected ? handleRelinkTelegram : handleConnectTelegram}
-              disabled={telegramBusy}
-              className="px-3 py-1.5 bg-card border border-border text-text text-[12px] font-semibold rounded-lg hover:bg-card-hover transition-colors disabled:opacity-50 flex items-center gap-1.5 shrink-0"
-            >
-              {telegramBusy ? <Loader2 size={13} className="animate-spin" /> : <Link2 size={13} />}
-              {telegram?.connected ? t.relink_telegram : t.connect_telegram}
-            </button>
+        {thresholds && <>
+          <div className="sec-label">{T('Когда подсвечивать проблему', 'When to flag a problem', "Muammoni qachon ko'rsatish")}</div>
+          <div className="list">
+            {THRESH.map(th => (
+              <div className="li" key={th.k}>
+                <span className="li-main li-t">{th.label}</span>
+                <span className="stepper">
+                  <button type="button" onClick={() => stepThreshold(th.k, -th.step, th.min, th.fallback)} aria-label={T('Меньше', 'Less', 'Kamroq')}><i className="ph ph-minus" aria-hidden="true" /></button>
+                  <b className="num">{thresholds[th.k] ?? '—'}</b>
+                  <button type="button" onClick={() => stepThreshold(th.k, th.step, th.min, th.fallback)} aria-label={T('Больше', 'More', "Ko'proq")}><i className="ph ph-plus" aria-hidden="true" /></button>
+                </span>
+                <span className="unit">{th.unit}</span>
+              </div>
+            ))}
           </div>
+          <p className="note">{T('Главная и «Операции» отметят это как повод вмешаться.', 'Home and Operations will flag these as a reason to step in.', "Bosh sahifa va «Operatsiyalar» buni aralashish sababi sifatida belgilaydi.")}</p>
+        </>}
 
-          {subs.length === 0 && (
-            <p className="text-[12px] text-muted mb-4">{t.no_subscriptions}</p>
-          )}
+        <div className="sec-label">{T('Отчёты в Telegram', 'Reports in Telegram', 'Telegramda hisobotlar')}</div>
+        <div className="list">
+          <div className="li">
+            <i className="ph ph-telegram-logo" aria-hidden="true" />
+            <span className="li-main"><span className="li-t">{telegram?.connected ? T('Подключено', 'Connected', 'Ulangan') : T('Не подключено', 'Not connected', 'Ulanmagan')}</span>
+              <span className="li-s">{telegram?.connected ? T('Отчёты приходят в ваш чат с ботом TRACE', 'Reports arrive in your chat with the TRACE bot', 'Hisobotlar TRACE boti bilan chatingizga keladi') : T('Подключите бота, чтобы получать отчёты', 'Connect the bot to get reports', 'Hisobot olish uchun botni ulang')}</span></span>
+            {telegram?.connected && <span className="tag pos">{T('Работает', 'Working', 'Ishlayapti')}</span>}
+          </div>
+          <button type="button" className="li" disabled={telegramBusy} onClick={() => connectTelegram(!!telegram?.connected)}>
+            <i className={`ph ${telegramBusy ? 'ph-circle-notch spin' : 'ph-link'}`} aria-hidden="true" />
+            <span className="li-main li-t">{telegram?.connected ? T('Переподключить Telegram', 'Reconnect Telegram', 'Telegramni qayta ulash') : T('Подключить Telegram', 'Connect Telegram', 'Telegramni ulash')}</span>
+            <i className="ph ph-arrow-square-out" aria-hidden="true" />
+          </button>
+        </div>
 
-          <div className="space-y-4">
-            {subs.map(sub => {
-              const busy = busyIds.has(sub.id);
-              const isNew = sub.id.startsWith(NEW_PREFIX);
+        <div className="sec-label">{T('Подписки на отчёты', 'Report subscriptions', 'Hisobot obunalari')}</div>
+        {subs.length > 0 ? (
+          <div className="list">
+            {subs.map(s => {
+              const busy = busyIds.has(s.id);
+              const isNew = s.id.startsWith(NEW_PREFIX);
+              const open = editing === s.id || isNew;
               return (
-                <div key={sub.id} className="p-4 rounded-lg border border-border bg-background">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                    <div>
-                      <label className="text-[11px] text-muted block mb-1.5">{t.channel_label}</label>
-                      <select
-                        value={sub.channel}
-                        onChange={e => updateSub(sub.id, { channel: e.target.value as ReportChannel })}
-                        disabled={!isNew}
-                        className="w-full bg-card border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                      >
-                        <option value="email">{t.channel_email}</option>
-                        <option value="telegram">{t.channel_telegram}</option>
-                      </select>
+                <div className="sub-row" key={s.id}>
+                  <div className="sub-h"><b>{reportName(s.report_type)}</b><span className="tag">{s.channel === 'telegram' ? 'Telegram' : 'Email'}</span>{!s.enabled && <span className="tag">{T('Пауза', 'Paused', "To'xtatilgan")}</span>}</div>
+                  <div className="sub-s">{subLine(s)}{s.last_sent_at ? ` · ${T('последний', 'last', 'oxirgi')} ${new Date(s.last_sent_at).toLocaleString(lang === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' })}` : ''}</div>
+                  {!open && <div className="sub-a">
+                    <button type="button" className="row-btn" disabled={busy || (s.channel === 'telegram' && !telegram?.connected)} onClick={() => sendTest(s)}><i className={`ph ${busy ? 'ph-circle-notch spin' : 'ph-paper-plane-tilt'}`} aria-hidden="true" />{T('Отправить тест', 'Send test', 'Test yuborish')}</button>
+                    <button type="button" className="row-btn" onClick={() => setEditing(s.id)}><i className="ph ph-pencil-simple" aria-hidden="true" />{T('Изменить', 'Edit', "O'zgartirish")}</button>
+                    <button type="button" className="row-btn neg" disabled={busy} onClick={() => deleteSub(s)}><i className="ph ph-trash" aria-hidden="true" />{T('Удалить', 'Delete', "O'chirish")}</button>
+                  </div>}
+                  {open && <div className="sub-edit">
+                    <div className="fields">
+                      <label className="field">{T('Отчёт', 'Report', 'Hisobot')}
+                        <span className="sel"><select className="input" value={s.report_type} disabled={!isNew} onChange={e => updateSub(s.id, { report_type: e.target.value as ReportType })}>
+                          <option value="daily_summary">{t.daily_summary_label}</option>
+                          {!isPoster && <option value="financial_summary">{t.financial_summary_label}</option>}
+                          <option value="weekly_summary">{t.weekly_summary_label}</option>
+                        </select><i className="ph ph-caret-down chev" aria-hidden="true" /></span></label>
+                      <label className="field">{T('Куда', 'Where', 'Qayerga')}
+                        <span className="sel"><select className="input" value={s.channel} disabled={!isNew} onChange={e => updateSub(s.id, { channel: e.target.value as ReportChannel })}>
+                          <option value="telegram">Telegram</option><option value="email">Email</option>
+                        </select><i className="ph ph-caret-down chev" aria-hidden="true" /></span></label>
+                      {s.channel === 'email' && <label className="field">Email<input className="input" type="email" autoComplete="email" placeholder="owner@restaurant.uz" value={s.email ?? ''} onChange={e => updateSub(s.id, { email: e.target.value })} /></label>}
+                      <label className="field">{T('Как часто', 'How often', 'Qanchalik tez')}
+                        <span className="sel"><select className="input" value={s.frequency} onChange={e => updateSub(s.id, { frequency: e.target.value as 'daily' | 'weekly' })}>
+                          <option value="daily">{T('Ежедневно', 'Daily', 'Har kuni')}</option><option value="weekly">{T('Еженедельно, пн', 'Weekly, Mon', 'Har hafta, du')}</option>
+                        </select><i className="ph ph-caret-down chev" aria-hidden="true" /></span></label>
+                      <label className="field">{T('Время', 'Time', 'Vaqt')}
+                        <span className="sel"><select className="input" value={s.send_hour} onChange={e => updateSub(s.id, { send_hour: Number(e.target.value) })}>
+                          {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{hh(h)}</option>)}
+                        </select><i className="ph ph-caret-down chev" aria-hidden="true" /></span></label>
                     </div>
-                    <div>
-                      <label className="text-[11px] text-muted block mb-1.5">{t.report_type_label}</label>
-                      <select
-                        value={sub.report_type}
-                        onChange={e => updateSub(sub.id, { report_type: e.target.value as ReportType })}
-                        disabled={!isNew}
-                        className="w-full bg-card border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                      >
-                        <option value="daily_summary">{t.daily_summary_label}</option>
-                        {!isPoster && <option value="financial_summary">{t.financial_summary_label}</option>}
-                        <option value="weekly_summary">{t.weekly_summary_label}</option>
-                      </select>
+                    {s.channel === 'telegram' && !telegram?.connected && <p className="note" style={{ margin: 0 }}>{T('Сначала подключите Telegram выше.', 'Connect Telegram above first.', 'Avval yuqorida Telegramni ulang.')}</p>}
+                    <div className="li" style={{ padding: 0, minHeight: 0 }}>
+                      <span className="li-main li-t">{T('Отправлять', 'Send', 'Yuborish')}</span>
+                      <button type="button" className="switch" role="switch" aria-checked={s.enabled} aria-label={T('Отправлять', 'Send', 'Yuborish')} onClick={() => updateSub(s.id, { enabled: !s.enabled })} />
                     </div>
-                  </div>
-
-                  {sub.channel === 'email' ? (
-                    <div className="mb-3">
-                      <label className="text-[11px] text-muted block mb-1.5">{t.email_address}</label>
-                      <input
-                        type="email"
-                        value={sub.email ?? ''}
-                        onChange={e => updateSub(sub.id, { email: e.target.value })}
-                        placeholder="owner@restaurant.com"
-                        className="w-full bg-card border border-border rounded-lg px-3 py-2 text-[13px] text-text placeholder-muted/40 focus:outline-none focus:border-primary transition-colors"
-                        style={{ fontSize: 'max(16px, 13px)' }}
-                      />
+                    <div className="acts">
+                      <button type="button" className="btn" disabled={busy} onClick={() => { if (isNew) deleteSub(s); else { setEditing(null); refetchSubs(); } }}>{T('Отмена', 'Cancel', 'Bekor')}</button>
+                      <button type="button" className="btn solid" disabled={busy || (s.channel === 'email' && !s.email)} onClick={() => saveSub(s)}>{busy && <i className="ph ph-circle-notch spin" aria-hidden="true" />}{T('Сохранить', 'Save', 'Saqlash')}</button>
                     </div>
-                  ) : (
-                    <div className="mb-3">
-                      <span className={`text-[12px] flex items-center gap-1.5 ${telegram?.connected ? 'text-success' : 'text-muted'}`}>
-                        <Link2 size={13} /> {telegram?.connected ? t.telegram_connected : t.telegram_not_connected}
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-                    <div>
-                      <label className="text-[11px] text-muted block mb-1.5">{t.report_frequency}</label>
-                      <select
-                        value={sub.frequency}
-                        onChange={e => updateSub(sub.id, { frequency: e.target.value as 'daily' | 'weekly' })}
-                        className="w-full bg-card border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary transition-colors cursor-pointer"
-                      >
-                        <option value="daily">{t.freq_daily}</option>
-                        <option value="weekly">{t.freq_weekly}</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[11px] text-muted block mb-1.5">{t.send_hour_label}</label>
-                      <select
-                        value={sub.send_hour}
-                        onChange={e => updateSub(sub.id, { send_hour: Number(e.target.value) })}
-                        className="w-full bg-card border border-border rounded-lg px-3 py-2 text-[13px] text-text focus:outline-none focus:border-primary transition-colors cursor-pointer"
-                      >
-                        {Array.from({ length: 24 }, (_, i) => (
-                          <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="flex items-center gap-2 h-[34px]">
-                      <input
-                        id={`enabled-${sub.id}`}
-                        type="checkbox"
-                        checked={sub.enabled}
-                        onChange={e => updateSub(sub.id, { enabled: e.target.checked })}
-                        className="w-4 h-4 accent-primary cursor-pointer"
-                      />
-                      <label htmlFor={`enabled-${sub.id}`} className="text-[12px] text-text cursor-pointer">{t.enable_reports}</label>
-                    </div>
-                  </div>
-
-                  {sub.last_sent_at && (
-                    <p className="text-[10px] text-muted mt-2">
-                      {t.last_sent}: {new Date(sub.last_sent_at).toLocaleString(ru ? 'ru-RU' : isUz ? 'uz-Latn-UZ' : 'en-US')}
-                    </p>
-                  )}
-
-                  <div className="flex items-center gap-3 mt-3">
-                    <button
-                      onClick={() => handleSaveSubscription(sub)}
-                      disabled={(sub.channel === 'email' && !sub.email) || busy}
-                      className="px-5 py-1.5 bg-primary text-white text-[12px] font-semibold rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
-                    >
-                      {busy ? <Loader2 size={13} className="animate-spin" /> : null}
-                      {ru ? 'Сохранить' : isUz ? t.save : 'Save'}
-                    </button>
-                    <button
-                      onClick={() => handleSendTest(sub)}
-                      disabled={(sub.channel === 'email' ? !sub.email : !telegram?.connected) || busy || isNew}
-                      title={isNew ? (ru ? 'Сначала сохраните' : isUz ? 'Avval saqlang' : 'Save first') : ''}
-                      className="px-4 py-1.5 bg-card border border-border text-text text-[12px] font-semibold rounded-lg hover:bg-card-hover transition-colors disabled:opacity-50 flex items-center gap-2"
-                    >
-                      <Send size={12} />
-                      {t.send_test_email}
-                    </button>
-                    <button
-                      onClick={() => handleDeleteSubscription(sub)}
-                      disabled={busy}
-                      className="ml-auto px-3 py-1.5 text-danger text-[12px] font-semibold rounded-lg hover:bg-danger/8 transition-colors disabled:opacity-50 flex items-center gap-2"
-                    >
-                      <Trash2 size={12} />
-                      {t.remove_subscription}
-                    </button>
-                  </div>
+                  </div>}
                 </div>
               );
             })}
           </div>
+        ) : <p className="note" style={{ marginTop: 0 }}>{T('Пока нет подписок. Добавьте первую.', 'No subscriptions yet. Add the first one.', "Hozircha obuna yo'q. Birinchisini qo'shing.")}</p>}
+        <button type="button" className="btn" style={{ marginTop: 12 }} onClick={() => setSubs(prev => [...prev, blankSubscription(telegram?.connected ? 'telegram' : 'email')])}>
+          <i className="ph ph-plus" aria-hidden="true" />{T('Новая подписка', 'New subscription', 'Yangi obuna')}
+        </button>
 
-          <button
-            onClick={() => setSubs(prev => [...prev, blankSubscription()])}
-            className="mt-4 px-4 py-2 bg-card border border-border text-text text-[12px] font-semibold rounded-lg hover:bg-card-hover transition-colors flex items-center gap-2"
-          >
-            <Plus size={13} />
-            {t.add_subscription}
-          </button>
-      </Card>
+        <div className="sec-label">{T('Приложение для компьютера', 'Desktop app', 'Kompyuter ilovasi')}</div>
+        <div className="list">
+          <div className="li col">
+            <span className="li-main li-s" style={{ fontSize: 14, color: 'var(--text-2)' }}>{T('TRACE как отдельное приложение, без браузера каждый день. На телефоне вход по QR-коду.', 'TRACE as its own app, no browser every day. Sign in with a QR code from your phone.', "TRACE alohida ilova sifatida, har kuni brauzersiz. Telefondan QR-kod orqali kirish.")}</span>
+            <div className="acts" style={{ justifyContent: 'flex-start' }}>
+              {/* Tenant in the path, not just the download attribute: this link is
+                  cross-origin, so browsers ignore `download` and the backend's
+                  Content-Disposition is what names the file for the installer hook. */}
+              <a className={`btn${isMac ? '' : ' solid'}`} href={downloadUrl(`/downloads/TRACE-Setup-${getSubdomain()}.exe`)} download={`TRACE-Setup-${getSubdomain()}.exe`}><i className="ph ph-windows-logo" aria-hidden="true" />{T('Для Windows', 'For Windows', 'Windows uchun')}</a>
+              {/* One shared dmg for every tenant: a dmg has no install hook to read
+                  the tenant from its filename, so the launcher's login picks it. */}
+              <a className={`btn${isMac ? ' solid' : ''}`} href={downloadUrl('/downloads/TRACE.dmg')} download="TRACE.dmg"><i className="ph ph-apple-logo" aria-hidden="true" />{T('Для Mac', 'For Mac', 'Mac uchun')}</a>
+            </div>
+            {/* Neither build is code-signed yet, so browsers, SmartScreen and
+                Gatekeeper warn on first download/run — tell users how to get past it. */}
+            <div className="warn">
+              <p><b style={{ fontWeight: 500, color: 'var(--text)' }}>{T('Если появится предупреждение', 'If you see a warning', 'Agar ogohlantirish chiqsa')}</b></p>
+              {isMac ? <>
+                <p>{T('Откройте TRACE.dmg и перетащите TRACE в папку «Программы».', 'Open TRACE.dmg and drag TRACE into Applications.', 'TRACE.dmg ni oching va TRACE ni «Dasturlar» papkasiga torting.')}</p>
+                <p>{T('Если Mac не может проверить приложение: «Готово», затем Системные настройки → Конфиденциальность и безопасность → «Всё равно открыть».', "If your Mac can't verify the app: “Done”, then System Settings → Privacy & Security → “Open Anyway”.", "Mac ilovani tekshira olmasa: «Tayyor», so'ng Tizim sozlamalari → Maxfiylik va xavfsizlik → «Baribir ochish».")}</p>
+              </> : <>
+                <p>{T('В браузере нажмите «Сохранить» или «Всё равно скачать».', 'In the browser, click “Keep” or “Download anyway”.', "Brauzerda «Saqlash» yoki «Baribir yuklab olish» ni bosing.")}</p>
+                <p>{T('В окне «Windows защитила ваш компьютер»: «Подробнее» → «Выполнить в любом случае».', 'On “Windows protected your PC”: “More info” → “Run anyway”.', "«Windows kompyuteringizni himoya qildi» oynasida: «Batafsil» → «Baribir ishga tushirish».")}</p>
+              </>}
+              <p>{T('Это официальное приложение TRACE. Предупреждение появляется для всех новых программ.', 'This is the official TRACE app. Your computer warns about every new app.', "Bu TRACE ning rasmiy ilovasi. Ogohlantirish barcha yangi dasturlar uchun chiqadi.")}</p>
+            </div>
+          </div>
+        </div>
 
-      <Card className="p-5 sm:p-6">
-        <h3 className="text-[14px] font-semibold text-text mb-1">
-          {ru ? 'Приложение для компьютера' : isUz ? 'Kompyuter uchun ilova' : 'Desktop App'}
-        </h3>
-        <p className="text-[12px] text-muted mb-4">
-          {ru
-            ? 'Установите TRACE как приложение на компьютер — без открытия браузера каждый день.'
-            : isUz
-            ? 'TRACE dasturini kompyuteringizga o‘rnating — har kuni brauzer ochmasdan.'
-            : "Install TRACE as a desktop app — no need to open the browser every day."}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <a
-            // Tenant in the path, not just the download attribute: this link is
-            // cross-origin, so browsers ignore `download` and the backend's
-            // Content-Disposition is what names the file for the installer hook.
-            href={downloadUrl(`/downloads/TRACE-Setup-${getSubdomain()}.exe`)}
-            download={`TRACE-Setup-${getSubdomain()}.exe`}
-            className={`inline-flex px-5 py-2 text-[12px] font-semibold rounded-lg transition-colors items-center gap-2 ${
-              isMac ? 'bg-card border border-border text-text hover:bg-card-hover' : 'bg-primary text-white hover:bg-primary/90'
-            }`}
-          >
-            <Download size={13} />
-            {ru ? 'Скачать для Windows' : isUz ? 'Windows uchun yuklab olish' : 'Download for Windows'}
-          </a>
-          {/* One shared dmg for every tenant: a dmg has no install hook to read
-              the tenant from its filename, so the launcher's login picks it. */}
-          <a
-            href={downloadUrl('/downloads/TRACE.dmg')}
-            download="TRACE.dmg"
-            className={`inline-flex px-5 py-2 text-[12px] font-semibold rounded-lg transition-colors items-center gap-2 ${
-              isMac ? 'bg-primary text-white hover:bg-primary/90' : 'bg-card border border-border text-text hover:bg-card-hover'
-            }`}
-          >
-            <Download size={13} />
-            {ru ? 'Скачать для Mac' : isUz ? 'Mac uchun yuklab olish' : 'Download for Mac'}
-          </a>
+        <div className="sec-label">{T('Помощь и правила', 'Help and terms', 'Yordam va qoidalar')}</div>
+        <div className="list">
+          <a className="li" href="https://trace-os.uz/terms" target="_blank" rel="noopener noreferrer"><i className="ph ph-file-text" aria-hidden="true" /><span className="li-main li-t">{T('Условия использования', 'Terms of use', 'Foydalanish shartlari')}</span><i className="ph ph-arrow-square-out" aria-hidden="true" /></a>
+          <a className="li" href="https://trace-os.uz/privacy" target="_blank" rel="noopener noreferrer"><i className="ph ph-shield-check" aria-hidden="true" /><span className="li-main li-t">{T('Политика конфиденциальности', 'Privacy policy', 'Maxfiylik siyosati')}</span><i className="ph ph-arrow-square-out" aria-hidden="true" /></a>
+          <a className="li" href="https://t.me/trace_executive" target="_blank" rel="noopener noreferrer"><i className="ph ph-lifebuoy" aria-hidden="true" /><span className="li-main"><span className="li-t">{T('Написать в поддержку', 'Contact support', "Qo'llab-quvvatlashga yozish")}</span><span className="li-s">{T('Telegram, отвечаем примерно за 30 минут', 'Telegram, we reply in about 30 minutes', 'Telegram, taxminan 30 daqiqada javob beramiz')}</span></span><i className="ph ph-arrow-square-out" aria-hidden="true" /></a>
         </div>
-        {/* Neither build is code-signed yet, so browsers, SmartScreen and
-            Gatekeeper warn on first download/run — tell users how to get past it. */}
-        <div className="mt-4 p-3 rounded-lg border border-border bg-background text-[12px] text-muted space-y-1">
-          <p className="font-semibold text-text">
-            {ru ? 'Если появится предупреждение:' : isUz ? 'Agar ogohlantirish chiqsa:' : 'If you see a warning:'}
-          </p>
-          {isMac ? (
-            <>
-              <p>
-                {ru
-                  ? '• Откройте TRACE.dmg и перетащите TRACE в папку «Программы».'
-                  : isUz
-                  ? '• TRACE.dmg ni oching va TRACE ni «Dasturlar» (Applications) papkasiga torting.'
-                  : '• Open TRACE.dmg and drag TRACE into Applications.'}
-              </p>
-              <p>
-                {ru
-                  ? '• Если Mac пишет, что не может проверить приложение, нажмите «Готово», затем откройте Системные настройки → Конфиденциальность и безопасность → внизу нажмите «Всё равно открыть».'
-                  : isUz
-                  ? '• Agar Mac ilovani tekshira olmasligini yozsa, «Tayyor» ni bosing, so‘ng Tizim sozlamalari → Maxfiylik va xavfsizlik → pastda «Baribir ochish» ni bosing.'
-                  : '• If your Mac says it can\'t verify the app, click "Done", then go to System Settings → Privacy & Security and click "Open Anyway" at the bottom.'}
-              </p>
-            </>
-          ) : (
-            <>
-              <p>
-                {ru
-                  ? '• В браузере нажмите «Сохранить» / «Всё равно скачать».'
-                  : isUz
-                  ? '• Brauzerda «Saqlash» / «Baribir yuklab olish» tugmasini bosing.'
-                  : '• In the browser, click "Keep" / "Download anyway".'}
-              </p>
-              <p>
-                {ru
-                  ? '• В окне «Windows защитила ваш компьютер» нажмите «Подробнее» → «Выполнить в любом случае».'
-                  : isUz
-                  ? '• «Windows kompyuteringizni himoya qildi» oynasida «Batafsil» → «Baribir ishga tushirish» ni bosing.'
-                  : '• On "Windows protected your PC", click "More info" → "Run anyway".'}
-              </p>
-            </>
-          )}
-          <p>
-            {ru
-              ? 'Это официальное приложение TRACE, оно безопасно — предупреждение появляется только для новых программ.'
-              : isUz
-              ? 'Bu TRACE ning rasmiy ilovasi va xavfsiz — ogohlantirish faqat yangi dasturlar uchun chiqadi.'
-              : 'This is the official TRACE app and it is safe — your computer shows this for new apps.'}
-          </p>
-        </div>
-      </Card>
-    </div>
+
+        {onLogout && <div className="list" style={{ marginTop: 24 }}>
+          <button type="button" className="li" style={{ justifyContent: 'center', color: 'var(--neg)' }} onClick={onLogout}>{T('Выйти', 'Sign out', 'Chiqish')}</button>
+        </div>}
+      </div>
+    </>
   );
 };

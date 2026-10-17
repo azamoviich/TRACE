@@ -1,10 +1,10 @@
+// Отчёты — redesign (styles/rd/more.css): summary workbook, a link to the
+// schedule in Settings, and every report template as Excel or PDF.
 import React, { useEffect, useState } from 'react';
-import { Card } from '../ui/Card';
 import { Language, ViewState } from '../../types';
 import { TRANSLATIONS, tr } from '../../constants';
-import { Download, Calendar, Share2, BarChart2, Users, Package, CreditCard, TrendingUp, FileText, Loader2, Wallet, BookOpen, Receipt, PieChart, Clock, UserCheck, Award, XCircle, LayoutGrid, Truck, FileSpreadsheet, FileType2 } from 'lucide-react';
 import { traceApi } from '../../services/traceApi';
-import { DateRangePicker } from '../ui/DateRangePicker';
+import { PeriodSeg, PeriodValue, rangeLabel as rdRange } from '../rd/ui';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -902,24 +902,25 @@ async function reportDelivery(lang: Language): Promise<XLSX.WorkBook> {
 
 // ── Template definitions ──────────────────────────────────────────────────────
 
-const REPORT_TEMPLATES = [
-  { id: 'r1', key: 'report_sales_by_dish', icon: TrendingUp, cat: 'sales',   source: 'OLAP',   fn: reportSalesByDish,  needsRange: true  },
-  { id: 'r2', key: 'report_sales_by_cat',  icon: BarChart2,  cat: 'sales',   source: 'OLAP',   fn: reportSalesByCat,   needsRange: true  },
-  { id: 'r3', key: 'report_employees',     icon: Users,      cat: 'staff',   source: 'Server', fn: reportStaff,        needsRange: false },
-  { id: 'r4', key: 'report_shifts',        icon: CreditCard, cat: 'finance', source: 'Server', fn: reportShifts,       needsRange: true  },
-  { id: 'r5', key: 'report_stock',         icon: Package,    cat: 'stock',   source: 'Server', fn: reportStock,        needsRange: true  },
-  { id: 'r6', key: 'report_writeoffs',     icon: FileText,   cat: 'stock',   source: 'OLAP',   fn: reportWriteoffs,    needsRange: true  },
-  { id: 'r7',  key: 'report_pl',             icon: Wallet,      cat: 'finance', source: 'Server', fn: reportPL,               needsRange: true  },
-  { id: 'r8',  key: 'report_gl',             icon: BookOpen,    cat: 'finance', source: 'Server', fn: reportGL,               needsRange: true  },
-  { id: 'r9',  key: 'report_invoices',       icon: Receipt,     cat: 'finance', source: 'Server', fn: reportInvoices,         needsRange: true  },
-  { id: 'r10', key: 'report_abc',            icon: PieChart,    cat: 'sales',   source: 'OLAP',   fn: reportAbc,              needsRange: true  },
-  { id: 'r11', key: 'report_hourly',         icon: Clock,       cat: 'sales',   source: 'OLAP',   fn: reportHourly,           needsRange: true  },
-  { id: 'r12', key: 'report_staff_profit',   icon: UserCheck,   cat: 'staff',   source: 'Server', fn: reportStaffProfitability, needsRange: true  },
-  { id: 'r13', key: 'report_staff_abc',      icon: Award,       cat: 'staff',   source: 'OLAP',   fn: reportStaffAbc,         needsRange: true  },
-  { id: 'r14', key: 'report_voids',          icon: XCircle,     cat: 'staff',   source: 'Server', fn: reportVoidTracker,      needsRange: true  },
-  { id: 'r15', key: 'report_table_revenue',  icon: LayoutGrid,  cat: 'sales',   source: 'OLAP',   fn: reportTableRevenue,     needsRange: true  },
-  { id: 'r16', key: 'report_delivery',       icon: Truck,       cat: 'sales',   source: 'Server', fn: reportDelivery,         needsRange: false },
-] as const;
+type L3 = [string, string, string];
+const REPORT_TEMPLATES: { id: string; key: string; icon: string; cat: ReportCat2; source: string; fn: Function; needsRange: boolean; desc: L3 }[] = [
+  { id: 'r1',  key: 'report_sales_by_dish',  icon: 'ph-trend-up',      cat: 'sales',   source: 'OLAP',   fn: reportSalesByDish,        needsRange: true,  desc: ['Количество, выручка, доли и средняя цена по каждому блюду', 'Quantity, revenue, shares and average price per dish', "Har bir taom bo'yicha soni, tushum, ulush va o'rtacha narx"] },
+  { id: 'r2',  key: 'report_sales_by_cat',   icon: 'ph-chart-bar',     cat: 'sales',   source: 'OLAP',   fn: reportSalesByCat,         needsRange: true,  desc: ['Выручка и чек по категориям меню', 'Revenue and check by menu category', "Menyu toifalari bo'yicha tushum va chek"] },
+  { id: 'r3',  key: 'report_employees',      icon: 'ph-users',         cat: 'staff',   source: 'Server', fn: reportStaff,              needsRange: false, desc: ['Список сотрудников и их роли', 'Staff list and roles', "Xodimlar ro'yxati va rollari"] },
+  { id: 'r4',  key: 'report_shifts',         icon: 'ph-cash-register', cat: 'finance', source: 'Server', fn: reportShifts,             needsRange: true,  desc: ['Кассовые смены, наличные и расхождения', 'Till shifts, cash and discrepancies', 'Kassa smenalari, naqd pul va farqlar'] },
+  { id: 'r5',  key: 'report_stock',          icon: 'ph-package',       cat: 'stock',   source: 'Server', fn: reportStock,              needsRange: true,  desc: ['Остатки и движение товаров на складе', 'Stock levels and movement', "Ombordagi qoldiq va harakat"] },
+  { id: 'r6',  key: 'report_writeoffs',      icon: 'ph-trash',         cat: 'stock',   source: 'OLAP',   fn: reportWriteoffs,          needsRange: true,  desc: ['Акты списания по товарам и причинам', 'Write-offs by item and reason', "Mahsulot va sabab bo'yicha hisobdan chiqarish"] },
+  { id: 'r7',  key: 'report_pl',             icon: 'ph-wallet',        cat: 'finance', source: 'Server', fn: reportPL,                 needsRange: true,  desc: ['Выручка, себестоимость, расходы и прибыль', 'Revenue, cost, expenses and profit', 'Tushum, tannarx, xarajat va foyda'] },
+  { id: 'r8',  key: 'report_gl',             icon: 'ph-book-open',     cat: 'finance', source: 'Server', fn: reportGL,                 needsRange: true,  desc: ['Обороты по счетам учёта', 'Turnover by ledger account', "Hisob raqamlari bo'yicha aylanma"] },
+  { id: 'r9',  key: 'report_invoices',       icon: 'ph-receipt',       cat: 'finance', source: 'Server', fn: reportInvoices,           needsRange: true,  desc: ['Приходные накладные от поставщиков', 'Supplier invoices', "Yetkazib beruvchilar yuk xatlari"] },
+  { id: 'r10', key: 'report_abc',            icon: 'ph-chart-pie',     cat: 'sales',   source: 'OLAP',   fn: reportAbc,                needsRange: true,  desc: ['Классы A, B, C по выручке и количеству', 'A, B, C classes by revenue and quantity', "Tushum va soni bo'yicha A, B, C sinflar"] },
+  { id: 'r11', key: 'report_hourly',         icon: 'ph-clock',         cat: 'sales',   source: 'OLAP',   fn: reportHourly,             needsRange: true,  desc: ['Выручка и заказы по часам дня', 'Revenue and orders by hour', "Soatlar bo'yicha tushum va buyurtmalar"] },
+  { id: 'r12', key: 'report_staff_profit',   icon: 'ph-user-check',    cat: 'staff',   source: 'Server', fn: reportStaffProfitability, needsRange: true,  desc: ['Сколько выручки приносит каждый сотрудник', 'Revenue each employee brings in', 'Har bir xodim keltiradigan tushum'] },
+  { id: 'r13', key: 'report_staff_abc',      icon: 'ph-medal',         cat: 'staff',   source: 'OLAP',   fn: reportStaffAbc,           needsRange: true,  desc: ['Официанты по классам A, B, C', 'Waiters by A, B, C class', "A, B, C sinflar bo'yicha ofitsiantlar"] },
+  { id: 'r14', key: 'report_voids',          icon: 'ph-x-circle',      cat: 'staff',   source: 'Server', fn: reportVoidTracker,        needsRange: true,  desc: ['Отмены и удаления, кто разрешил', 'Voids and deletions, who approved', "Bekor qilish va o'chirishlar, kim ruxsat bergan"] },
+  { id: 'r15', key: 'report_table_revenue',  icon: 'ph-squares-four',  cat: 'sales',   source: 'OLAP',   fn: reportTableRevenue,       needsRange: true,  desc: ['Выручка и чек по каждому столу', 'Revenue and check per table', "Har bir stol bo'yicha tushum va chek"] },
+  { id: 'r16', key: 'report_delivery',       icon: 'ph-truck',         cat: 'sales',   source: 'Server', fn: reportDelivery,           needsRange: false, desc: ['Заказы на доставку за сегодня', "Today's delivery orders", 'Bugungi yetkazib berish buyurtmalari'] },
+];
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -929,12 +930,12 @@ export const Reports: React.FC<{
   onNavigate?: (view: ViewState) => void;
 }> = ({ lang, onShowToast, onNavigate }) => {
   const t = TRANSLATIONS[lang];
+  const T = (ru: string, en: string, uz: string) => tr(lang, ru, en, uz);
   const [cat, setCat] = useState<ReportCat2>('all');
-  const [range, setRange] = useState<ReportRange>('7days');
-  const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [period, setPeriod] = useState<PeriodValue>({ range: '7days', custom: null });
+  const range = period.range as ReportRange;
+  const customRange = period.custom;
   const [loading, setLoading] = useState<string | null>(null);
-  const calendarBtnRef = React.useRef<HTMLButtonElement>(null);
   // Void/deletion report is sourced from realtime_events (TRACEPLUGIN-only) —
   // always empty for Poster, which threw a misleading "no voids recorded"
   // instead of "not available for your POS". Hidden below instead.
@@ -942,30 +943,24 @@ export const Reports: React.FC<{
   useEffect(() => { traceApi.sales.status().then(s => setIsPoster(!!s.poster)).catch(() => {}); }, []);
 
   const CATS: { key: ReportCat2; label: string }[] = [
-    { key: 'all',     label: t.all },
-    { key: 'sales',   label: t.sales },
-    { key: 'staff',   label: tr(lang, 'Персонал', 'Staff', 'Xodimlar') },
-    { key: 'stock',   label: tr(lang, 'Склад', 'Stock', 'Ombor') },
-    { key: 'finance', label: t.financial },
+    { key: 'all',     label: T('Все', 'All', 'Barchasi') },
+    { key: 'sales',   label: T('Продажи', 'Sales', 'Sotuvlar') },
+    { key: 'staff',   label: T('Персонал', 'Staff', 'Xodimlar') },
+    { key: 'stock',   label: T('Склад', 'Stock', 'Ombor') },
+    { key: 'finance', label: T('Финансы', 'Finance', 'Moliya') },
   ];
 
-  const RANGES: { key: ReportRange; label: string }[] = [
-    { key: 'today',  label: tr(lang, 'Сегодня', 'Today', 'Bugun') },
-    { key: '7days',  label: tr(lang, '7 дней', '7 days', '7 kun') },
-    { key: '30days', label: tr(lang, '30 дней', '30 days', '30 kun') },
-  ];
-
-  const rangeLabel = range === 'custom' && customRange
-    ? `${customRange.from} → ${customRange.to}`
-    : RANGES.find(r => r.key === range)?.label ?? '';
+  const periodText = range === 'custom' && customRange ? rdRange(customRange.from, customRange.to, lang)
+    : range === 'today' ? T('сегодня', 'today', 'bugun') : range === '7days' ? T('7 дней', '7 days', '7 kun') : T('30 дней', '30 days', '30 kun');
 
   // r7 (P&L) and r8 (GL) both call /financial/pl and /financial/gl-summary,
   // which are 100% iiko-only with no Poster branch — same gap as the
   // Financial page's P&L tab. r14 (voids) is realtime_events/plugin-only.
   const templates = isPoster ? REPORT_TEMPLATES.filter(r => !['r7', 'r8', 'r14'].includes(r.id)) : REPORT_TEMPLATES;
   const filtered = cat === 'all' ? templates : templates.filter(r => r.cat === cat);
+  const count = (k: ReportCat2) => k === 'all' ? templates.length : templates.filter(r => r.cat === k).length;
 
-  const BRAND = tr(lang, 'TRACE · Отчёты', 'TRACE · Reports', 'TRACE · Hisobotlar');
+  const BRAND = T('TRACE · Отчёты', 'TRACE · Reports', 'TRACE · Hisobotlar');
 
   const downloadWorkbook = async (wb: XLSX.WorkBook, format: ExportFormat, filenameBase: string) => {
     if (format === 'xlsx') {
@@ -982,223 +977,90 @@ export const Reports: React.FC<{
       const wb: XLSX.WorkBook = needsRange
         ? await fn(range, lang, customRange?.from, customRange?.to)
         : await fn(lang);
-      downloadWorkbook(wb, format, `trace-${id}-${range}-${today()}`);
-      onShowToast?.(tr(lang, `${label} — скачан`, `${label} — downloaded`, `${label} — yuklab olindi`), 'success');
+      await downloadWorkbook(wb, format, `trace-${id}-${range}-${today()}`);
+      onShowToast?.(T(`${label} — скачан`, `${label} — downloaded`, `${label} — yuklab olindi`), 'success');
     } catch (e: any) {
-      onShowToast?.(tr(lang, 'Ошибка при формировании', 'Export failed', 'Eksport xatosi'), 'error');
+      onShowToast?.(e?.message && e.message.length < 80 ? e.message : T('Не получилось сформировать отчёт', "Couldn't build the report", "Hisobotni tuzib bo'lmadi"), 'error');
     } finally {
       setLoading(null);
     }
   };
 
-  const handleQuickExport = async (format: ExportFormat) => {
+  const quick = async (format: ExportFormat) => {
     if (loading) return;
     setLoading(`quick:${format}`);
     try {
       const wb = await reportQuickSummary(range, lang, customRange?.from, customRange?.to);
-      downloadWorkbook(wb, format, `trace-summary-${range}-${today()}`);
-      onShowToast?.(tr(lang, 'Сводный отчёт скачан', 'Summary report downloaded', 'Umumiy hisobot yuklab olindi'), 'success');
-    } catch (e: any) {
-      onShowToast?.(tr(lang, 'Ошибка', 'Error', 'Xatolik'), 'error');
+      await downloadWorkbook(wb, format, `trace-summary-${range}-${today()}`);
+      onShowToast?.(T('Сводный отчёт скачан', 'Summary report downloaded', 'Umumiy hisobot yuklab olindi'), 'success');
+    } catch {
+      onShowToast?.(T('Не получилось сформировать отчёт', "Couldn't build the report", "Hisobotni tuzib bo'lmadi"), 'error');
     } finally {
       setLoading(null);
     }
   };
 
+  const Btn: React.FC<{ id: string; format: ExportFormat; solid?: boolean; onClick: () => void }> = ({ id, format, solid, onClick }) => {
+    const busy = loading === `${id}:${format}`;
+    return (
+      <button type="button" className={`btn${solid ? ' solid' : ''}${busy ? ' busy' : ''}`} disabled={!!loading && !busy} onClick={onClick}>
+        <i className={`ph ${busy ? 'ph-circle-notch spin' : format === 'xlsx' ? 'ph-file-xls' : 'ph-file-pdf'}`} aria-hidden="true" />{format === 'xlsx' ? 'Excel' : 'PDF'}
+      </button>
+    );
+  };
+
   return (
-    <div className="space-y-5 animate-fade-in pb-24">
-
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="font-display text-[22px] font-bold text-text tracking-tight">
-          {tr(lang, 'Отчёты', 'Reports', 'Hisobotlar')}
-        </h1>
-        <div className="flex items-center gap-1.5">
-          <div className="flex items-center gap-1 bg-background border border-border rounded-lg p-0.5">
-            {RANGES.map(r => (
-              <button
-                key={r.key}
-                onClick={() => { setRange(r.key); setCustomRange(null); }}
-                className={`px-2.5 py-1 text-[9px] font-medium rounded-[3px] transition-all ${range === r.key ? 'bg-card text-text shadow-sm' : 'text-muted hover:text-text'}`}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
-          <div className="relative">
-            <button
-              ref={calendarBtnRef}
-              onClick={() => setPickerOpen(o => !o)}
-              title={tr(lang, 'Свой период', 'Custom range', "O'z davri")}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[9px] font-medium rounded-lg border transition-all ${
-                range === 'custom' ? 'bg-primary text-white border-primary' : 'bg-background border-border text-muted hover:text-text'
-              }`}
-            >
-              <Calendar size={12} />
-              {range === 'custom' && customRange ? `${customRange.from} → ${customRange.to}` : ''}
-            </button>
-            <DateRangePicker
-              lang={lang}
-              value={customRange}
-              isOpen={pickerOpen}
-              onClose={() => setPickerOpen(false)}
-              anchorRef={calendarBtnRef}
-              onApply={(r) => { setCustomRange(r); setRange('custom'); }}
-              onClear={() => { setCustomRange(null); setRange('7days'); }}
-            />
-          </div>
+    <>
+      <div className="page-head rise">
+        <div>
+          <h1>{T('Отчёты', 'Reports', 'Hisobotlar')}</h1>
+          <div className="sub">{isPoster
+            ? T('Реальные данные. Excel с долями, итогами и автофильтром или готовый PDF.', 'Real data. Excel with shares, totals and auto-filter, or a ready PDF.', "Haqiqiy ma'lumotlar. Ulush, jami va avtofiltrli Excel yoki tayyor PDF.")
+            : T('Реальные данные из iiko. Excel с долями, итогами и автофильтром или готовый PDF.', 'Real iiko data. Excel with shares, totals and auto-filter, or a ready PDF.', "iiko'dan haqiqiy ma'lumotlar. Ulush, jami va avtofiltrli Excel yoki tayyor PDF.")}</div>
         </div>
+        <PeriodSeg lang={lang} value={period} onChange={setPeriod} />
       </div>
 
-      {/* Quick actions */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Summary report — the one quick-action tile with a format choice */}
-        {(() => {
-          const busyXlsx = loading === 'quick:xlsx';
-          const busyPdf = loading === 'quick:pdf';
-          const busy = busyXlsx || busyPdf;
-          return (
-            <div className="p-5 rounded-md border bg-primary/8 border-primary/20 stagger-item transition-all hover:bg-primary/12">
-              <div className="w-9 h-9 rounded-md flex items-center justify-center mb-4 bg-primary text-white">
-                {busy ? <Loader2 size={17} className="animate-spin" /> : <Download size={17} />}
-              </div>
-              <h3 className="text-[13px] font-semibold text-text mb-1">
-                {busy ? tr(lang, 'Формируется...', 'Generating...', 'Yaratilmoqda...') : tr(lang, 'Сводный отчёт', 'Summary Report', 'Umumiy hisobot')}
-              </h3>
-              <p className="text-[11px] text-muted leading-relaxed mb-3">
-                {tr(lang,
-                  `5 листов: сводка, категории, блюда, смены, списания · ${rangeLabel}`,
-                  `5 sheets: summary, categories, dishes, shifts, write-offs · ${rangeLabel}`,
-                  `5 varaq: xulosa, kategoriyalar, taomlar, smenalar, chiqindilar · ${rangeLabel}`)}
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  disabled={!!loading}
-                  onClick={() => handleQuickExport('xlsx')}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-lg bg-primary text-white hover:opacity-90 transition-opacity disabled:pointer-events-none disabled:opacity-50"
-                >
-                  {busyXlsx ? <Loader2 size={11} className="animate-spin" /> : <FileSpreadsheet size={12} />} Excel
-                </button>
-                <button
-                  disabled={!!loading}
-                  onClick={() => handleQuickExport('pdf')}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-lg bg-white/10 text-text hover:bg-white/20 transition-colors disabled:pointer-events-none disabled:opacity-50"
-                >
-                  {busyPdf ? <Loader2 size={11} className="animate-spin" /> : <FileType2 size={12} />} PDF
-                </button>
-              </div>
-            </div>
-          );
-        })()}
-
-        {[
-          {
-            id: 'schedule',
-            icon: Calendar,
-            label: t.schedule_report,
-            sub: t.configure_auto_email,
-            onClick: () => onNavigate?.('settings'),
-          },
-          {
-            id: 'share',
-            icon: Share2,
-            label: t.share_access,
-            sub: t.send_link_accountant,
-            onClick: () => onShowToast?.(t.feature_coming_soon, 'info'),
-          },
-        ].map(({ id, icon: Icon, label, sub, onClick }) => {
-          return (
-            <div
-              key={id}
-              className="p-5 rounded-md border cursor-pointer transition-all hover:bg-card-hover stagger-item bg-card border-border"
-              onClick={onClick}
-            >
-              <div className="w-9 h-9 rounded-md flex items-center justify-center mb-4 bg-card-hover text-muted border border-border">
-                <Icon size={17} />
-              </div>
-              <h3 className="text-[13px] font-semibold text-text mb-1">
-                {label}
-              </h3>
-              <p className="text-[11px] text-muted leading-relaxed">{sub}</p>
-            </div>
-          );
-        })}
+      <div className="rep-hero rise">
+        <section className="card" aria-labelledby="h-sum">
+          <h2 id="h-sum">{T('Сводный отчёт', 'Summary report', 'Umumiy hisobot')}</h2>
+          <p>{T(`Пять листов: сводка, категории, блюда, смены, списания. Период: ${periodText}.`, `Five sheets: summary, categories, dishes, shifts, write-offs. Period: ${periodText}.`, `Besh varaq: xulosa, toifalar, taomlar, smenalar, hisobdan chiqarish. Davr: ${periodText}.`)}</p>
+          <div className="rep-acts"><Btn id="quick" format="xlsx" solid onClick={() => quick('xlsx')} /><Btn id="quick" format="pdf" onClick={() => quick('pdf')} /></div>
+        </section>
+        <section className="card" aria-labelledby="h-sch">
+          <h2 id="h-sch">{T('По расписанию', 'On a schedule', "Jadval bo'yicha")}</h2>
+          <p>{T('Сводка каждый вечер или неделя по понедельникам, в Telegram или на почту.', 'A summary every evening or the week on Mondays, to Telegram or email.', "Har kech xulosa yoki dushanba kuni hafta, Telegram yoki pochtaga.")}</p>
+          <button type="button" className="btn" onClick={() => onNavigate?.('settings')}><i className="ph ph-calendar-check" aria-hidden="true" />{T('Настроить рассылку', 'Set up delivery', "Yuborishni sozlash")}</button>
+        </section>
       </div>
 
-      {/* Report templates */}
-      <Card title={tr(lang, 'Шаблоны отчётов', 'Report Templates', 'Hisobot shablonlari')}>
-        <p className="text-[10px] text-muted mb-4">
-          {isPoster
-            ? tr(lang,
-                `Реальные данные · Excel (доли, итоги, автофильтр) или готовый PDF · период: ${rangeLabel}`,
-                `Real data · Excel (shares, totals, auto-filter) or ready-to-send PDF · period: ${rangeLabel}`,
-                `Haqiqiy ma'lumotlar · Excel (ulush, jami, avtofiltr) yoki tayyor PDF · davr: ${rangeLabel}`)
-            : tr(lang,
-                `Реальные данные из iiko · Excel (доли, итоги, автофильтр) или готовый PDF · период: ${rangeLabel}`,
-                `Real iiko data · Excel (shares, totals, auto-filter) or ready-to-send PDF · period: ${rangeLabel}`,
-                `iiko'dan haqiqiy ma'lumotlar · Excel (ulush, jami, avtofiltr) yoki tayyor PDF · davr: ${rangeLabel}`)}
-        </p>
-
-        <div className="flex items-center gap-px border border-border rounded-xl overflow-hidden bg-background w-fit mb-4">
-          {CATS.map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setCat(key)}
-              className={`px-3 py-1.5 text-[11px] font-medium transition-colors ${cat === key ? 'bg-primary text-white' : 'text-muted hover:text-text hover:bg-[#1a1a1a]'}`}
-            >
-              {label}
-            </button>
-          ))}
+      <section className="band" aria-labelledby="h-tpl">
+        <div className="rep-tools">
+          <h2 id="h-tpl">{T('Шаблоны отчётов', 'Report templates', 'Hisobot shablonlari')}</h2>
+          <span className="spacer" />
+          <div className="seg-scroll"><div className="seg small" role="group" aria-label={T('Раздел', 'Section', "Bo'lim")}>
+            {CATS.filter(c => count(c.key) > 0).map(c => <button key={c.key} type="button" aria-pressed={cat === c.key} onClick={() => setCat(c.key)}>{c.label}<span className="faint" style={{ marginLeft: 5 }}>{count(c.key)}</span></button>)}
+          </div></div>
         </div>
-
-        <div className="space-y-1">
-          {filtered.map((report) => {
-            const Icon = report.icon;
-            const busyXlsx = loading === `${report.id}:xlsx`;
-            const busyPdf = loading === `${report.id}:pdf`;
-            const label = t[report.key as keyof typeof t] as string;
+        <div>
+          {filtered.map(r => {
+            const label = t[r.key as keyof typeof t] as string;
             return (
-              <div key={report.id} className="flex items-center justify-between p-3 rounded-lg hover:bg-card-hover transition-colors group">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-[#1c1c1c] border border-border rounded-lg text-muted group-hover:text-primary transition-colors flex-shrink-0">
-                    <Icon size={15} />
-                  </div>
-                  <div>
-                    <h4 className="text-[13px] font-medium text-text">{label}</h4>
-                    <p className="text-[10px] text-muted mt-0.5">
-                      {report.source} · Excel/PDF · {report.needsRange ? rangeLabel : tr(lang, 'сегодня', 'today', 'bugun')}
-                    </p>
-                  </div>
+              <div className="rep" key={r.id}>
+                <span className="rep-ico"><i className={`ph ${r.icon}`} aria-hidden="true" /></span>
+                <div style={{ minWidth: 0 }}>
+                  <b>{label}</b>
+                  <span className="rep-d">{tr(lang, ...r.desc)} · {r.needsRange ? periodText : T('сегодня', 'today', 'bugun')}</span>
                 </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <button
-                    disabled={!!loading}
-                    onClick={() => generate(report.id, report.fn, report.needsRange, label, 'xlsx')}
-                    title="Excel"
-                    className={`px-2.5 py-1.5 text-[11px] font-semibold rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                      busyXlsx ? 'bg-primary text-white opacity-70' : 'bg-primary/10 text-primary hover:bg-primary hover:text-white'
-                    } disabled:pointer-events-none`}
-                  >
-                    {busyXlsx ? <Loader2 size={11} className="animate-spin" /> : <FileSpreadsheet size={12} />}
-                    Excel
-                  </button>
-                  <button
-                    disabled={!!loading}
-                    onClick={() => generate(report.id, report.fn, report.needsRange, label, 'pdf')}
-                    title="PDF"
-                    className={`px-2.5 py-1.5 text-[11px] font-semibold rounded-lg transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                      busyPdf ? 'bg-text text-background opacity-70' : 'bg-card-hover text-muted border border-border hover:bg-text hover:text-background'
-                    } disabled:pointer-events-none`}
-                  >
-                    {busyPdf ? <Loader2 size={11} className="animate-spin" /> : <FileType2 size={12} />}
-                    PDF
-                  </button>
+                <div className="rep-acts">
+                  <Btn id={r.id} format="xlsx" onClick={() => generate(r.id, r.fn, r.needsRange, label, 'xlsx')} />
+                  <Btn id={r.id} format="pdf" onClick={() => generate(r.id, r.fn, r.needsRange, label, 'pdf')} />
                 </div>
               </div>
             );
           })}
         </div>
-      </Card>
-    </div>
+      </section>
+    </>
   );
 };

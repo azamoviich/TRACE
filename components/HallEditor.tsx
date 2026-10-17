@@ -194,8 +194,8 @@ function renderElement(
   if (el.type === 'shape') {
     const { x = 0, y = 0, w = 80, h = 80 } = el;
     const col = el.color || '#999999';
-    const fill = `color-mix(in srgb, ${col} ${isDark ? 30 : 22}%, ${rd ? 'var(--surface)' : isDark ? '#0e0e12' : '#f7f5f2'})`;
-    const stroke = `color-mix(in srgb, ${col} 55%, ${rd ? 'var(--surface)' : isDark ? '#0e0e12' : '#f7f5f2'})`;
+    const fill = `color-mix(in srgb, ${col} ${isDark ? 14 : 12}%, ${rd ? 'var(--surface)' : isDark ? '#0e0e12' : '#f7f5f2'})`;
+    const stroke = `color-mix(in srgb, ${col} ${isDark ? 30 : 35}%, ${rd ? 'var(--surface)' : isDark ? '#0e0e12' : '#f7f5f2'})`;
     return (
       <g key={el.id} transform={transform} onMouseDown={onMouseDown} onContextMenu={onContextMenu} style={{ cursor: 'move' }}>
         {el.shape === 'round'

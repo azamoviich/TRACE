@@ -402,13 +402,11 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
   const getSvgPoint = useCallback((e: React.MouseEvent | MouseEvent) => {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
-    const rect = svg.getBoundingClientRect();
-    const scaleX = W / rect.width;
-    const scaleY = H / rect.height;
-    return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY,
-    };
+    // Through the SVG's own matrix, so a grown viewBox maps right.
+    const m = svg.getScreenCTM();
+    if (!m) return { x: 0, y: 0 };
+    const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse());
+    return { x: p.x, y: p.y };
   }, []);
 
   const handleSvgClick = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
@@ -549,7 +547,7 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
   // sparse plan (e.g. freshly auto-synced tables) doesn't render as a huge
   // empty field. The editor keeps the full fixed canvas.
   const fitViewBox = (() => {
-    if (!(readOnly && inline) || elements.length === 0) return `0 0 ${W} ${H}`;
+    if (elements.length === 0) return `0 0 ${W} ${H}`;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const el of elements) {
       if (el.type === 'round_table' || el.type === 'stool') {
@@ -562,6 +560,12 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
       }
     }
     const pad = 24;
+    // The editor keeps its 600×380 sheet (room to add things) and grows to
+    // fit plans drawn bigger, e.g. imported from iikoOffice.
+    if (!(readOnly && inline)) {
+      const x0 = Math.min(0, minX - pad), y0 = Math.min(0, minY - pad);
+      return `${x0} ${y0} ${Math.max(W, maxX + pad) - x0} ${Math.max(H, maxY + pad) - y0}`;
+    }
     const bw = Math.max(maxX - minX + pad * 2, 240);
     const bh = Math.max(maxY - minY + pad * 2, 140);
     return `${minX - pad} ${minY - pad} ${bw} ${bh}`;
@@ -580,11 +584,11 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
       onMouseLeave={handleMouseUp}
     >
       <rect x={fbX} y={fbY} width={fbW} height={fbH} fill={isDark ? '#0e0e12' : '#f7f5f2'} />
-      {!inline && Array.from({ length: W / GRID - 1 }, (_, i) => (
-        <line key={`gv${i}`} x1={(i + 1) * GRID} y1={0} x2={(i + 1) * GRID} y2={H} stroke={isDark ? '#1a1a1e' : '#e5e1db'} strokeWidth={0.5} />
+      {!inline && Array.from({ length: Math.ceil(fbW / GRID) }, (_, i) => Math.ceil(fbX / GRID) * GRID + i * GRID).map(gx => (
+        <line key={`gv${gx}`} x1={gx} y1={fbY} x2={gx} y2={fbY + fbH} stroke={isDark ? '#1a1a1e' : '#e5e1db'} strokeWidth={0.5} />
       ))}
-      {!inline && Array.from({ length: H / GRID - 1 }, (_, i) => (
-        <line key={`gh${i}`} x1={0} y1={(i + 1) * GRID} x2={W} y2={(i + 1) * GRID} stroke={isDark ? '#1a1a1e' : '#e5e1db'} strokeWidth={0.5} />
+      {!inline && Array.from({ length: Math.ceil(fbH / GRID) }, (_, i) => Math.ceil(fbY / GRID) * GRID + i * GRID).map(gy => (
+        <line key={`gh${gy}`} x1={fbX} y1={gy} x2={fbX + fbW} y2={gy} stroke={isDark ? '#1a1a1e' : '#e5e1db'} strokeWidth={0.5} />
       ))}
       {!rdLook && <rect x={4} y={4} width={W - 8} height={H - 8} fill="none" stroke={isDark ? '#222228' : '#d4cfc8'} strokeWidth={2} rx={2} />}
       {elements.map(el => {

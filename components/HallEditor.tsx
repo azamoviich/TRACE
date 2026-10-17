@@ -577,13 +577,13 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
       ref={svgRef}
       viewBox={fitViewBox}
       className="w-full h-auto"
-      style={{ cursor: inline ? 'default' : tool === 'select' ? 'default' : 'crosshair', ...(readOnly && inline ? { maxHeight: 420 } : {}) }}
+      style={{ cursor: inline ? 'default' : tool === 'select' ? 'default' : 'crosshair', ...(readOnly && inline ? { maxHeight: 560 } : {}) }}
       onClick={handleSvgClick}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
-      <rect x={fbX} y={fbY} width={fbW} height={fbH} fill={isDark ? '#0e0e12' : '#f7f5f2'} />
+      <rect x={fbX} y={fbY} width={fbW} height={fbH} style={{ fill: rdLook ? 'var(--sunken)' : isDark ? '#0e0e12' : '#f7f5f2' }} rx={rdLook ? 12 : 0} />
       {!inline && Array.from({ length: Math.ceil(fbW / GRID) }, (_, i) => Math.ceil(fbX / GRID) * GRID + i * GRID).map(gx => (
         <line key={`gv${gx}`} x1={gx} y1={fbY} x2={gx} y2={fbY + fbH} stroke={isDark ? '#1a1a1e' : '#e5e1db'} strokeWidth={0.5} />
       ))}

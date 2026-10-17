@@ -1224,13 +1224,34 @@ function demoWriteoffs(): FinancialWriteoffRow[] {
   ];
 }
 
+const DEMO_INV_LINES: Record<string, [string, string, number, number, number][]> = {
+  'inv-1': [['Говядина, вырезка', 'кг', 18, 228000, 0], ['Баранина, лопатка', 'кг', 14, 156000, 0], ['Фарш куриный', 'кг', 20, 61000, 0]],
+  'inv-2': [['Молоко 3,2%', 'л', 60, 14000, 12], ['Сливки 33%', 'л', 12, 79000, 12], ['Сыр моцарелла', 'кг', 9, 98000, 12]],
+  'inv-3': [['Говядина, грудинка', 'кг', 40, 149000, 0]],
+  'inv-4': [['Вода 0,5 л', 'шт', 240, 2600, 12], ['Сок апельсиновый 1 л', 'шт', 40, 15400, 12]],
+  'inv-5': [['Помидоры', 'кг', 35, 18000, 0], ['Огурцы', 'кг', 30, 14000, 0], ['Зелень, микс', 'кг', 8, 62000, 0], ['Лимоны', 'кг', 10, 32000, 0]],
+  'inv-6': [['Кофе в зёрнах', 'кг', 6, 410000, 12]],
+};
+function demoInvoiceLines(id: string): FinancialInvoiceLine[] {
+  return (DEMO_INV_LINES[id] ?? []).map(([product, unit, amount, price, vat], i) => {
+    const sum = amount * price;
+    return { num: i + 1, product, article: String(1040 + i * 7), amount, unit, price, sum, vatPercent: vat, sumWithoutVat: Math.round(sum / (1 + vat / 100)), store: unit === 'шт' || product.startsWith('Кофе') ? 'Бар' : 'Кухня' };
+  });
+}
 function demoInvoices(): FinancialInvoiceRow[] {
+  const row = (id: string, number: string, days: number, supplier: string, status: string, by: string): FinancialInvoiceRow => {
+    const lines = demoInvoiceLines(id);
+    const amount = lines.reduce((s, l) => s + l.sum, 0);
+    return { id, number, date: demoDateStr(days), supplier, amount, status, source: 'office', sumWithoutVat: lines.reduce((s, l) => s + l.sumWithoutVat, 0),
+      stores: [...new Set(lines.map(l => l.store))], summary: lines.map(l => l.product).join(', '), createdBy: by, createdAt: `${demoDateStr(days)}T10:${String(10 + days * 7).padStart(2, '0')}:00` };
+  };
   return [
-    { id: 'inv-1', date: demoDateStr(0), supplier: 'Mega Trade Foods', amount: 8_420_000, status: 'paid' },
-    { id: 'inv-2', date: demoDateStr(1), supplier: 'FreshLine Distribution', amount: 3_180_000, status: 'paid' },
-    { id: 'inv-3', date: demoDateStr(2), supplier: 'Uzbek Meat Group', amount: 5_960_000, status: 'paid' },
-    { id: 'inv-4', date: demoDateStr(4), supplier: 'AquaBrand Beverages', amount: 1_240_000, status: 'paid' },
-    { id: 'inv-5', date: demoDateStr(6), supplier: 'GreenFarm Vegetables', amount: 2_070_000, status: 'pending' },
+    row('inv-1', '2281', 0, 'Мясной двор Чиланзар', 'PROCESSED', 'Нодира А.'),
+    row('inv-2', '2280', 1, 'Тошкент Сут', 'PROCESSED', 'Нодира А.'),
+    row('inv-6', '2279', 1, 'Barista Supply', 'NEW', 'Санжар Б.'),
+    row('inv-3', '2276', 2, 'Uzbek Meat Group', 'PROCESSED', 'Нодира А.'),
+    row('inv-4', '2271', 4, 'Coca-Cola Ichimligi', 'PROCESSED', 'Санжар Б.'),
+    row('inv-5', '2266', 6, 'Agro Fresh Market', 'DELETED', 'Санжар Б.'),
   ];
 }
 
@@ -1917,6 +1938,17 @@ export const traceApi = {
     },
     invoices: (range: 'today' | '7days' | '30days' = '7days'): Promise<FinancialInvoiceRow[]> =>
       isDemoTenant() ? Promise.resolve(demoInvoices()) : apiFetch(`/financial/invoices?range=${range}`).then(r => r.json()).then(d => Array.isArray(d) ? d : []),
+    /** One iiko invoice with its lines (iikoOffice protocol). */
+    invoice: async (id: string): Promise<FinancialInvoice> => {
+      if (isDemoTenant()) {
+        const row = demoInvoices().find(r => r.id === id);
+        if (!row) throw new Error('404');
+        return { ...row, lines: demoInvoiceLines(id) };
+      }
+      const r = await apiFetch(`/financial/invoices/${encodeURIComponent(id)}`);
+      if (!r.ok) throw new Error(`${r.status}`);
+      return r.json();
+    },
     inventory: (range: 'today' | '7days' | '30days' = '30days'): Promise<(FinancialInventoryDoc | PosterInventoryItem)[] | null> =>
       isDemoTenant() ? Promise.resolve(getDemoPos() === 'poster' ? demoPosterInventory() : demoInventory()) : apiFetch(`/financial/inventory?range=${range}`).then(r => r.json()).then(d => (Array.isArray(d) && d.length ? d : null)),
     // iiko only — live store balances (Склад).
@@ -2273,7 +2305,24 @@ export interface FinancialInvoiceRow {
   supplier: string;
   amount: number;
   status: string;
+  // From iikoOffice's journal (source 'office'); absent on Poster / REST fallback.
+  source?: 'office';
+  number?: string;
+  incomingNumber?: string | null;
+  sumWithoutVat?: number;
+  stores?: string[];
+  summary?: string;
+  comment?: string | null;
+  dueDate?: string | null;
+  createdAt?: string | null;
+  createdBy?: string | null;
 }
+
+export interface FinancialInvoiceLine {
+  num: number; product: string; article: string; amount: number; unit: string;
+  price: number; sum: number; vatPercent: number; sumWithoutVat: number; store: string;
+}
+export interface FinancialInvoice extends FinancialInvoiceRow { lines: FinancialInvoiceLine[] }
 
 export interface FinancialInventoryDoc {
   id: string;

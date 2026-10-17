@@ -8,6 +8,7 @@ import {
   traceApi,
   FinancialWriteoffRow,
   FinancialInvoiceRow,
+  FinancialInvoice,
   FinancialInventoryDoc,
   PosterInventoryItem,
   PosterInventoryDoc,
@@ -55,8 +56,11 @@ function statusColor(status: string) {
 
 function statusLabel(status: string, lang: Language) {
   const s = status.toUpperCase();
-  if (s === 'ACCEPTED' || s === 'POSTED') return tr(lang, 'Проведено', 'Posted', "O'tkazilgan");
-  if (s === 'CREATED' || s === 'NEW')     return tr(lang, 'Черновик', 'Draft', 'Qoralama');
+  if (s === 'ACCEPTED' || s === 'POSTED' || s === 'PROCESSED') return tr(lang, 'Проведено', 'Posted', "O'tkazilgan");
+  if (s === 'CREATED' || s === 'NEW')     return tr(lang, 'Не проведена', 'Not posted', "O'tkazilmagan");
+  if (s === 'DELETED')                    return tr(lang, 'Удалена', 'Deleted', "O'chirilgan");
+  if (s === 'PAID')                       return tr(lang, 'Оплачено', 'Paid', "To'langan");
+  if (s === 'PENDING')                    return tr(lang, 'Ожидает', 'Pending', 'Kutilmoqda');
   return status;
 }
 
@@ -163,6 +167,17 @@ export const Financial: React.FC<{
   // Invoices
   const [invoices, setInvoices]             = useState<FinancialInvoiceRow[]>([]);
   const [invoicesLoading, setInvoicesLoading] = useState(false);
+  const [invFilter, setInvFilter] = useState<'all' | 'new' | 'deleted'>('all');
+  const [invOpen, setInvOpen] = useState<FinancialInvoiceRow | null>(null);
+  const [invDetail, setInvDetail] = useState<{ data: FinancialInvoice | null; loading: boolean }>({ data: null, loading: false });
+  const openInvoice = (row: FinancialInvoiceRow) => {
+    setInvOpen(row);
+    if (row.source !== 'office') { setInvDetail({ data: null, loading: false }); return; }
+    setInvDetail({ data: null, loading: true });
+    traceApi.financial.invoice(row.id)
+      .then(data => setInvDetail(d => (d.loading ? { data, loading: false } : d)))
+      .catch(() => setInvDetail({ data: null, loading: false }));
+  };
 
   // Write-offs
   const [writeoffs, setWriteoffs]               = useState<FinancialWriteoffRow[]>([]);
@@ -363,8 +378,8 @@ export const Financial: React.FC<{
   const Loading = () => <div style={{ padding: '8px 0' }}><Skel lines={['w9', 'w9', 'w7', 'w9', 'w5']} /></div>;
   const tag = (s: string) => {
     const u = s.toUpperCase();
-    const ok = u === 'ACCEPTED' || u === 'POSTED';
-    return <span className={`tag ${ok ? 'ok' : u === 'CREATED' || u === 'NEW' ? 'warn' : ''}`}>{statusLabel(s, lang)}</span>;
+    const ok = u === 'ACCEPTED' || u === 'POSTED' || u === 'PROCESSED' || u === 'PAID';
+    return <span className={`tag ${ok ? 'ok' : u === 'CREATED' || u === 'NEW' ? 'warn' : u === 'DELETED' ? 'bad' : ''}`}>{statusLabel(s, lang)}</span>;
   };
   const noCustomTab = tab === 'invoices' || tab === 'inventory' || tab === 'menu';
   const periodSub = (() => {
@@ -533,26 +548,55 @@ export const Financial: React.FC<{
   const invPane = () => {
     if (invoicesLoading) return <Loading />;
     if (!invoices.length) return <p className="rd-empty">{tr(lang, 'Накладных за период нет', 'No invoices for the period', "Davr uchun hisob-fakturalar yo'q")}</p>;
-    const total = invoices.reduce((s, i) => s + i.amount, 0);
-    const bySup = new Map<string, number>(); for (const i of invoices) bySup.set(i.supplier, (bySup.get(i.supplier) ?? 0) + i.amount);
+    const isNew = (i: FinancialInvoiceRow) => { const u = i.status.toUpperCase(); return u === 'CREATED' || u === 'NEW'; };
+    const isDel = (i: FinancialInvoiceRow) => i.status.toUpperCase() === 'DELETED';
+    const live = invoices.filter(i => !isDel(i));
+    const total = live.reduce((s, i) => s + i.amount, 0);
+    const bySup = new Map<string, number>(); for (const i of live) bySup.set(i.supplier, (bySup.get(i.supplier) ?? 0) + i.amount);
     const top = [...bySup.entries()].sort((a, b) => b[1] - a[1])[0];
-    const drafts = invoices.filter(i => { const u = i.status.toUpperCase(); return u === 'CREATED' || u === 'NEW'; });
+    const drafts = live.filter(isNew);
+    const deleted = invoices.filter(isDel);
+    const office = invoices.some(i => i.source === 'office');
+    const rows = invFilter === 'new' ? drafts : invFilter === 'deleted' ? deleted : live;
     return <>
       <Strip four items={[
-        [tr(lang, 'Накладных', 'Invoices', 'Hisob-fakturalar'), String(invoices.length), '', periodSub],
+        [tr(lang, 'Накладных', 'Invoices', 'Hisob-fakturalar'), String(live.length), '', periodSub],
         [tr(lang, 'На сумму', 'Total', 'Jami'), amt(total)[0], amt(total)[1]],
         [tr(lang, 'Крупнейший поставщик', 'Largest supplier', "Eng yirik ta'minotchi"), top?.[0] ?? '—', '', top ? amt(top[1]).join(' ') : undefined],
         [tr(lang, 'Не проведены', 'Not posted', "O'tkazilmagan"), String(drafts.length), '', drafts.length ? `${tr(lang, 'на', 'worth', '')} ${amt(drafts.reduce((s, d) => s + d.amount, 0)).join(' ')}` : undefined],
       ]} />
       <section className="block card-ph" style={{ marginTop: 36 }} aria-labelledby="h-inv">
-        <div className="sec-head"><h2 id="h-inv">{tr(lang, 'Приходные накладные', 'Supply invoices', 'Kirim hisob-fakturalari')}</h2><span className="faint" style={{ fontSize: 13 }}>{isPoster ? 'Poster' : tr(lang, 'из iikoServer', 'from iikoServer', 'iikoServer dan')}</span></div>
+        <div className="sec-head">
+          <h2 id="h-inv">{tr(lang, 'Приходные накладные', 'Supply invoices', 'Kirim hisob-fakturalari')}</h2>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+          {office && (drafts.length > 0 || deleted.length > 0) && (
+            <span className="seg small" role="group" aria-label={tr(lang, 'Какие показать', 'Which to show', "Qaysilarini ko'rsatish")}>
+              <button aria-pressed={invFilter === 'all'} onClick={() => setInvFilter('all')}>{tr(lang, 'Все', 'All', 'Hammasi')}</button>
+              <button aria-pressed={invFilter === 'new'} onClick={() => setInvFilter('new')}>{tr(lang, 'Не проведены', 'Not posted', "O'tkazilmagan")} {drafts.length}</button>
+              <button aria-pressed={invFilter === 'deleted'} onClick={() => setInvFilter('deleted')}>{tr(lang, 'Удалённые', 'Deleted', "O'chirilgan")} {deleted.length}</button>
+            </span>
+          )}
+          <span className="faint" style={{ fontSize: 13 }}>{isPoster ? 'Poster' : office ? tr(lang, 'из iikoOffice', 'from iikoOffice', 'iikoOffice dan') : tr(lang, 'из iikoServer', 'from iikoServer', 'iikoServer dan')}</span>
+          </span>
+        </div>
+        {rows.length === 0 ? <p className="rd-empty">{tr(lang, 'Таких накладных за период нет', 'No such invoices for the period', "Davr uchun bunday hisob-fakturalar yo'q")}</p> : (
         <table className="dt">
-          <thead><tr><th>{tr(lang, 'Дата', 'Date', 'Sana')}</th><th className="hide-sm">{tr(lang, 'Номер', 'Number', 'Raqam')}</th><th>{tr(lang, 'Поставщик', 'Supplier', "Ta'minotchi")}</th><th className="r">{tr(lang, 'Сумма', 'Amount', 'Summa')}</th><th>{tr(lang, 'Статус', 'Status', 'Holat')}</th></tr></thead>
-          <tbody>{invoices.map(inv => (
-            <tr key={inv.id}><td>{inv.date}</td><td className="hide-sm mono">{inv.id.replace(/^\d{4}-\d{2}-\d{2}-/, '')}</td><td className="strong">{inv.supplier}</td><td className="r">{fmtN(inv.amount)}</td><td>{tag(inv.status)}</td></tr>
+          <thead><tr><th>{tr(lang, 'Дата', 'Date', 'Sana')}</th><th className="hide-sm">{tr(lang, 'Номер', 'Number', 'Raqam')}</th><th>{tr(lang, 'Поставщик', 'Supplier', "Ta'minotchi")}</th>{office && <th className="hide-md">{tr(lang, 'Склад', 'Store', 'Ombor')}</th>}<th className="r">{tr(lang, 'Сумма', 'Amount', 'Summa')}</th><th>{tr(lang, 'Статус', 'Status', 'Holat')}</th></tr></thead>
+          <tbody>{rows.map(inv => (
+            <tr key={inv.id} className={office ? 'click' : undefined} tabIndex={office ? 0 : undefined}
+              onClick={office ? () => openInvoice(inv) : undefined}
+              onKeyDown={office ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openInvoice(inv); } } : undefined}>
+              <td>{inv.date}</td>
+              <td className="hide-sm mono">{inv.number ?? inv.id.replace(/^\d{4}-\d{2}-\d{2}-/, '')}</td>
+              <td><div className="strong">{inv.supplier}</div>{inv.summary && <div className="faint" style={{ fontSize: 12.5, maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.summary}</div>}</td>
+              {office && <td className="hide-md muted">{inv.stores?.join(', ') || '—'}</td>}
+              <td className="r">{fmtN(inv.amount)}</td>
+              <td>{tag(inv.status)}</td>
+            </tr>
           ))}</tbody>
-        </table>
+        </table>)}
       </section>
+      <InvoicePanel lang={lang} row={invOpen} detail={invDetail} onClose={() => setInvOpen(null)} tag={tag} />
     </>;
   };
 
@@ -742,4 +786,65 @@ export const Financial: React.FC<{
       {inventoryDoc && <StocktakeDrawer doc={inventoryDoc} lang={lang} onClose={() => setInventoryDoc(null)} />}
     </>
   );
+};
+
+// Invoice side panel: iiko lines, VAT, store, who made it.
+const InvoicePanel: React.FC<{
+  lang: Language; row: FinancialInvoiceRow | null; onClose: () => void; tag: (s: string) => React.ReactNode;
+  detail: { data: FinancialInvoice | null; loading: boolean };
+}> = ({ lang, row, detail, onClose, tag }) => {
+  useEffect(() => {
+    if (!row) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [row, onClose]);
+  const d = detail.data;
+  const inv = d ?? row;
+  const n = (v: number) => Math.round(v).toLocaleString('ru-RU');
+  const q = (v: number) => v.toLocaleString('ru-RU', { maximumFractionDigits: 3 });
+  const title = inv ? `${tr(lang, 'Накладная', 'Invoice', 'Hisob-faktura')} ${inv.number ?? ''}`.trim() : '';
+  const vat = d ? d.amount - (d.sumWithoutVat ?? d.amount) : 0;
+  return <>
+    <div className={`scrim${row ? ' on' : ''}`} onClick={onClose} />
+    <aside className={`panel${row ? ' on' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+      {inv && <>
+        <div className="p-head">
+          <div style={{ minWidth: 0 }}>
+            <h2>{title}</h2>
+            <div className="faint">{inv.supplier}, {inv.date}{inv.incomingNumber ? ` · ${tr(lang, 'вх. №', 'supplier no.', 'kiruvchi №')} ${inv.incomingNumber}` : ''}</div>
+          </div>
+          <button className="p-close" type="button" onClick={onClose} aria-label={tr(lang, 'Закрыть', 'Close', 'Yopish')}><i className="ph ph-x" aria-hidden="true" /></button>
+        </div>
+        <div className="p-body">
+          <div className="p-sum">
+            <div>{tr(lang, 'Сумма', 'Amount', 'Summa')}<b>{n(inv.amount)}</b></div>
+            {d && vat > 0.5 && <div>{tr(lang, 'В т. ч. НДС', 'incl. VAT', 'shu jumladan QQS')}<b>{n(vat)}</b></div>}
+            {d && <div>{tr(lang, 'Позиций', 'Lines', 'Pozitsiyalar')}<b>{d.lines.length}</b></div>}
+            <div>{tr(lang, 'Статус', 'Status', 'Holat')}<b style={{ fontSize: 14, marginTop: 6 }}>{tag(inv.status)}</b></div>
+          </div>
+          {detail.loading ? <Skel lines={['w9', 'w9', 'w7', 'w9']} />
+            : !d ? <p className="rd-empty">{tr(lang, 'Не удалось загрузить позиции из iiko.', "Couldn't load the lines from iiko.", "iikodan pozitsiyalarni yuklab bo'lmadi.")}</p>
+            : <table className="dt">
+              <thead><tr><th>{tr(lang, 'Наименование', 'Item', 'Nomi')}</th><th className="r">{tr(lang, 'Кол-во', 'Qty', 'Miqdor')}</th><th className="r">{tr(lang, 'Цена', 'Price', 'Narx')}</th><th className="r">{tr(lang, 'Сумма', 'Amount', 'Summa')}</th></tr></thead>
+              <tbody>{d.lines.map(l => (
+                <tr key={l.num}>
+                  <td><div>{l.product}</div><div className="faint" style={{ fontSize: 12.5 }}>{[l.article && `${tr(lang, 'арт.', 'art.', 'art.')} ${l.article}`, l.store, l.vatPercent > 0 && `${tr(lang, 'НДС', 'VAT', 'QQS')} ${q(l.vatPercent)}%`].filter(Boolean).join(' · ')}</div></td>
+                  <td className="r">{q(l.amount)} {l.unit}</td>
+                  <td className="r">{n(l.price)}</td>
+                  <td className="r">{n(l.sum)}</td>
+                </tr>
+              ))}</tbody>
+            </table>}
+          {(inv.createdBy || inv.dueDate || inv.comment) && (
+            <ul className="kv" style={{ marginTop: 20 }}>
+              {inv.createdBy && <li><span>{tr(lang, 'Внёс', 'Entered by', 'Kiritgan')}</span><span>{inv.createdBy}{inv.createdAt ? `, ${inv.createdAt.slice(0, 10)} ${inv.createdAt.slice(11, 16)}` : ''}</span></li>}
+              {inv.dueDate && <li><span>{tr(lang, 'Оплатить до', 'Pay by', "To'lash muddati")}</span><span>{inv.dueDate}</span></li>}
+              {inv.comment && <li><span>{tr(lang, 'Комментарий', 'Comment', 'Izoh')}</span><span>{inv.comment}</span></li>}
+            </ul>
+          )}
+        </div>
+      </>}
+    </aside>
+  </>;
 };

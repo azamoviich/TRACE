@@ -428,7 +428,7 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
           <Pop right btnClass="btn map-edit" label={<><i className={`ph ${syncing ? 'ph-circle-notch rd-spin' : 'ph-arrows-clockwise'}`} aria-hidden="true" /><span>{tr(lang, 'Взять из iiko', 'Take from iiko', "iiko'dan olish")}</span></>}>
             {close => <>
               <div className="pop-title">{tr(lang, 'Схема из iikoOffice', 'Plan from iikoOffice', 'iikoOffice sxemasi')}</div>
-              <p className="pop-desc">{tr(lang, 'Столы встанут так, как они нарисованы в iikoOffice → Схемы залов. Стены, подписи и столы, которых нет в iiko, останутся.', 'Tables move to where they are drawn in iikoOffice → Hall plans. Walls, labels and tables iiko does not have stay.', "Stollar iikoOffice → Zal sxemalarida chizilganidek joylashadi. Devorlar, yozuvlar va iiko'da yo'q stollar qoladi.")}</p>
+              <p className="pop-desc">{tr(lang, 'Залы станут такими, как они нарисованы в iikoOffice → Схемы залов: столы, стены, подписи. Что было нарисовано здесь для этих залов, заменится.', 'Halls become exactly as drawn in iikoOffice → Hall plans: tables, walls, labels. What was drawn here for those halls is replaced.', "Zallar iikoOffice → Zal sxemalarida chizilganidek bo'ladi: stollar, devorlar, yozuvlar. Bu yerda shu zallar uchun chizilgani almashtiriladi.")}</p>
               <div className="pop-foot">
                 <button type="button" className="btn" onClick={close}>{tr(lang, 'Отмена', 'Cancel', 'Bekor')}</button>
                 <button type="button" className="btn solid" disabled={syncing} onClick={() => { close(); syncFromIiko(); }}>{tr(lang, 'Взять из iiko', 'Take from iiko', "iiko'dan olish")}</button>

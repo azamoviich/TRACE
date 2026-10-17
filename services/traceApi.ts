@@ -2942,7 +2942,8 @@ export interface RealtimeEvent {
   created_at: string;
 }
 
-export type HallElementType = 'rect_table' | 'round_table' | 'stool' | 'wall' | 'bar' | 'entrance';
+// 'shape' and 'text' come from iikoOffice plans: coloured rect/circle decor and labels.
+export type HallElementType = 'rect_table' | 'round_table' | 'stool' | 'wall' | 'bar' | 'entrance' | 'shape' | 'text';
 
 export interface HallElement {
   id: string;
@@ -2958,6 +2959,9 @@ export interface HallElement {
   label: string;
   seats: number;
   iiko_table_number?: number;
+  shape?: 'rect' | 'round';
+  color?: string;
+  fontSize?: number;
 }
 
 export interface HallPlan {

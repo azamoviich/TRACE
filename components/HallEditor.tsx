@@ -18,6 +18,8 @@ const DEFAULTS: Record<HallElementType, Partial<HallElement>> = {
   wall:        { w: 120, h: 14, label: '', seats: 0 },
   bar:         { w: 160, h: 50, label: 'BAR', seats: 0 },
   entrance:    { w: 80, h: 14, label: 'ВХОД', seats: 0 },
+  shape:       { w: 80, h: 40, label: '', seats: 0, shape: 'rect', color: '#999999' },
+  text:        { w: 80, h: 20, label: 'Текст', seats: 0, fontSize: 11 },
 };
 
 function newId() {
@@ -188,6 +190,33 @@ function renderElement(
     );
   }
 
+  // iiko decor keeps its colour, toned down so tables stay the focus.
+  if (el.type === 'shape') {
+    const { x = 0, y = 0, w = 80, h = 80 } = el;
+    const col = el.color || '#999999';
+    const fill = `color-mix(in srgb, ${col} ${isDark ? 30 : 22}%, ${rd ? 'var(--surface)' : isDark ? '#0e0e12' : '#f7f5f2'})`;
+    const stroke = `color-mix(in srgb, ${col} 55%, ${rd ? 'var(--surface)' : isDark ? '#0e0e12' : '#f7f5f2'})`;
+    return (
+      <g key={el.id} transform={transform} onMouseDown={onMouseDown} onContextMenu={onContextMenu} style={{ cursor: 'move' }}>
+        {el.shape === 'round'
+          ? <ellipse cx={x + w / 2} cy={y + h / 2} rx={w / 2} ry={h / 2} style={{ fill, stroke: selected ? selStroke : stroke }} strokeWidth={selStrokeW} />
+          : <rect x={x} y={y} width={w} height={h} rx={1} style={{ fill, stroke: selected ? selStroke : stroke }} strokeWidth={selStrokeW} />}
+        {selected && <rect x={x - 3} y={y - 3} width={w + 6} height={h + 6} rx={4} fill="none" stroke="#6366f1" strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6} />}
+      </g>
+    );
+  }
+
+  if (el.type === 'text') {
+    const { x = 0, y = 0, w = 80, h = 20, label } = el;
+    return (
+      <g key={el.id} transform={transform} onMouseDown={onMouseDown} onContextMenu={onContextMenu} style={{ cursor: 'move' }}>
+        <rect x={x} y={y} width={w} height={h} fill="transparent" />
+        <text x={x + w / 2} y={y + h / 2} dominantBaseline="central" textAnchor="middle" style={{ fill: rd ? 'var(--text-2)' : structText }} fontSize={el.fontSize ?? 11} fontFamily={font}>{label}</text>
+        {selected && <rect x={x - 3} y={y - 3} width={w + 6} height={h + 6} rx={4} fill="none" stroke="#6366f1" strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6} />}
+      </g>
+    );
+  }
+
   if (el.type === 'entrance') {
     const { x = 0, y = 0, w = 80, label } = el;
     return (
@@ -271,7 +300,7 @@ function PropsPanel({ el, section, onChange, onDelete, T }: {
         </div>
       )}
 
-      {(el.type === 'rect_table' || el.type === 'wall' || el.type === 'bar' || el.type === 'entrance') && (
+      {(el.type === 'rect_table' || el.type === 'wall' || el.type === 'bar' || el.type === 'entrance' || el.type === 'shape' || el.type === 'text') && (
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="block text-[9px] text-muted mb-1">{T('Ш', 'W', 'E')}</label>

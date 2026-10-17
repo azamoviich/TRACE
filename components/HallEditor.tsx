@@ -18,8 +18,6 @@ const DEFAULTS: Record<HallElementType, Partial<HallElement>> = {
   wall:        { w: 120, h: 14, label: '', seats: 0 },
   bar:         { w: 160, h: 50, label: 'BAR', seats: 0 },
   entrance:    { w: 80, h: 14, label: 'ВХОД', seats: 0 },
-  shape:       { w: 80, h: 40, label: '', seats: 0, shape: 'rect', color: '#999999' },
-  text:        { w: 80, h: 20, label: 'Текст', seats: 0, fontSize: 11 },
 };
 
 function newId() {
@@ -190,33 +188,6 @@ function renderElement(
     );
   }
 
-  // iiko decor keeps its colour, toned down so tables stay the focus.
-  if (el.type === 'shape') {
-    const { x = 0, y = 0, w = 80, h = 80 } = el;
-    const col = el.color || '#999999';
-    const fill = `color-mix(in srgb, ${col} ${isDark ? 14 : 12}%, ${rd ? 'var(--surface)' : isDark ? '#0e0e12' : '#f7f5f2'})`;
-    const stroke = `color-mix(in srgb, ${col} ${isDark ? 30 : 35}%, ${rd ? 'var(--surface)' : isDark ? '#0e0e12' : '#f7f5f2'})`;
-    return (
-      <g key={el.id} transform={transform} onMouseDown={onMouseDown} onContextMenu={onContextMenu} style={{ cursor: 'move' }}>
-        {el.shape === 'round'
-          ? <ellipse cx={x + w / 2} cy={y + h / 2} rx={w / 2} ry={h / 2} style={{ fill, stroke: selected ? selStroke : stroke }} strokeWidth={selStrokeW} />
-          : <rect x={x} y={y} width={w} height={h} rx={1} style={{ fill, stroke: selected ? selStroke : stroke }} strokeWidth={selStrokeW} />}
-        {selected && <rect x={x - 3} y={y - 3} width={w + 6} height={h + 6} rx={4} fill="none" stroke="#6366f1" strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6} />}
-      </g>
-    );
-  }
-
-  if (el.type === 'text') {
-    const { x = 0, y = 0, w = 80, h = 20, label } = el;
-    return (
-      <g key={el.id} transform={transform} onMouseDown={onMouseDown} onContextMenu={onContextMenu} style={{ cursor: 'move' }}>
-        <rect x={x} y={y} width={w} height={h} fill="transparent" />
-        <text x={x + w / 2} y={y + h / 2} dominantBaseline="central" textAnchor="middle" style={{ fill: rd ? 'var(--text-2)' : structText }} fontSize={el.fontSize ?? 11} fontFamily={font}>{label}</text>
-        {selected && <rect x={x - 3} y={y - 3} width={w + 6} height={h + 6} rx={4} fill="none" stroke="#6366f1" strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6} />}
-      </g>
-    );
-  }
-
   if (el.type === 'entrance') {
     const { x = 0, y = 0, w = 80, label } = el;
     return (
@@ -300,7 +271,7 @@ function PropsPanel({ el, section, onChange, onDelete, T }: {
         </div>
       )}
 
-      {(el.type === 'rect_table' || el.type === 'wall' || el.type === 'bar' || el.type === 'entrance' || el.type === 'shape' || el.type === 'text') && (
+      {(el.type === 'rect_table' || el.type === 'wall' || el.type === 'bar' || el.type === 'entrance') && (
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="block text-[9px] text-muted mb-1">{T('Ш', 'W', 'E')}</label>
@@ -402,11 +373,13 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
   const getSvgPoint = useCallback((e: React.MouseEvent | MouseEvent) => {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
-    // Through the SVG's own matrix, so a grown viewBox maps right.
-    const m = svg.getScreenCTM();
-    if (!m) return { x: 0, y: 0 };
-    const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse());
-    return { x: p.x, y: p.y };
+    const rect = svg.getBoundingClientRect();
+    const scaleX = W / rect.width;
+    const scaleY = H / rect.height;
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    };
   }, []);
 
   const handleSvgClick = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
@@ -547,7 +520,7 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
   // sparse plan (e.g. freshly auto-synced tables) doesn't render as a huge
   // empty field. The editor keeps the full fixed canvas.
   const fitViewBox = (() => {
-    if (elements.length === 0) return `0 0 ${W} ${H}`;
+    if (!(readOnly && inline) || elements.length === 0) return `0 0 ${W} ${H}`;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const el of elements) {
       if (el.type === 'round_table' || el.type === 'stool') {
@@ -560,12 +533,6 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
       }
     }
     const pad = 24;
-    // The editor keeps its 600×380 sheet (room to add things) and grows to
-    // fit plans drawn bigger, e.g. imported from iikoOffice.
-    if (!(readOnly && inline)) {
-      const x0 = Math.min(0, minX - pad), y0 = Math.min(0, minY - pad);
-      return `${x0} ${y0} ${Math.max(W, maxX + pad) - x0} ${Math.max(H, maxY + pad) - y0}`;
-    }
     const bw = Math.max(maxX - minX + pad * 2, 240);
     const bh = Math.max(maxY - minY + pad * 2, 140);
     return `${minX - pad} ${minY - pad} ${bw} ${bh}`;
@@ -577,18 +544,18 @@ export function HallEditor({ plan, section, occupiedTableNumbers, tableHeat, tab
       ref={svgRef}
       viewBox={fitViewBox}
       className="w-full h-auto"
-      style={{ cursor: inline ? 'default' : tool === 'select' ? 'default' : 'crosshair', ...(readOnly && inline ? { maxHeight: 560 } : {}) }}
+      style={{ cursor: inline ? 'default' : tool === 'select' ? 'default' : 'crosshair', ...(readOnly && inline ? { maxHeight: 420 } : {}) }}
       onClick={handleSvgClick}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
-      <rect x={fbX} y={fbY} width={fbW} height={fbH} style={{ fill: rdLook ? 'var(--sunken)' : isDark ? '#0e0e12' : '#f7f5f2' }} rx={rdLook ? 12 : 0} />
-      {!inline && Array.from({ length: Math.ceil(fbW / GRID) }, (_, i) => Math.ceil(fbX / GRID) * GRID + i * GRID).map(gx => (
-        <line key={`gv${gx}`} x1={gx} y1={fbY} x2={gx} y2={fbY + fbH} stroke={isDark ? '#1a1a1e' : '#e5e1db'} strokeWidth={0.5} />
+      <rect x={fbX} y={fbY} width={fbW} height={fbH} fill={isDark ? '#0e0e12' : '#f7f5f2'} />
+      {!inline && Array.from({ length: W / GRID - 1 }, (_, i) => (
+        <line key={`gv${i}`} x1={(i + 1) * GRID} y1={0} x2={(i + 1) * GRID} y2={H} stroke={isDark ? '#1a1a1e' : '#e5e1db'} strokeWidth={0.5} />
       ))}
-      {!inline && Array.from({ length: Math.ceil(fbH / GRID) }, (_, i) => Math.ceil(fbY / GRID) * GRID + i * GRID).map(gy => (
-        <line key={`gh${gy}`} x1={fbX} y1={gy} x2={fbX + fbW} y2={gy} stroke={isDark ? '#1a1a1e' : '#e5e1db'} strokeWidth={0.5} />
+      {!inline && Array.from({ length: H / GRID - 1 }, (_, i) => (
+        <line key={`gh${i}`} x1={0} y1={(i + 1) * GRID} x2={W} y2={(i + 1) * GRID} stroke={isDark ? '#1a1a1e' : '#e5e1db'} strokeWidth={0.5} />
       ))}
       {!rdLook && <rect x={4} y={4} width={W - 8} height={H - 8} fill="none" stroke={isDark ? '#222228' : '#d4cfc8'} strokeWidth={2} rx={2} />}
       {elements.map(el => {

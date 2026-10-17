@@ -292,6 +292,3 @@
   .rd .tile-head { flex-wrap: wrap; }
   .rd .tile-head .ai-meta { order: 3; margin-left: 42px; flex-basis: 100%; }
 }
-.rd .rd-spin { display: inline-block; animation: rd-spin .8s linear infinite; }
-@keyframes rd-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .rd .rd-spin { animation: none; } }

@@ -17,7 +17,7 @@ import { traceApi, CashShift, OpsKpis, StaffRow, StopItem, HallPlan, HallElement
 import { ViewState } from '../../types';
 import { HallEditor } from '../HallEditor';
 import { ProLock } from '../ui/ProLock';
-import { Skel, rangeLabel, nowHM, AiState, ruPl, Pop } from '../rd/ui';
+import { Skel, rangeLabel, nowHM, AiState, ruPl } from '../rd/ui';
 import { Trio, TrioTile } from '../rd/Trio';
 import { SlotText } from '../ui/SlotNumber';
 import { tashkentDateStr } from '../../utils/tz';
@@ -158,20 +158,6 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
   const [activeTab, setActiveTab] = useState(0);
   const [loading, setLoading] = useState(() => traceApi.halls.cached(branchId) == null);
   const [editing, setEditing] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const syncFromIiko = async () => {
-    setSyncing(true);
-    try {
-      const p = await traceApi.halls.syncIiko(branchId);
-      setPlans(p);
-      onHasPlanChange?.(p.length > 0);
-      onToast?.(isDemoTenant()
-        ? tr(lang, 'В демо схема уже из iiko', 'In the demo the plan already comes from iiko', 'Demoda sxema allaqachon iikodan')
-        : tr(lang, 'Схема обновлена из iiko', 'Plan updated from iiko', 'Sxema iikodan yangilandi'), 'info');
-    } catch {
-      onToast?.(tr(lang, 'Не удалось прочитать схему из iiko', "Couldn't read the plan from iiko", "iikodan sxemani o'qib bo'lmadi"), 'info');
-    } finally { setSyncing(false); }
-  };
   // «Показать на схеме»: open the hall holding the table and ring it for a few seconds.
   const [ring, setRing] = useState<number | null>(null);
   useEffect(() => {
@@ -424,19 +410,7 @@ function HallMap({ lang, onToast, occupiedTables, tableInfo, branchId, isPoster,
               onApply={r => { setCustomRange(r); setCalendarOpen(false); }} onClear={() => { setCustomRange(null); setCalendarOpen(false); }} />
           </span>
         )}
-        {canEdit && !isPoster && (
-          <Pop right btnClass="btn map-edit" label={<><i className={`ph ${syncing ? 'ph-circle-notch rd-spin' : 'ph-arrows-clockwise'}`} aria-hidden="true" /><span>{tr(lang, 'Взять из iiko', 'Take from iiko', "iiko'dan olish")}</span></>}>
-            {close => <>
-              <div className="pop-title">{tr(lang, 'Схема из iikoOffice', 'Plan from iikoOffice', 'iikoOffice sxemasi')}</div>
-              <p className="pop-desc">{tr(lang, 'Залы станут такими, как они нарисованы в iikoOffice → Схемы залов: столы, стены, подписи. Что было нарисовано здесь для этих залов, заменится.', 'Halls become exactly as drawn in iikoOffice → Hall plans: tables, walls, labels. What was drawn here for those halls is replaced.', "Zallar iikoOffice → Zal sxemalarida chizilganidek bo'ladi: stollar, devorlar, yozuvlar. Bu yerda shu zallar uchun chizilgani almashtiriladi.")}</p>
-              <div className="pop-foot">
-                <button type="button" className="btn" onClick={close}>{tr(lang, 'Отмена', 'Cancel', 'Bekor')}</button>
-                <button type="button" className="btn solid" disabled={syncing} onClick={() => { close(); syncFromIiko(); }}>{tr(lang, 'Взять из iiko', 'Take from iiko', "iiko'dan olish")}</button>
-              </div>
-            </>}
-          </Pop>
-        )}
-        {canEdit && <button type="button" className={`btn${isPoster ? ' map-edit' : ''}`} onClick={() => setEditing(true)}><i className="ph ph-pencil-simple" aria-hidden="true" />{tr(lang, 'Изменить схему', 'Edit plan', "Sxemani o'zgartirish")}</button>}
+        {canEdit && <button type="button" className="btn map-edit" onClick={() => setEditing(true)}><i className="ph ph-pencil-simple" aria-hidden="true" />{tr(lang, 'Изменить схему', 'Edit plan', "Sxemani o'zgartirish")}</button>}
       </div>
 
       {mode !== 'now' && !busy && stats.length === 0 && (
@@ -1347,7 +1321,7 @@ export const Operations: React.FC<{
               <i className="ph ph-squares-four" aria-hidden="true" />
               <p>{isPoster
                 ? tr(lang, 'Схемы зала пока нет. Её настроит поддержка TRACE — тогда здесь будет видно, какие столы заняты.', 'No floor plan yet. TRACE support sets it up — then this shows which tables are busy.', "Zal sxemasi hali yo'q. Uni TRACE yordami sozlaydi — keyin band stollar ko'rinadi.")
-                : tr(lang, 'Схемы зала пока нет. Её можно взять из iikoOffice → Схемы залов, она также подтягивается сама раз в 6 часов.', 'No floor plan yet. Take it from iikoOffice → Hall plans; it also syncs by itself every 6 hours.', "Zal sxemasi hali yo'q. Uni iikoOffice → Zal sxemalaridan olish mumkin, u har 6 soatda o'zi ham yangilanadi.")}</p>
+                : tr(lang, 'Схемы зала пока нет. Она появится сама, когда касса iikoFront передаст залы и столы.', 'No floor plan yet. It appears by itself once the iikoFront till sends its halls and tables.', "Zal sxemasi hali yo'q. iikoFront kassasi zal va stollarni yuborganda o'zi paydo bo'ladi.")}</p>
             </div>
           </section>
         )}

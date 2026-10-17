@@ -1908,20 +1908,6 @@ export const traceApi = {
       if (!r.ok) throw new Error(`${r.status}`);
       return r.json();
     },
-    /** Owner's «Взять из iiko»: plans re-read from iikoOffice, iiko tables put
-     *  where they are there. Needs the owner session; iiko, one branch. */
-    syncIiko: async (branchIdOverride?: string): Promise<HallPlan[]> => {
-      if (isDemoTenant()) return demoHalls();
-      const token = getTenantOwnerToken();
-      const r = await apiFetch(`/halls/sync-iiko`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      }, branchIdOverride);
-      if (!r.ok) throw new Error(`${r.status}`);
-      const { plans } = await r.json() as { plans: HallPlan[] };
-      try { localStorage.setItem(hallsCacheKey(branchIdOverride), JSON.stringify(plans)); } catch { /* storage full or blocked */ }
-      return plans;
-    },
   },
   financial: {
     writeoffs: (range: 'today' | '7days' | '30days' | 'custom' = '7days', customFrom?: string, customTo?: string): Promise<FinancialWriteoffRow[]> => {
@@ -2942,8 +2928,7 @@ export interface RealtimeEvent {
   created_at: string;
 }
 
-// 'shape' and 'text' come from iikoOffice plans: coloured rect/circle decor and labels.
-export type HallElementType = 'rect_table' | 'round_table' | 'stool' | 'wall' | 'bar' | 'entrance' | 'shape' | 'text';
+export type HallElementType = 'rect_table' | 'round_table' | 'stool' | 'wall' | 'bar' | 'entrance';
 
 export interface HallElement {
   id: string;
@@ -2959,9 +2944,6 @@ export interface HallElement {
   label: string;
   seats: number;
   iiko_table_number?: number;
-  shape?: 'rect' | 'round';
-  color?: string;
-  fontSize?: number;
 }
 
 export interface HallPlan {

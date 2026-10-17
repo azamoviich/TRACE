@@ -734,7 +734,7 @@ function StaffTable({ lang, staffRows, staffLoading, isPoster }: { lang: Languag
         </table>
       )}
       <p className="staff-note">{today
-        ? (isPoster ? tr(lang, 'Данные из Poster за сегодня.', "Today's data from Poster.", 'Bugungi Poster maʼlumotlari.') : tr(lang, 'Время прихода и ухода приходит с кассы iikoFront.', 'Clock-in and clock-out come from the iikoFront till.', 'Kelish va ketish vaqti iikoFront kassasidan keladi.'))
+        ? (isPoster ? tr(lang, 'Данные из Poster за сегодня.', "Today's data from Poster.", 'Bugungi Poster maʼlumotlari.') : tr(lang, 'Приход и уход из табеля iiko, время за столом по закрытым заказам iiko.', 'Clock-in and out from the iiko timesheet, table time from closed iiko orders.', 'Kelish va ketish iiko tabelidan, stol vaqti yopilgan iiko buyurtmalaridan.'))
         : tr(lang, 'ABC по выручке за период (Парето 70/90).', 'ABC by revenue for the period (Pareto 70/90).', "Davr tushumi bo'yicha ABC (Pareto 70/90).")}</p>
     </section>
   );

@@ -143,3 +143,19 @@
   .rd-fin .stock-seg { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
   .rd-fin .stock-seg button { white-space: nowrap; }
 }
+
+/* Write-offs: where it goes (by reason / by store) */
+.rd-fin .wo-split { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 36px; }
+.rd-fin .wo-h { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+.rd-fin .wo-bars { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+.rd-fin .wo-bars li { border-bottom: 1px solid var(--rule); }
+.rd-fin .wo-bars button { width: 100%; display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(60px, 1fr) 108px 38px; gap: 12px; align-items: center; padding: 9px 4px; font-size: 14px; text-align: left; border-radius: 6px; }
+.rd-fin .wo-bars button:hover { background: color-mix(in srgb, var(--sunken) 70%, transparent); }
+.rd-fin .wo-bars button[aria-pressed="true"] { background: var(--sunken); font-weight: 500; }
+.rd-fin .wo-bars .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-fin .wo-bars .b { height: 6px; border-radius: 3px; background: var(--sunken); overflow: hidden; }
+.rd-fin .wo-bars .b i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+.rd-fin .wo-bars .b i.nf { background: var(--text-3); }
+.rd-fin .wo-bars .v { font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+.rd-fin .wo-bars .p { color: var(--text-3); font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 1080px) { .rd-fin .wo-split { grid-template-columns: minmax(0, 1fr); gap: 28px; } }

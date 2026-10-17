@@ -9,6 +9,7 @@ import {
   FinancialWriteoffRow,
   FinancialInvoiceRow,
   FinancialInvoice,
+  FinancialWriteoffDoc,
   FinancialInventoryDoc,
   PosterInventoryItem,
   PosterInventoryDoc,
@@ -20,7 +21,7 @@ import {
 } from '../../services/traceApi';
 import { StocktakeList, StocktakeDrawer } from './InventoryStocktake';
 import { IikoStock } from './IikoStock';
-import { mln, mlnUnit, sum, PeriodSeg, PeriodValue, periodDates, rangeLabel, dayLabel, Skel, AiMeta, AiState, LineChart, nowHM } from '../rd/ui';
+import { mln, mlnUnit, sum, PeriodSeg, PeriodValue, periodDates, rangeLabel, dayLabel, Skel, AiMeta, AiState, LineChart, nowHM, ruPl } from '../rd/ui';
 
 const WASTE_BENCHMARK = 3.0; // industry standard %
 
@@ -181,6 +182,13 @@ export const Financial: React.FC<{
 
   // Write-offs
   const [writeoffs, setWriteoffs]               = useState<FinancialWriteoffRow[]>([]);
+  // Whole acts from iiko (null → Poster or unavailable: the flat view below is used).
+  const [woDocs, setWoDocs]                     = useState<FinancialWriteoffDoc[] | null>(null);
+  const [woView, setWoView]                     = useState<'acts' | 'items'>('acts');
+  const [woFood, setWoFood]                     = useState(true);
+  const [woReason, setWoReason]                 = useState('');
+  const [woStore, setWoStore]                   = useState('');
+  const [woOpen, setWoOpen]                     = useState<FinancialWriteoffDoc | null>(null);
   const [writeoffsLoading, setWriteoffsLoading] = useState(false);
   const [writeoffRevenue, setWriteoffRevenue]   = useState(0);
   const [writeoffDept, setWriteoffDept]         = useState<string>(FOOD_FILTER);
@@ -274,9 +282,12 @@ export const Financial: React.FC<{
       Promise.all([
         traceApi.financial.writeoffs(woRange, woCustomRange?.from, woCustomRange?.to),
         traceApi.sales.revenue(woRange, woCustomRange?.from, woCustomRange?.to),
+        traceApi.financial.writeoffDocs(woRange, woCustomRange?.from, woCustomRange?.to),
       ])
-        .then(([wo, rev]) => {
+        .then(([wo, rev, docs]) => {
           setWriteoffs(wo);
+          setWoDocs(docs);
+          setWoReason(''); setWoStore('');
           setWriteoffDept(FOOD_FILTER);
           const totalRev = rev.reduce((s, r) => s + r.revenue, 0);
           setWriteoffRevenue(totalRev);
@@ -601,8 +612,124 @@ export const Financial: React.FC<{
   };
 
   // ── Write-offs ──
+  // ── Write-offs, whole acts (iiko) ──
+  const woActsPane = (docs: FinancialWriteoffDoc[]) => {
+    const live = docs.filter(d => d.status.toUpperCase() !== 'DELETED');
+    const total = live.reduce((s, d) => s + d.sum, 0);
+    const foodDocs = live.filter(d => d.isFood);
+    const foodTotal = foodDocs.reduce((s, d) => s + d.sum, 0);
+    const { from, to } = periodDates(period.range, period.custom);
+    const days = Math.max(1, Math.round((Date.parse(to) - Date.parse(from)) / 86400000) + 1);
+    const wpct = writeoffRevenue > 0 ? foodTotal / writeoffRevenue * 100 : null;
+    const save = wpct != null && wpct > WASTE_BENCHMARK ? (wpct - WASTE_BENCHMARK) / 100 * writeoffRevenue * (30 / days) : null;
+    const reasonOf = (d: FinancialWriteoffDoc) => d.reason ?? tr(lang, 'Без статьи', 'No account', "Moddasiz");
+    // Products across acts: sum, amount per unit, how many acts.
+    const byProduct = (list: FinancialWriteoffDoc[]) => {
+      const m = new Map<string, { product: string; unit: string; amount: number; cost: number; acts: number }>();
+      for (const d of list) for (const l of d.lines) {
+        const k = `${l.product}|${l.unit}`; const e = m.get(k) ?? { product: l.product, unit: l.unit, amount: 0, cost: 0, acts: 0 };
+        e.amount += l.amount; e.cost += l.cost; e.acts += 1; m.set(k, e);
+      }
+      return [...m.values()].sort((a, b) => b.cost - a.cost);
+    };
+    const topFood = byProduct(foodDocs).slice(0, 3);
+    const group = (key: (d: FinancialWriteoffDoc) => string) => {
+      const m = new Map<string, { sum: number; acts: number; food: boolean }>();
+      for (const d of live) { const k = key(d); const e = m.get(k) ?? { sum: 0, acts: 0, food: d.isFood }; e.sum += d.sum; e.acts += 1; m.set(k, e); }
+      return [...m.entries()].sort((a, b) => b[1].sum - a[1].sum);
+    };
+    const reasons = group(reasonOf), stores = group(d => d.store);
+    const rows = live.filter(d => (!woFood || d.isFood) && (!woReason || reasonOf(d) === woReason) && (!woStore || d.store === woStore));
+    const items = byProduct(rows);
+    const rowsSum = rows.reduce((s, d) => s + d.sum, 0);
+    const q = (v: number) => v.toLocaleString('ru-RU', { maximumFractionDigits: 3 });
+    const bars = (title: string, id: string, list: [string, { sum: number; acts: number; food: boolean }][], active: string, set: (v: string) => void) => {
+      const max = list[0]?.[1].sum || 1;
+      return (
+        <div>
+          <h3 className="wo-h" id={id}>{title}</h3>
+          <ul className="wo-bars" aria-labelledby={id}>
+            {list.map(([name, e]) => (
+              <li key={name}>
+                <button type="button" aria-pressed={active === name} onClick={() => { set(active === name ? '' : name); if (!e.food) setWoFood(false); }}>
+                  <span className="n">{name}{!e.food && <span className="faint"> · {tr(lang, 'не еда', 'not food', 'oziq-ovqat emas')}</span>}</span>
+                  <span className="b" aria-hidden="true"><i style={{ width: `${Math.max(2, e.sum / max * 100)}%` }} className={e.food ? '' : 'nf'} /></span>
+                  <span className="v">{amt(e.sum).join(' ')}</span>
+                  <span className="p">{total > 0 ? `${Math.round(e.sum / total * 100)}%` : ''}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    };
+    return <>
+      <section className="waste" aria-label={tr(lang, 'Итоги списаний', 'Write-off totals', 'Chiqim yakunlari')}>
+        <div><div className="s-l">{tr(lang, 'Списано всего', 'Written off in total', 'Jami chiqarilgan')}</div><div className="s-v">{amt(total)[0]}<small>{amt(total)[1]}</small></div>
+          <div className="s-d">{live.length} {tr(lang, ruPl(live.length, 'акт', 'акта', 'актов'), live.length === 1 ? 'act' : 'acts', 'hujjat')} · {periodSub}</div></div>
+        <div><div className="s-l">{tr(lang, 'Из них еда', 'Of which food', 'Shundan oziq-ovqat')}</div><div className="s-v">{amt(foodTotal)[0]}<small>{amt(foodTotal)[1]}</small></div>
+          <div className="s-d">{wpct != null ? tr(lang, `${wpct.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}% от выручки · норма ${WASTE_BENCHMARK}%`, `${wpct.toLocaleString('en-US', { maximumFractionDigits: 1 })}% of revenue · benchmark ${WASTE_BENCHMARK}%`, `tushumning ${wpct.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}% · meʼyor ${WASTE_BENCHMARK}%`) : tr(lang, 'выручки за период нет', 'no revenue for the period', "davr uchun tushum yo'q")}</div>
+          {wpct != null && <span className="bench" aria-hidden="true"><b style={{ width: `${Math.min(100, wpct / (WASTE_BENCHMARK * 2) * 100)}%` }} /><i style={{ left: '50%' }} /></span>}</div>
+        <div><div className="s-l">{tr(lang, 'Можно сэкономить', 'Could save', 'Tejash mumkin')}</div><div className="s-v">{save != null ? amt(save)[0] : '0'}<small>{save != null ? amt(save)[1] : sum(lang)} / {tr(lang, 'мес', 'mo', 'oy')}</small></div><div className="s-d">{save != null ? tr(lang, `если выйти на ${WASTE_BENCHMARK}%`, `at ${WASTE_BENCHMARK}%`, `${WASTE_BENCHMARK}% ga chiqilsa`) : tr(lang, 'еда в норме', 'food within benchmark', "oziq-ovqat me'yorda")}</div></div>
+        <div><div className="s-l">{tr(lang, 'Больше всего списываем', 'Written off most', "Eng ko'p chiqariladi")}</div><ol>{topFood.map(p => <li key={p.product + p.unit}>{p.product} <span>{q(p.amount)} {p.unit} · {amt(p.cost).join(' ')}</span></li>)}</ol></div>
+      </section>
+      <section className="block card-ph wo-split" aria-label={tr(lang, 'Куда уходит', 'Where it goes', 'Qayerga ketadi')}>
+        {bars(tr(lang, 'По причинам', 'By reason', "Sabablar bo'yicha"), 'h-wo-r', reasons, woReason, setWoReason)}
+        {bars(tr(lang, 'По складам', 'By store', "Omborlar bo'yicha"), 'h-wo-s', stores, woStore, setWoStore)}
+      </section>
+      <section className="block card-ph" aria-labelledby="h-acts">
+        <div className="sec-head"><h2 id="h-acts">{woView === 'acts' ? tr(lang, 'Акты списания', 'Write-off acts', 'Hisobdan chiqarish hujjatlari') : tr(lang, 'Что списали', 'What was written off', 'Nima chiqarildi')}</h2>
+          <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span className="seg small" role="group" aria-label={tr(lang, 'Вид', 'View', "Ko'rinish")}>
+              <button aria-pressed={woView === 'acts'} onClick={() => setWoView('acts')}>{tr(lang, 'По актам', 'By act', "Hujjatlar bo'yicha")}</button>
+              <button aria-pressed={woView === 'items'} onClick={() => setWoView('items')}>{tr(lang, 'По товарам', 'By item', "Mahsulotlar bo'yicha")}</button>
+            </span>
+            <span className="seg small" role="group" aria-label={tr(lang, 'Что показать', 'What to show', "Nimani ko'rsatish")}>
+              <button aria-pressed={woFood} onClick={() => setWoFood(true)}>{tr(lang, 'Только еда', 'Food only', 'Faqat oziq-ovqat')}</button>
+              <button aria-pressed={!woFood} onClick={() => setWoFood(false)}>{tr(lang, 'Всё', 'All', 'Hammasi')}</button>
+            </span>
+            {(woReason || woStore) && <button type="button" className="btn" style={{ padding: "4px 10px", fontSize: 13 }} onClick={() => { setWoReason(''); setWoStore(''); }}>
+              <i className="ph ph-x" aria-hidden="true" /> {[woReason, woStore].filter(Boolean).join(' · ')}</button>}
+          </span>
+        </div>
+        {rows.length === 0 ? <p className="rd-empty">{tr(lang, 'Под этот фильтр актов нет', 'No acts match this filter', "Bu filtr bo'yicha hujjat yo'q")}</p>
+          : woView === 'acts' ? (
+          <table className="dt">
+            <thead><tr><th>{tr(lang, 'Дата', 'Date', 'Sana')}</th><th className="hide-sm">{tr(lang, 'Акт', 'Act', 'Hujjat')}</th><th className="hide-sm">{tr(lang, 'Склад', 'Store', 'Ombor')}</th><th>{tr(lang, 'Что списали', 'What', 'Nima')}</th><th className="hide-md">{tr(lang, 'Причина', 'Reason', 'Sabab')}</th><th className="r">{tr(lang, 'Себест.', 'Cost', 'Tannarx')}</th></tr></thead>
+            <tbody>{rows.map(d => (
+              <tr key={d.id} className="click" tabIndex={0} onClick={() => setWoOpen(d)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setWoOpen(d); } }}>
+                <td>{d.date.slice(8, 10)}.{d.date.slice(5, 7)}{d.time && <span className="faint"> {d.time}</span>}</td>
+                <td className="hide-sm mono">{d.number}</td>
+                <td className="hide-sm muted">{d.store}</td>
+                <td><div className="strong" style={{ maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.lines.slice(0, 3).map(l => l.product).join(', ')}{d.lines.length > 3 ? ` +${d.lines.length - 3}` : ''}</div>
+                  {d.comment && <div className="faint" style={{ fontSize: 12.5 }}>«{d.comment}»</div>}</td>
+                <td className="hide-md muted">{reasonOf(d)}</td>
+                <td className="r">{fmtN(d.sum)}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+          ) : (
+          <table className="dt">
+            <thead><tr><th>{tr(lang, 'Товар', 'Item', 'Mahsulot')}</th><th className="r">{tr(lang, 'Кол-во', 'Qty', 'Miqdor')}</th><th className="r hide-sm">{tr(lang, 'Актов', 'Acts', 'Hujjatlar')}</th><th className="r">{tr(lang, 'Себест.', 'Cost', 'Tannarx')}</th><th className="r hide-sm">{tr(lang, 'Доля', 'Share', 'Ulush')}</th></tr></thead>
+            <tbody>{items.map(p => (
+              <tr key={p.product + p.unit}><td className="strong">{p.product}</td><td className="r">{q(p.amount)} {p.unit}</td><td className="r hide-sm">{p.acts}</td><td className="r">{fmtN(p.cost)}</td><td className="r hide-sm muted">{rowsSum > 0 ? `${(p.cost / rowsSum * 100).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%` : ''}</td></tr>
+            ))}</tbody>
+          </table>
+          )}
+        <p className="foot"><span>
+          {tr(lang, `Итого ${fmtN(rowsSum)} сум · ${rows.length} ${ruPl(rows.length, 'акт', 'акта', 'актов')} · ${items.length} ${ruPl(items.length, 'товар', 'товара', 'товаров')}.`,
+            `Total ${fmtN(rowsSum)} UZS · ${rows.length} acts · ${items.length} items.`,
+            `Jami ${fmtN(rowsSum)} so'm · ${rows.length} hujjat · ${items.length} mahsulot.`)}
+          {' '}{woFood ? tr(lang, 'Посуда, хозтовары и питание персонала скрыты: это не порча продуктов.', 'Tableware, supplies and staff meals are hidden: they are not spoilage.', "Idish, xo'jalik mollari va xodimlar ovqati yashirilgan.") : ''}
+        </span></p>
+      </section>
+      <WriteoffPanel lang={lang} doc={woOpen} onClose={() => setWoOpen(null)} reasonOf={reasonOf} />
+    </>;
+  };
+
   const wastePane = () => {
     if (writeoffsLoading) return <Loading />;
+    if (woDocs) return woActsPane(woDocs);
     if (!writeoffs.length) return <p className="rd-empty">{tr(lang, 'Списаний за период нет', 'No write-offs for the period', "Davr uchun hisobdan chiqarishlar yo'q")}</p>;
     const food = writeoffs.filter(isRealFoodWaste);
     const foodTotal = food.reduce((s, w) => s + w.cost, 0);
@@ -843,6 +970,52 @@ const InvoicePanel: React.FC<{
               {inv.comment && <li><span>{tr(lang, 'Комментарий', 'Comment', 'Izoh')}</span><span>{inv.comment}</span></li>}
             </ul>
           )}
+        </div>
+      </>}
+    </aside>
+  </>;
+};
+
+// Write-off act side panel: lines with units, reason, store, who and when.
+const WriteoffPanel: React.FC<{ lang: Language; doc: FinancialWriteoffDoc | null; onClose: () => void; reasonOf: (d: FinancialWriteoffDoc) => string }> = ({ lang, doc, onClose, reasonOf }) => {
+  useEffect(() => {
+    if (!doc) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [doc, onClose]);
+  const n = (v: number) => Math.round(v).toLocaleString('ru-RU');
+  const q = (v: number) => v.toLocaleString('ru-RU', { maximumFractionDigits: 3 });
+  const title = doc ? `${tr(lang, 'Акт списания', 'Write-off act', 'Chiqim hujjati')} ${doc.number}` : '';
+  return <>
+    <div className={`scrim${doc ? ' on' : ''}`} onClick={onClose} />
+    <aside className={`panel${doc ? ' on' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+      {doc && <>
+        <div className="p-head">
+          <div style={{ minWidth: 0 }}>
+            <h2>{title}</h2>
+            <div className="faint">{doc.store}, {doc.date}{doc.time ? ` ${doc.time}` : ''}</div>
+          </div>
+          <button className="p-close" type="button" onClick={onClose} aria-label={tr(lang, 'Закрыть', 'Close', 'Yopish')}><i className="ph ph-x" aria-hidden="true" /></button>
+        </div>
+        <div className="p-body">
+          <div className="p-sum">
+            <div>{tr(lang, 'Себестоимость', 'Cost', 'Tannarx')}<b>{n(doc.sum)}</b></div>
+            <div>{tr(lang, 'Позиций', 'Lines', 'Pozitsiyalar')}<b>{doc.lines.length}</b></div>
+            <div>{tr(lang, 'Тип', 'Type', 'Turi')}<b style={{ fontSize: 14, marginTop: 6 }}><span className={`tag ${doc.isFood ? 'warn' : ''}`}>{doc.isFood ? tr(lang, 'Порча еды', 'Food spoilage', 'Oziq-ovqat buzilishi') : tr(lang, 'Не еда', 'Not food', 'Oziq-ovqat emas')}</span></b></div>
+          </div>
+          <table className="dt">
+            <thead><tr><th>{tr(lang, 'Наименование', 'Item', 'Nomi')}</th><th className="r">{tr(lang, 'Кол-во', 'Qty', 'Miqdor')}</th><th className="r">{tr(lang, 'Себест.', 'Cost', 'Tannarx')}</th></tr></thead>
+            <tbody>{doc.lines.map(l => (
+              <tr key={l.product + l.unit}><td>{l.product}</td><td className="r">{q(l.amount)} {l.unit}</td><td className="r">{n(l.cost)}</td></tr>
+            ))}</tbody>
+          </table>
+          <ul className="kv" style={{ marginTop: 20 }}>
+            <li><span>{tr(lang, 'Причина', 'Reason', 'Sabab')}</span><span>{reasonOf(doc)}</span></li>
+            {doc.createdBy && <li><span>{tr(lang, 'Списал', 'Written off by', 'Chiqargan')}</span><span>{doc.createdBy}{doc.createdAt ? `, ${doc.createdAt.slice(0, 10)} ${doc.createdAt.slice(11, 16)}` : ''}</span></li>}
+            {doc.terminal && <li><span>{tr(lang, 'Касса', 'Till', 'Kassa')}</span><span>{doc.terminal}</span></li>}
+            {doc.comment && <li><span>{tr(lang, 'Комментарий', 'Comment', 'Izoh')}</span><span>{doc.comment}</span></li>}
+          </ul>
         </div>
       </>}
     </aside>

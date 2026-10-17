@@ -1204,6 +1204,27 @@ function demoRealtimeEvents(): RealtimeEvent[] {
   return events;
 }
 
+function demoWriteoffDocs(): FinancialWriteoffDoc[] {
+  type L = [string, number, string, number];
+  const doc = (id: string, number: string, days: number, time: string, store: string, reason: string, isFood: boolean, by: string, lines: L[], comment: string | null = null, terminal: string | null = null): FinancialWriteoffDoc => ({
+    id, number, date: demoDateStr(days), time, status: 'PROCESSED', store, reason, isFood, comment, terminal, createdBy: by, createdAt: `${demoDateStr(days)}T${time}:00`,
+    lines: lines.map(([product, amount, unit, cost]) => ({ product, amount, unit, cost })).sort((a, b) => b.cost - a.cost),
+    sum: lines.reduce((s, l) => s + l[3], 0),
+  });
+  return [
+    doc('wo-1', '3150', 0, '23:10', 'Кухня', 'Списание кухни', true, 'Нодира А.', [['Зелень, микс', 1.3, 'кг', 182000], ['Томаты черри', 0.8, 'кг', 96000], ['Лосось охлаждённый', 0.4, 'кг', 132000]], null, 'GL-Kassa'),
+    doc('wo-2', '3149', 0, '22:40', 'Кондитерский цех', 'Списание кондитерского цеха', true, 'Санжар Б.', [['Круассан с миндалём', 14, 'шт', 231000], ['Чизкейк', 3, 'порц', 63000]]),
+    doc('wo-3', '3147', 1, '23:05', 'Бар', 'Списание бара', true, 'Санжар Б.', [['Молоко 3,2%', 6, 'л', 84000], ['Лимоны', 2, 'кг', 46000]]),
+    doc('wo-4', '3146', 1, '15:20', 'Кухня', 'Питание персонала', false, 'Нодира А.', [['Плов, порция', 9, 'порц', 198000], ['Хлеб', 6, 'шт', 18000]], 'обед смены'),
+    doc('wo-5', '3144', 2, '23:15', 'Кухня', 'Списание кухни', true, 'Нодира А.', [['Лосось охлаждённый', 0.9, 'кг', 297000], ['Говядина, вырезка', 0.6, 'кг', 137000]], 'истёк срок'),
+    doc('wo-6', '3141', 3, '12:00', 'Хоз. склад', 'Хозяйственные нужды', false, 'Санжар Б.', [['Салфетки бумажные', 4, 'шт', 96000], ['Моющее средство', 2, 'л', 74000]]),
+    doc('wo-7', '3139', 3, '23:00', 'Кондитерский цех', 'Списание кондитерского цеха', true, 'Санжар Б.', [['Круассан с миндалём', 9, 'шт', 148500]]),
+    doc('wo-8', '3137', 4, '22:55', 'Бар', 'Списание бара', true, 'Нодира А.', [['Сливки 33%', 1.5, 'л', 118500], ['Мята', 0.2, 'кг', 24000]]),
+    doc('wo-9', '3134', 5, '19:30', 'Бар', 'Бой посуды', false, 'Нодира А.', [['Бокал для вина', 2, 'шт', 118000]], 'разбили при уборке'),
+    doc('wo-10', '3131', 6, '23:20', 'Кухня', 'Проработка блюд', true, 'Шеф', [['Говядина, вырезка', 1.2, 'кг', 274000], ['Сыр пармезан', 0.3, 'кг', 87000]], 'гастроужин'),
+  ];
+}
+
 function demoWriteoffs(): FinancialWriteoffRow[] {
   // storage.getWastes has no per-ingredient breakdown — Poster gives a
   // waste REASON (not a dish/ingredient name), the STORAGE name as
@@ -1931,6 +1952,17 @@ export const traceApi = {
     },
   },
   financial: {
+    /** Whole write-off acts (iiko). null when not available — Poster, or iiko unreachable. */
+    writeoffDocs: async (range: 'today' | '7days' | '30days' | 'custom' = '7days', customFrom?: string, customTo?: string): Promise<FinancialWriteoffDoc[] | null> => {
+      if (isDemoTenant()) return getDemoPos() === 'poster' ? null : demoWriteoffDocs();
+      const q = range === 'custom' && customFrom && customTo ? `from=${customFrom}&to=${customTo}` : `range=${range}`;
+      try {
+        const r = await apiFetch(`/financial/writeoff-docs?${q}`);
+        if (!r.ok) return null;
+        const d = await r.json();
+        return Array.isArray(d) && d.length ? d : null;
+      } catch { return null; }
+    },
     writeoffs: (range: 'today' | '7days' | '30days' | 'custom' = '7days', customFrom?: string, customTo?: string): Promise<FinancialWriteoffRow[]> => {
       if (isDemoTenant()) return Promise.resolve(demoWriteoffs());
       const q = range === 'custom' && customFrom && customTo ? `from=${customFrom}&to=${customTo}` : `range=${range}`;
@@ -2297,6 +2329,15 @@ export interface FinancialWriteoffRow {
   date: string;
   docNumber?: string;
   isFood?: boolean;
+}
+
+/** A whole iiko write-off act (GET /financial/writeoff-docs). */
+export interface FinancialWriteoffDoc {
+  id: string; number: string; date: string; time: string | null; status: string;
+  store: string; reason: string | null; isFood: boolean;
+  comment: string | null; terminal: string | null;
+  createdBy: string | null; createdAt: string | null;
+  sum: number; lines: { product: string; amount: number; unit: string; cost: number }[];
 }
 
 export interface FinancialInvoiceRow {
